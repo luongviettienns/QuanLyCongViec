@@ -1,0 +1,21 @@
+{
+  "name": "taskflow-root",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:backend": "npm run start:dev --workspace=@taskflow/backend",
+    "dev:frontend": "npm run dev --workspace=@taskflow/frontend",
+    "build": "npm run build --workspaces --if-present",
+    "build:shared": "npm run build --workspace=@taskflow/shared",
+    "build:backend": "npm run build --workspace=@taskflow/backend",
+    "build:frontend": "npm run build --workspace=@taskflow/frontend",
+    "test": "npm run test --workspaces --if-present",
+    "test:backend": "npm run test --workspace=@taskflow/backend",
+    "lint": "npm run lint --workspaces --if-present"
+  }
+}

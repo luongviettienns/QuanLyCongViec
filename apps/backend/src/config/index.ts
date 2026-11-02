@@ -1,0 +1,2 @@
+// Export application configuration
+export {};
