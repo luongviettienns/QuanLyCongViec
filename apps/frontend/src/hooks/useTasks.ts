@@ -18,22 +18,23 @@ export function useTasks() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const isFiltering = searchText.trim() !== '' || statusFilter !== 'ALL';
 
-  const loadTasks = useCallback(
-    async (search = searchText, status = statusFilter) => {
+  const fetchTasks = useCallback(
+    async (search = '', status: StatusFilter = 'ALL') => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
-      setLoading(true);
 
       try {
         const data = await getTasks(
           { search, status: status === 'ALL' ? undefined : status },
           controller.signal,
         );
-        setTasks(data);
+        if (abortControllerRef.current === controller) {
+          setTasks(data);
+        }
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
           return;
@@ -46,12 +47,12 @@ export function useTasks() {
         }
       }
     },
-    [searchText, statusFilter],
+    [],
   );
 
-  const loadCategories = useCallback(async (signal?: AbortSignal) => {
+  const fetchCategories = useCallback(async () => {
     try {
-      const data = await getCategories(signal);
+      const data = await getCategories();
       setCategories(data);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -62,70 +63,50 @@ export function useTasks() {
   }, []);
 
   useEffect(() => {
-    let ignore = false;
-    const controller = new AbortController();
-
     async function init() {
-      try {
-        const [categoriesData, tasksData] = await Promise.all([
-          getCategories(controller.signal),
-          getTasks(undefined, controller.signal),
-        ]);
-        if (!ignore) {
-          setCategories(categoriesData);
-          setTasks(tasksData);
-        }
-      } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') {
-          return;
-        }
-        if (!ignore) {
-          console.error('Lỗi khi tải dữ liệu khởi tạo:', error);
-          message.error(error instanceof Error ? error.message : 'Lỗi khi tải dữ liệu');
-        }
-      } finally {
-        if (!ignore) {
-          setLoading(false);
-        }
-      }
+      await fetchCategories();
+      await fetchTasks('', 'ALL');
     }
 
     void init();
 
     return () => {
-      ignore = true;
-      controller.abort();
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     };
-  }, []);
+  }, [fetchCategories, fetchTasks]);
 
   function handleSearch(value: string) {
     setSearchText(value);
-    void loadTasks(value, statusFilter);
+    setLoading(true);
+    void fetchTasks(value, statusFilter);
   }
 
   function handleStatusChange(value: StatusFilter) {
     setStatusFilter(value);
-    void loadTasks(searchText, value);
+    setLoading(true);
+    void fetchTasks(searchText, value);
   }
 
   function handleReset() {
     setSearchText('');
     setStatusFilter('ALL');
-    void loadTasks('', 'ALL');
+    setLoading(true);
+    void fetchTasks('', 'ALL');
   }
 
   async function refetch() {
-    await Promise.all([loadTasks(searchText, statusFilter), loadCategories()]);
+    setLoading(true);
+    await Promise.all([fetchTasks(searchText, statusFilter), fetchCategories()]);
   }
 
   async function handleDelete(id: number) {
     try {
       await deleteTask(id);
       message.success('Xoá công việc thành công');
-      await loadTasks();
+      setLoading(true);
+      await fetchTasks(searchText, statusFilter);
     } catch (error) {
       console.error(error);
       message.error(error instanceof Error ? error.message : 'Xoá công việc thất bại');
@@ -153,7 +134,7 @@ export function useTasks() {
     try {
       await reorderTasks(taskIds, status);
       message.success('Cập nhật thứ tự công việc thành công');
-      await loadTasks();
+      await fetchTasks(searchText, statusFilter);
     } catch (error) {
       console.error(error);
       setTasks(previousTasks);
