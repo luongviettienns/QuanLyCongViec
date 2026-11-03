@@ -10,7 +10,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@dnd-kit/react": "^0.5.3",
     "@taskflow/shared": "*",
     "antd": "^6.6.8",
     "react": "^19.3.1",

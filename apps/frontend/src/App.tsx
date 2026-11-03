@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import dayjs, { type Dayjs } from 'dayjs';
 import {
   Table,
   Button,
@@ -7,6 +8,7 @@ import {
   Form,
   Input,
   Select,
+  DatePicker,
   Popconfirm,
   Space,
   message,
@@ -20,6 +22,8 @@ interface Task {
   description?: string;
   status: 'TODO' | 'IN_PROGRESS' | 'DONE';
   position?: number;
+  startDate?: string | null;
+  dueDate?: string | null;
 }
 
 type StatusFilter = 'ALL' | 'TODO' | 'IN_PROGRESS' | 'DONE';
@@ -28,6 +32,18 @@ interface TaskFormValues {
   title: string;
   description?: string;
   status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
+  startDate?: Dayjs | null;
+  dueDate?: Dayjs | null;
+}
+
+function formatDate(dateStr?: string | null) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
 }
 
 function App() {
@@ -39,6 +55,7 @@ function App() {
   const [form] = Form.useForm<TaskFormValues>();
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
+  const isFiltering = searchText.trim() !== '' || statusFilter !== 'ALL';
 
   async function loadTasks(search = searchText, status = statusFilter) {
     setLoading(true);
@@ -136,12 +153,20 @@ function App() {
       const url = isEdit ? `/tasks/${editingTask.id}` : '/tasks';
       const method = isEdit ? 'PUT' : 'POST';
 
+      const payload = {
+        title: values.title,
+        description: values.description,
+        status: values.status,
+        startDate: values.startDate ? values.startDate.toISOString() : null,
+        dueDate: values.dueDate ? values.dueDate.toISOString() : null,
+      };
+
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(values),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
@@ -261,6 +286,26 @@ function App() {
       },
     },
     {
+      title: 'Bắt đầu',
+      dataIndex: 'startDate',
+      width: 120,
+      render: (date?: string | null) => (date ? formatDate(date) : <span style={{ color: '#bbb' }}>-</span>),
+    },
+    {
+      title: 'Hạn chót',
+      dataIndex: 'dueDate',
+      width: 160,
+      render: (date?: string | null, record?: Task) => {
+        if (!date) return <span style={{ color: '#bbb' }}>-</span>;
+        const overdue = record && record.status !== 'DONE' && new Date(date).getTime() < Date.now();
+        return (
+          <span style={{ color: overdue ? '#ff4d4f' : 'inherit', fontWeight: overdue ? 600 : 400 }}>
+            {formatDate(date)} {overdue ? '(Quá hạn)' : ''}
+          </span>
+        );
+      },
+    },
+    {
       title: 'Hành động',
       key: 'action',
       width: 180,
@@ -334,7 +379,7 @@ function App() {
       </div>
 
       <div style={{ marginBottom: 30 }}>
-        <KanbanBoard tasks={tasks} onReorder={handleReorder} />
+        <KanbanBoard tasks={tasks} onReorder={handleReorder} isFiltering={isFiltering} />
       </div>
 
       <Table
@@ -360,10 +405,16 @@ function App() {
                 title: editingTask.title,
                 description: editingTask.description,
                 status: editingTask.status,
+                startDate: editingTask.startDate ? dayjs(editingTask.startDate) : null,
+                dueDate: editingTask.dueDate ? dayjs(editingTask.dueDate) : null,
               });
             } else {
               form.resetFields();
-              form.setFieldsValue({ status: 'TODO' });
+              form.setFieldsValue({
+                status: 'TODO',
+                startDate: null,
+                dueDate: null,
+              });
             }
           }
         }}
@@ -410,6 +461,40 @@ function App() {
               showCount
             />
           </Form.Item>
+
+          <div style={{ display: 'flex', gap: 16 }}>
+            <Form.Item name="startDate" label="Ngày bắt đầu" style={{ flex: 1 }}>
+              <DatePicker
+                format="DD/MM/YYYY"
+                placeholder="Chọn ngày bắt đầu"
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="dueDate"
+              label="Hạn chót (Deadline)"
+              style={{ flex: 1 }}
+              dependencies={['startDate']}
+              rules={[
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    const start = getFieldValue('startDate');
+                    if (start && value && value.isBefore(start, 'day')) {
+                      return Promise.reject(new Error('Hạn chót phải sau hoặc cùng ngày bắt đầu'));
+                    }
+                    return Promise.resolve();
+                  },
+                }),
+              ]}
+            >
+              <DatePicker
+                format="DD/MM/YYYY"
+                placeholder="Chọn hạn chót"
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          </div>
 
           <Form.Item name="status" label="Trạng thái">
             <Select

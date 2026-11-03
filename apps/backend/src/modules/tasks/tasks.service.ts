@@ -105,24 +105,40 @@ export class TasksService {
       }
     }
 
+    let parsedStartDate: Date | null = null;
+    if (data.startDate) {
+      parsedStartDate = new Date(data.startDate);
+      if (isNaN(parsedStartDate.getTime())) {
+        throw new BadRequestException('Ngày bắt đầu không hợp lệ');
+      }
+    }
+
+    let parsedDueDate: Date | null = null;
+    if (data.dueDate) {
+      parsedDueDate = new Date(data.dueDate);
+      if (isNaN(parsedDueDate.getTime())) {
+        throw new BadRequestException('Hạn chót không hợp lệ');
+      }
+    }
+
+    if (parsedStartDate && parsedDueDate && parsedStartDate > parsedDueDate) {
+      throw new BadRequestException('Ngày bắt đầu không được lớn hơn hạn chót (deadline)');
+    }
 
     const initialStatus = data.status ? data.status : 'TODO';
 
-
-    const lastTaskInColumn = await this.prisma.task.findFirst({
+    const currentCount = await this.prisma.task.count({
       where: { status: initialStatus },
-      orderBy: { position: 'desc' },
     });
-
-    const nextPosition = lastTaskInColumn ? lastTaskInColumn.position + 1 : 0;
-
 
     const newTask = await this.prisma.task.create({
       data: {
         title: cleanTitle,
         description: cleanDescription,
         status: initialStatus,
-        position: nextPosition,
+        position: currentCount,
+        startDate: parsedStartDate,
+        dueDate: parsedDueDate,
       },
     });
 
@@ -131,26 +147,58 @@ export class TasksService {
 
 
   async update(id: number, data: UpdateTaskDto): Promise<Task> {
-
     const currentTask = await this.findOne(id);
-
 
     const hasTitle = data.title !== undefined;
     const hasDescription = data.description !== undefined;
     const hasStatus = data.status !== undefined;
+    const hasStartDate = data.startDate !== undefined;
+    const hasDueDate = data.dueDate !== undefined;
 
-    if (!hasTitle && !hasDescription && !hasStatus) {
-      throw new BadRequestException('Vui lòng cung cấp ít nhất một thông tin cần cập nhật (tiêu đề, mô tả hoặc trạng thái)');
+    if (!hasTitle && !hasDescription && !hasStatus && !hasStartDate && !hasDueDate) {
+      throw new BadRequestException('Vui lòng cung cấp ít nhất một thông tin cần cập nhật');
     }
-
 
     const updateData: {
       title?: string;
       description?: string | null;
       status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
       position?: number;
+      startDate?: Date | null;
+      dueDate?: Date | null;
     } = {};
 
+    let parsedStartDate: Date | null = null;
+    if (hasStartDate) {
+      if (data.startDate) {
+        parsedStartDate = new Date(data.startDate);
+        if (isNaN(parsedStartDate.getTime())) {
+          throw new BadRequestException('Ngày bắt đầu không hợp lệ');
+        }
+        updateData.startDate = parsedStartDate;
+      } else {
+        updateData.startDate = null;
+      }
+    }
+
+    let parsedDueDate: Date | null = null;
+    if (hasDueDate) {
+      if (data.dueDate) {
+        parsedDueDate = new Date(data.dueDate);
+        if (isNaN(parsedDueDate.getTime())) {
+          throw new BadRequestException('Hạn chót không hợp lệ');
+        }
+        updateData.dueDate = parsedDueDate;
+      } else {
+        updateData.dueDate = null;
+      }
+    }
+
+    const finalStartDate = hasStartDate ? parsedStartDate : currentTask.startDate;
+    const finalDueDate = hasDueDate ? parsedDueDate : currentTask.dueDate;
+    if (finalStartDate && finalDueDate && finalStartDate > finalDueDate) {
+      throw new BadRequestException('Ngày bắt đầu không được lớn hơn hạn chót (deadline)');
+    }
 
     if (hasTitle && data.title !== undefined) {
       const cleanTitle = data.title.trim();
@@ -158,7 +206,6 @@ export class TasksService {
       if (cleanTitle.length < 3) {
         throw new BadRequestException('Tiêu đề công việc mới phải có ít nhất 3 ký tự');
       }
-
 
       const duplicateTask = await this.prisma.task.findFirst({
         where: {
@@ -189,40 +236,41 @@ export class TasksService {
     if (isStatusChanged && data.status !== undefined) {
       const newStatus = data.status;
 
-
-      const lastTaskInNewCol = await this.prisma.task.findFirst({
+      const newColCount = await this.prisma.task.count({
         where: { status: newStatus },
-        orderBy: { position: 'desc' },
       });
-      const newPositionInNewCol = lastTaskInNewCol ? lastTaskInNewCol.position + 1 : 0;
 
       updateData.status = newStatus;
-      updateData.position = newPositionInNewCol;
+      updateData.position = newColCount;
 
+      const remainingOldTasks = await this.prisma.task.findMany({
+        where: {
+          status: currentTask.status,
+          NOT: { id: id },
+        },
+        orderBy: [
+          { position: 'asc' },
+          { createdAt: 'desc' },
+        ],
+      });
+
+      const reindexOldColOps = remainingOldTasks.map((t, index) =>
+        this.prisma.task.update({
+          where: { id: t.id },
+          data: { position: index },
+        }),
+      );
 
       const [updatedTask] = await this.prisma.$transaction([
         this.prisma.task.update({
           where: { id: id },
           data: updateData,
         }),
-        this.prisma.task.updateMany({
-          where: {
-            status: currentTask.status,
-            position: {
-              gt: currentTask.position,
-            },
-          },
-          data: {
-            position: {
-              decrement: 1,
-            },
-          },
-        }),
+        ...reindexOldColOps,
       ]);
 
       return updatedTask;
     }
-
 
     if (hasStatus && data.status !== undefined) {
       updateData.status = data.status;
@@ -238,27 +286,31 @@ export class TasksService {
 
 
   async remove(id: number): Promise<{ success: boolean; message: string; deletedTask: Task }> {
-
     const taskToDelete = await this.findOne(id);
 
+    const remainingTasks = await this.prisma.task.findMany({
+      where: {
+        status: taskToDelete.status,
+        NOT: { id: id },
+      },
+      orderBy: [
+        { position: 'asc' },
+        { createdAt: 'desc' },
+      ],
+    });
+
+    const reindexOps = remainingTasks.map((t, index) =>
+      this.prisma.task.update({
+        where: { id: t.id },
+        data: { position: index },
+      }),
+    );
 
     const [deletedTask] = await this.prisma.$transaction([
       this.prisma.task.delete({
         where: { id: id },
       }),
-      this.prisma.task.updateMany({
-        where: {
-          status: taskToDelete.status,
-          position: {
-            gt: taskToDelete.position,
-          },
-        },
-        data: {
-          position: {
-            decrement: 1,
-          },
-        },
-      }),
+      ...reindexOps,
     ]);
 
     return {
@@ -267,12 +319,16 @@ export class TasksService {
       deletedTask: deletedTask,
     };
   }
+
   async reorder(dto: ReorderTasksDto): Promise<{ success: boolean; message: string }> {
-   
     if (!dto.taskIds || dto.taskIds.length === 0) {
       throw new BadRequestException('Danh sách ID công việc không được để trống');
     }
 
+    const uniqueIdSet = new Set(dto.taskIds);
+    if (uniqueIdSet.size !== dto.taskIds.length) {
+      throw new BadRequestException('Danh sách ID công việc có phần tử trùng lặp');
+    }
 
     const tasksToUpdate = await this.prisma.task.findMany({
       where: {
@@ -284,42 +340,82 @@ export class TasksService {
       throw new NotFoundException('Một hoặc nhiều công việc trong danh sách không tồn tại');
     }
 
-    
-    const cleanupOldColumnOps = [];
     if (dto.status) {
-      for (const currentTask of tasksToUpdate) {
-        if (currentTask.status !== dto.status) {
-          cleanupOldColumnOps.push(
-            this.prisma.task.updateMany({
-              where: {
-                status: currentTask.status,
-                position: {
-                  gt: currentTask.position,
-                },
-              },
-              data: {
-                position: {
-                  decrement: 1,
-                },
-              },
+      const targetStatus = dto.status;
+
+      const oldColumns = new Set<'TODO' | 'IN_PROGRESS' | 'DONE'>();
+      for (const t of tasksToUpdate) {
+        if (t.status !== targetStatus) {
+          oldColumns.add(t.status);
+        }
+      }
+
+      const oldColReindexOps = [];
+      for (const oldCol of oldColumns) {
+        const remainingInOldCol = await this.prisma.task.findMany({
+          where: {
+            status: oldCol,
+            NOT: { id: { in: dto.taskIds } },
+          },
+          orderBy: [
+            { position: 'asc' },
+            { createdAt: 'desc' },
+          ],
+        });
+
+        for (let i = 0; i < remainingInOldCol.length; i++) {
+          oldColReindexOps.push(
+            this.prisma.task.update({
+              where: { id: remainingInOldCol[i].id },
+              data: { position: i },
             }),
           );
         }
       }
-    }
 
-    const reorderOps = dto.taskIds.map((taskId, newPosition) => {
-      return this.prisma.task.update({
-        where: { id: taskId },
-        data: {
-          position: newPosition,
-          ...(dto.status ? { status: dto.status } : {}),
+      const unmentionedInTarget = await this.prisma.task.findMany({
+        where: {
+          status: targetStatus,
+          NOT: { id: { in: dto.taskIds } },
         },
+        orderBy: [
+          { position: 'asc' },
+          { createdAt: 'desc' },
+        ],
       });
-    });
 
-   
-    await this.prisma.$transaction([...cleanupOldColumnOps, ...reorderOps]);
+      const unmentionedOps = unmentionedInTarget.map((t, idx) =>
+        this.prisma.task.update({
+          where: { id: t.id },
+          data: { position: dto.taskIds.length + idx },
+        }),
+      );
+
+      const targetOps = dto.taskIds.map((taskId, newPosition) =>
+        this.prisma.task.update({
+          where: { id: taskId },
+          data: {
+            position: newPosition,
+            status: targetStatus,
+          },
+        }),
+      );
+
+      await this.prisma.$transaction([
+        ...oldColReindexOps,
+        ...targetOps,
+        ...unmentionedOps,
+      ]);
+    } else {
+      const targetOps = dto.taskIds.map((taskId, newPosition) =>
+        this.prisma.task.update({
+          where: { id: taskId },
+          data: { position: newPosition },
+        }),
+      );
+
+      await this.prisma.$transaction(targetOps);
+    }
 
     return {
       success: true,

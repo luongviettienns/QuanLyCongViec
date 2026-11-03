@@ -21,8 +21,11 @@ model Task {
   
   position    Int        @default(0)
 
+  startDate   DateTime?
+  dueDate     DateTime?
+
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  @@index([status,position])
+  @@index([status, position])
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Card, Badge } from 'antd';
+import { Card, Badge, Alert, Tag } from 'antd';
 
 export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE';
 
@@ -9,11 +9,31 @@ export interface Task {
   description?: string;
   status: TaskStatus;
   position?: number;
+  startDate?: string | null;
+  dueDate?: string | null;
+}
+
+function formatDate(dateStr?: string | null) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+function checkIsOverdue(dueDateStr?: string | null, status?: TaskStatus) {
+  if (!dueDateStr || status === 'DONE') return false;
+  const due = new Date(dueDateStr);
+  if (isNaN(due.getTime())) return false;
+  return due.getTime() < Date.now();
 }
 
 interface Props {
   tasks: Task[];
   onReorder: (taskIds: number[], status?: TaskStatus) => Promise<void>;
+  isFiltering?: boolean;
 }
 
 const columns: { id: TaskStatus; title: string; color: string }[] = [
@@ -22,19 +42,20 @@ const columns: { id: TaskStatus; title: string; color: string }[] = [
   { id: 'DONE', title: 'Hoàn thành', color: '#52c41a' },
 ];
 
-// Hook useSortable thuần React 19: xác định vị trí và quản lý trạng thái kéo thả an toàn 100%
 function useSortable({
   id,
   index,
   group,
   isDragging,
   isOver,
+  disabled,
 }: {
   id: number;
   index: number;
   group: TaskStatus;
   isDragging: boolean;
   isOver: boolean;
+  disabled?: boolean;
 }) {
   return {
     id,
@@ -43,18 +64,18 @@ function useSortable({
     isDragging,
     isOver,
     dragProps: {
-      draggable: true,
+      draggable: !disabled,
     },
   };
 }
 
-// 1. Component Thẻ công việc (TaskCard)
 function TaskCard({
   task,
   index,
   columnId,
   isDragging,
   isOver,
+  isFiltering,
   onDragStart,
   onDragEnd,
   onDragEnter,
@@ -65,6 +86,7 @@ function TaskCard({
   columnId: TaskStatus;
   isDragging: boolean;
   isOver: boolean;
+  isFiltering?: boolean;
   onDragStart: (task: Task, index: number, columnId: TaskStatus) => void;
   onDragEnd: () => void;
   onDragEnter: (taskId: number) => void;
@@ -76,30 +98,39 @@ function TaskCard({
     group: columnId,
     isDragging,
     isOver,
+    disabled: isFiltering,
   });
 
   return (
     <div
       {...dragProps}
-      onDragStart={() => onDragStart(task, index, columnId)}
+      onDragStart={() => {
+        if (isFiltering) return;
+        onDragStart(task, index, columnId);
+      }}
       onDragEnd={onDragEnd}
       onDragOver={(e) => {
+        if (isFiltering) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
       }}
-      onDragEnter={() => onDragEnter(task.id)}
+      onDragEnter={() => {
+        if (isFiltering) return;
+        onDragEnter(task.id);
+      }}
       onDrop={(e) => {
+        if (isFiltering) return;
         e.preventDefault();
         e.stopPropagation();
         onDrop(task, index, columnId);
       }}
       style={{
         marginBottom: 10,
-        cursor: isDragging ? 'grabbing' : 'grab',
+        cursor: isFiltering ? 'default' : (isDragging ? 'grabbing' : 'grab'),
         opacity: isDragging ? 0.35 : 1,
         transition: 'all 0.15s ease',
-        borderTop: isOver && !isDragging ? '3px solid #1677ff' : '3px solid transparent',
-        paddingTop: isOver && !isDragging ? 4 : 0,
+        borderTop: isOver && !isDragging && !isFiltering ? '3px solid #1677ff' : '3px solid transparent',
+        paddingTop: isOver && !isDragging && !isFiltering ? 4 : 0,
       }}
     >
       <Card
@@ -128,18 +159,36 @@ function TaskCard({
             {task.description}
           </div>
         )}
+        {(task.startDate || task.dueDate) && (
+          <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {task.startDate && (
+              <Tag style={{ fontSize: 11, margin: 0 }}>
+                Từ: {formatDate(task.startDate)}
+              </Tag>
+            )}
+            {task.dueDate && (
+              <Tag
+                color={checkIsOverdue(task.dueDate, task.status) ? 'error' : 'default'}
+                style={{ fontSize: 11, margin: 0 }}
+              >
+                Hạn: {formatDate(task.dueDate)}
+                {checkIsOverdue(task.dueDate, task.status) ? ' (Quá hạn)' : ''}
+              </Tag>
+            )}
+          </div>
+        )}
       </Card>
     </div>
   );
 }
 
-// 2. Component Cột Kanban (KanbanColumn)
 function KanbanColumn({
   column,
   tasks,
   activeTaskId,
   hoverTaskId,
   hoverColumnId,
+  isFiltering,
   onDragStart,
   onDragEnd,
   onCardDragEnter,
@@ -152,6 +201,7 @@ function KanbanColumn({
   activeTaskId: number | null;
   hoverTaskId: number | null;
   hoverColumnId: TaskStatus | null;
+  isFiltering?: boolean;
   onDragStart: (task: Task, index: number, columnId: TaskStatus) => void;
   onDragEnd: () => void;
   onCardDragEnter: (taskId: number) => void;
@@ -163,16 +213,21 @@ function KanbanColumn({
     .filter((task) => task.status === column.id)
     .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-  const isColumnHovered = hoverColumnId === column.id && activeTaskId !== null;
+  const isColumnHovered = !isFiltering && hoverColumnId === column.id && activeTaskId !== null;
 
   return (
     <div
       onDragOver={(e) => {
+        if (isFiltering) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
       }}
-      onDragEnter={() => onColumnDragEnter(column.id)}
+      onDragEnter={() => {
+        if (isFiltering) return;
+        onColumnDragEnter(column.id);
+      }}
       onDrop={(e) => {
+        if (isFiltering) return;
         e.preventDefault();
         onColumnDrop(column.id);
       }}
@@ -211,6 +266,7 @@ function KanbanColumn({
             columnId={column.id}
             isDragging={activeTaskId === task.id}
             isOver={hoverTaskId === task.id}
+            isFiltering={isFiltering}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
             onDragEnter={onCardDragEnter}
@@ -230,7 +286,7 @@ function KanbanColumn({
               marginTop: 10,
             }}
           >
-            Kéo thả vào đây
+            {isFiltering ? 'Không có công việc phù hợp' : 'Kéo thả vào đây'}
           </div>
         )}
       </div>
@@ -238,18 +294,16 @@ function KanbanColumn({
   );
 }
 
-// 3. Component Bảng Kanban chính
-export default function KanbanBoard({ tasks, onReorder }: Props) {
-  // Quản lý trạng thái item đang được kéo
+export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [activeColumnId, setActiveColumnId] = useState<TaskStatus | null>(null);
   const [activeFromIndex, setActiveFromIndex] = useState<number | null>(null);
 
-  // Quản lý vị trí đích đang hover qua
   const [hoverTaskId, setHoverTaskId] = useState<number | null>(null);
   const [hoverColumnId, setHoverColumnId] = useState<TaskStatus | null>(null);
 
   function handleDragStart(task: Task, index: number, columnId: TaskStatus) {
+    if (isFiltering) return;
     setActiveTask(task);
     setActiveColumnId(columnId);
     setActiveFromIndex(index);
@@ -263,14 +317,16 @@ export default function KanbanBoard({ tasks, onReorder }: Props) {
     setHoverColumnId(null);
   }
 
-  // Xử lý khi thả lên một thẻ công việc cụ thể (ví dụ kéo từ vị trí 2 lên vị trí 0)
   function handleCardDrop(_targetTask: Task, targetIndex: number, targetColumn: TaskStatus) {
+    if (isFiltering) {
+      handleDragEnd();
+      return;
+    }
     if (!activeTask || activeFromIndex === null || !activeColumnId) {
       handleDragEnd();
       return;
     }
 
-    // TRƯỜNG HỢP 1: Kéo trong CÙNG MỘT CỘT (ví dụ từ vị trí 2 lên vị trí 0)
     if (activeColumnId === targetColumn) {
       const currentColumnTasks = tasks
         .filter((t) => t.status === activeColumnId)
@@ -281,22 +337,18 @@ export default function KanbanBoard({ tasks, onReorder }: Props) {
 
       if (fromIndex === toIndex) {
         handleDragEnd();
-        return; // Không đổi vị trí
+        return;
       }
 
-      // Tạo danh sách mới đã đảo vị trí: dời từ fromIndex sang toIndex
       const updatedList = [...currentColumnTasks];
       const [movedItem] = updatedList.splice(fromIndex, 1);
       updatedList.splice(toIndex, 0, movedItem);
 
-      // Lấy danh sách ID theo thứ tự mới: vị trí 0, 1, 2...
       const orderedIds = updatedList.map((t) => t.id);
 
-      // Gửi lên backend để lưu vào PostgreSQL
       void onReorder(orderedIds, activeColumnId);
     }
 
-    // TRƯỜNG HỢP 2: Kéo SANG CỘT KHÁC và chèn vào vị trí targetIndex
     if (activeColumnId !== targetColumn) {
       const targetColumnTasks = tasks
         .filter((t) => t.status === targetColumn)
@@ -310,27 +362,27 @@ export default function KanbanBoard({ tasks, onReorder }: Props) {
 
       const orderedIds = updatedTargetList.map((t) => t.id);
 
-      // Gửi danh sách ID và status mới lên backend
       void onReorder(orderedIds, targetColumn);
     }
 
     handleDragEnd();
   }
 
-  // Xử lý khi thả vào vùng trống của cột (thêm vào cuối cột)
   function handleColumnDrop(targetColumn: TaskStatus) {
+    if (isFiltering) {
+      handleDragEnd();
+      return;
+    }
     if (!activeTask || !activeColumnId) {
       handleDragEnd();
       return;
     }
 
-    // Nếu thả vào chính cột cũ mà không chỉ định thẻ nào -> giữ nguyên
     if (activeColumnId === targetColumn) {
       handleDragEnd();
       return;
     }
 
-    // Thả sang cột mới -> đưa vào cuối danh sách cột đó
     const targetColumnTasks = tasks
       .filter((t) => t.status === targetColumn)
       .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
@@ -347,29 +399,41 @@ export default function KanbanBoard({ tasks, onReorder }: Props) {
   }
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-        gap: 16,
-      }}
-    >
-      {columns.map((column) => (
-        <KanbanColumn
-          key={column.id}
-          column={column}
-          tasks={tasks}
-          activeTaskId={activeTask ? activeTask.id : null}
-          hoverTaskId={hoverTaskId}
-          hoverColumnId={hoverColumnId}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onCardDragEnter={(taskId) => setHoverTaskId(taskId)}
-          onColumnDragEnter={(columnId) => setHoverColumnId(columnId)}
-          onCardDrop={handleCardDrop}
-          onColumnDrop={handleColumnDrop}
+    <div>
+      {isFiltering && (
+        <Alert
+          type="info"
+          showIcon
+          message="Đang áp dụng bộ lọc dữ liệu"
+          description="Chức năng kéo thả sắp xếp tạm thời được khóa để bảo toàn thứ tự công việc của các thẻ đang bị ẩn."
+          style={{ marginBottom: 16 }}
         />
-      ))}
+      )}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+          gap: 16,
+        }}
+      >
+        {columns.map((column) => (
+          <KanbanColumn
+            key={column.id}
+            column={column}
+            tasks={tasks}
+            activeTaskId={activeTask ? activeTask.id : null}
+            hoverTaskId={hoverTaskId}
+            hoverColumnId={hoverColumnId}
+            isFiltering={isFiltering}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onCardDragEnter={(taskId) => setHoverTaskId(taskId)}
+            onColumnDragEnter={(columnId) => setHoverColumnId(columnId)}
+            onCardDrop={handleCardDrop}
+            onColumnDrop={handleColumnDrop}
+          />
+        ))}
+      </div>
     </div>
   );
 }
