@@ -4,6 +4,7 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { TaskModule } from './modules/tasks/task.module.js';
 import { CategoriesModule } from './modules/categories/categories.module.js';
+import { AuthModule } from './modules/auth/auth.module.js';
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
 @Module({
@@ -13,6 +14,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       appSecret: process.env.OBSERVE_APP_SECRET ?? 'YOUR_APP_SECRET',
       serviceId: 'my-nest-backend',
     }),
+    AuthModule,
     TaskModule,
     CategoriesModule,
   ],

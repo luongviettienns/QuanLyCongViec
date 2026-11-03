@@ -13,30 +13,41 @@ import { Category } from '@prisma/client';
 export class CategoriesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(): Promise<Category[]> {
-    const count = await this.prisma.category.count();
+  async findAll(userId = 1): Promise<Category[]> {
+    const count = await this.prisma.category.count({
+      where: {
+        OR: [{ userId: null }, { userId }],
+      },
+    });
+
     if (count === 0) {
       await this.prisma.category.createMany({
         data: [
-          { name: 'Công việc', color: '#1890ff' },
-          { name: 'Học tập', color: '#52c41a' },
-          { name: 'Cá nhân', color: '#fa8c16' },
+          { name: 'Công việc', color: '#1890ff', userId },
+          { name: 'Học tập', color: '#52c41a', userId },
+          { name: 'Cá nhân', color: '#fa8c16', userId },
         ],
       });
     }
 
     return this.prisma.category.findMany({
+      where: {
+        OR: [{ userId: null }, { userId }],
+      },
       orderBy: { createdAt: 'asc' },
     });
   }
 
-  async findOne(id: number): Promise<Category> {
+  async findOne(id: number, userId = 1): Promise<Category> {
     if (isNaN(id) || id <= 0) {
       throw new BadRequestException('Mã danh mục (ID) phải là số nguyên dương hợp lệ');
     }
 
-    const category = await this.prisma.category.findUnique({
-      where: { id },
+    const category = await this.prisma.category.findFirst({
+      where: {
+        id,
+        OR: [{ userId: null }, { userId }],
+      },
     });
 
     if (!category) {
@@ -46,7 +57,7 @@ export class CategoriesService {
     return category;
   }
 
-  async create(data: CreateCategoryDto): Promise<Category> {
+  async create(data: CreateCategoryDto, userId = 1): Promise<Category> {
     const cleanName = data.name.trim();
 
     if (cleanName.length < 2) {
@@ -55,6 +66,7 @@ export class CategoriesService {
 
     const existingCategory = await this.prisma.category.findFirst({
       where: {
+        userId,
         name: {
           equals: cleanName,
           mode: 'insensitive',
@@ -72,12 +84,13 @@ export class CategoriesService {
       data: {
         name: cleanName,
         color: cleanColor,
+        userId,
       },
     });
   }
 
-  async update(id: number, data: UpdateCategoryDto): Promise<Category> {
-    await this.findOne(id);
+  async update(id: number, data: UpdateCategoryDto, userId = 1): Promise<Category> {
+    await this.findOne(id, userId);
 
     const updateData: { name?: string; color?: string } = {};
 
@@ -89,6 +102,7 @@ export class CategoriesService {
 
       const duplicate = await this.prisma.category.findFirst({
         where: {
+          userId,
           name: {
             equals: cleanName,
             mode: 'insensitive',
@@ -114,8 +128,8 @@ export class CategoriesService {
     });
   }
 
-  async remove(id: number): Promise<{ success: boolean; message: string; deletedCategory: Category }> {
-    const categoryToDelete = await this.findOne(id);
+  async remove(id: number, userId = 1): Promise<{ success: boolean; message: string; deletedCategory: Category }> {
+    const categoryToDelete = await this.findOne(id, userId);
 
     const deletedCategory = await this.prisma.category.delete({
       where: { id },
