@@ -49,6 +49,9 @@ export class TasksService {
 
     return this.prisma.task.findMany({
       where,
+      include: {
+        category: true,
+      },
       orderBy: [
         { status: 'asc' },
         { position: 'asc' },
@@ -67,6 +70,9 @@ export class TasksService {
 
     const task = await this.prisma.task.findUnique({
       where: { id: id },
+      include: {
+        category: true,
+      },
     });
 
     if (!task) {
@@ -132,6 +138,15 @@ export class TasksService {
     const initialStatus = data.status ? data.status : 'TODO';
     const initialPriority = data.priority ? data.priority : 'MEDIUM';
 
+    if (data.categoryId) {
+      const category = await this.prisma.category.findUnique({
+        where: { id: data.categoryId },
+      });
+      if (!category) {
+        throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
+      }
+    }
+
     const currentCount = await this.prisma.task.count({
       where: { status: initialStatus },
     });
@@ -142,9 +157,13 @@ export class TasksService {
         description: cleanDescription,
         status: initialStatus,
         priority: initialPriority,
+        categoryId: data.categoryId ? data.categoryId : null,
         position: currentCount,
         startDate: parsedStartDate,
         dueDate: parsedDueDate,
+      },
+      include: {
+        category: true,
       },
     });
 
@@ -161,8 +180,9 @@ export class TasksService {
     const hasStartDate = data.startDate !== undefined;
     const hasDueDate = data.dueDate !== undefined;
     const hasPriority = data.priority !== undefined;
+    const hasCategory = data.categoryId !== undefined;
 
-    if (!hasTitle && !hasDescription && !hasStatus && !hasStartDate && !hasDueDate && !hasPriority) {
+    if (!hasTitle && !hasDescription && !hasStatus && !hasStartDate && !hasDueDate && !hasPriority && !hasCategory) {
       throw new BadRequestException('Vui lòng cung cấp ít nhất một thông tin cần cập nhật');
     }
 
@@ -174,6 +194,7 @@ export class TasksService {
       startDate?: Date | null;
       dueDate?: Date | null;
       priority?: 'LOW' | 'MEDIUM' | 'HIGH';
+      categoryId?: number | null;
     } = {};
 
     let parsedStartDate: Date | null = null;
@@ -243,6 +264,20 @@ export class TasksService {
       updateData.priority = data.priority;
     }
 
+    if (hasCategory) {
+      if (data.categoryId) {
+        const category = await this.prisma.category.findUnique({
+          where: { id: data.categoryId },
+        });
+        if (!category) {
+          throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
+        }
+        updateData.categoryId = data.categoryId;
+      } else {
+        updateData.categoryId = null;
+      }
+    }
+
     const isStatusChanged = hasStatus && data.status !== undefined && data.status !== currentTask.status;
 
     if (isStatusChanged && data.status !== undefined) {
@@ -277,6 +312,9 @@ export class TasksService {
         this.prisma.task.update({
           where: { id: id },
           data: updateData,
+          include: {
+            category: true,
+          },
         }),
         ...reindexOldColOps,
       ]);
@@ -291,6 +329,9 @@ export class TasksService {
     const updatedTask = await this.prisma.task.update({
       where: { id: id },
       data: updateData,
+      include: {
+        category: true,
+      },
     });
 
     return updatedTask;

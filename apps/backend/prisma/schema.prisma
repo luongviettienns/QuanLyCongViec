@@ -17,6 +17,16 @@ enum TaskPriority{
   MEDIUM
   HIGH
 }
+model Category {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  color     String   @default("#1890ff")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks     Task[]
+}
+
 model Task {
   id          Int        @id @default(autoincrement())
   title       String     @unique
@@ -27,6 +37,9 @@ model Task {
 
   startDate   DateTime?
   dueDate     DateTime?
+
+  categoryId  Int?
+  category    Category?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt

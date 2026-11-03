@@ -6,6 +6,7 @@ import {
   MinLength,
   MaxLength,
   IsISO8601,
+  IsInt,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -66,4 +67,12 @@ export class CreateTaskDto {
     message: 'Mức độ ưu tiên phải là một trong các giá trị: LOW, MEDIUM, HIGH',
   })
   priority?: 'LOW' | 'MEDIUM' | 'HIGH';
+
+  @ApiPropertyOptional({
+    description: 'Mã danh mục của công việc (ID)',
+    example: 1,
+  })
+  @IsOptional()
+  @IsInt({ message: 'Mã danh mục phải là số nguyên' })
+  categoryId?: number;
 }

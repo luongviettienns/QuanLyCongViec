@@ -1,20 +1,9 @@
+import { useState } from 'react';
 import { Card, Badge, Alert, Tag } from 'antd';
-import { DragDropProvider, useDroppable } from '@dnd-kit/react';
+import { DragDropProvider, useDroppable, DragOverlay } from '@dnd-kit/react';
 import { useSortable } from '@dnd-kit/react/sortable';
-import { Feedback } from '@dnd-kit/dom';
-
-export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE';
-
-export interface Task {
-  id: number;
-  title: string;
-  description?: string;
-  status: TaskStatus;
-  position?: number;
-  startDate?: string | null;
-  dueDate?: string | null;
-  priority?: 'LOW' | 'MEDIUM' | 'HIGH';
-}
+import { PointerSensor, PointerActivationConstraints, KeyboardSensor } from '@dnd-kit/dom';
+import type { Task, TaskStatus } from '../types/task.types';
 
 interface Props {
   tasks: Task[];
@@ -62,7 +51,7 @@ function TaskCard({
   columnId: TaskStatus;
   isFiltering?: boolean;
 }) {
-  const { ref, isDragging } = useSortable({
+  const { ref, isDragging, isDropTarget } = useSortable({
     id: `task-${task.id}`,
     index,
     group: columnId,
@@ -78,6 +67,8 @@ function TaskCard({
         marginBottom: 10,
         cursor: isFiltering ? 'default' : (isDragging ? 'grabbing' : 'grab'),
         opacity: isDragging ? 0.35 : 1,
+        touchAction: isFiltering ? 'auto' : 'none',
+        borderTop: isDropTarget && !isDragging ? '3px solid #1677ff' : '3px solid transparent',
         transition: 'opacity 0.15s ease',
       }}
     >
@@ -94,11 +85,18 @@ function TaskCard({
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
           <div style={{ fontWeight: 600, color: '#333', flex: 1 }}>{task.title}</div>
-          {task.priority && priorityMap[task.priority] && (
-            <Tag color={priorityMap[task.priority].color} style={{ fontSize: 11, margin: 0, flexShrink: 0 }}>
-              {priorityMap[task.priority].label}
-            </Tag>
-          )}
+          <div style={{ display: 'flex', gap: 4, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {task.category && (
+              <Tag color={task.category.color} style={{ fontSize: 11, margin: 0 }}>
+                {task.category.name}
+              </Tag>
+            )}
+            {task.priority && priorityMap[task.priority] && (
+              <Tag color={priorityMap[task.priority].color} style={{ fontSize: 11, margin: 0 }}>
+                {priorityMap[task.priority].label}
+              </Tag>
+            )}
+          </div>
         </div>
         {task.description && (
           <div
@@ -217,6 +215,8 @@ function KanbanColumn({
 }
 
 export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
+
   return (
     <div translate="no">
       {isFiltering && (
@@ -229,8 +229,25 @@ export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
         />
       )}
       <DragDropProvider
-        plugins={[Feedback.configure({ feedback: 'none', dropAnimation: null })]}
+        sensors={[
+          PointerSensor.configure({
+            activationConstraints: () => [
+              new PointerActivationConstraints.Distance({ value: 3 }),
+            ],
+          }),
+          KeyboardSensor,
+        ]}
+        onDragStart={(event) => {
+          if (isFiltering) return;
+          const sourceIdStr = String(event.operation.source?.id);
+          if (sourceIdStr.startsWith('task-')) {
+            const sourceTaskId = Number(sourceIdStr.replace('task-', ''));
+            const sourceTask = tasks.find((t) => t.id === sourceTaskId);
+            setActiveTask(sourceTask || null);
+          }
+        }}
         onDragEnd={(event) => {
+          setActiveTask(null);
           if (isFiltering || event.canceled) return;
 
           const { source, target } = event.operation;
@@ -330,6 +347,51 @@ export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
             />
           ))}
         </div>
+
+        <DragOverlay dropAnimation={null}>
+          {activeTask ? (
+            <Card
+              size="small"
+              style={{
+                boxShadow: '0 12px 28px rgba(0,0,0,0.22)',
+                borderRadius: 6,
+                background: '#ffffff',
+                width: 280,
+                cursor: 'grabbing',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                <div style={{ fontWeight: 600, color: '#333', flex: 1 }}>{activeTask.title}</div>
+                <div style={{ display: 'flex', gap: 4, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {activeTask.category && (
+                    <Tag color={activeTask.category.color} style={{ fontSize: 11, margin: 0 }}>
+                      {activeTask.category.name}
+                    </Tag>
+                  )}
+                  {activeTask.priority && priorityMap[activeTask.priority] && (
+                    <Tag color={priorityMap[activeTask.priority].color} style={{ fontSize: 11, margin: 0 }}>
+                      {priorityMap[activeTask.priority].label}
+                    </Tag>
+                  )}
+                </div>
+              </div>
+              {activeTask.description && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: '#666',
+                    marginTop: 4,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {activeTask.description}
+                </div>
+              )}
+            </Card>
+          ) : null}
+        </DragOverlay>
       </DragDropProvider>
     </div>
   );
