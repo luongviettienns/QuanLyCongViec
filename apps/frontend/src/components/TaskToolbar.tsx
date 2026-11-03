@@ -40,6 +40,13 @@ export default function TaskToolbar({
     onSearch(val);
   }
 
+  function handleStatusChange(status: StatusFilter) {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+    onStatusChange(status);
+  }
+
   function handleResetClick() {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
@@ -75,7 +82,7 @@ export default function TaskToolbar({
       />
       <Select<StatusFilter>
         value={statusFilter}
-        onChange={onStatusChange}
+        onChange={handleStatusChange}
         style={{ width: 180 }}
         options={[
           { value: 'ALL', label: 'Tất cả trạng thái' },

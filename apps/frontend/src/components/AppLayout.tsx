@@ -1,13 +1,15 @@
 import { useState, type ReactNode } from 'react';
-import { Layout, Menu, Button, Space, Avatar, Typography } from 'antd';
+import { Layout, Menu, Button, Space, Avatar, Typography, Dropdown, type MenuProps } from 'antd';
 import {
   CheckSquareOutlined,
   ReloadOutlined,
   PlusOutlined,
-  UserOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  LogoutOutlined,
+  LoginOutlined,
 } from '@ant-design/icons';
+import { useAuth } from '../hooks/useAuth';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -16,6 +18,7 @@ interface AppLayoutProps {
   children: ReactNode;
   onReload: () => void;
   onCreateTask: () => void;
+  onOpenAuth: () => void;
   loading?: boolean;
 }
 
@@ -23,15 +26,43 @@ export default function AppLayout({
   children,
   onReload,
   onCreateTask,
+  onOpenAuth,
   loading = false,
 }: AppLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const { user, logout } = useAuth();
 
   const menuItems = [
     {
       key: 'tasks',
       icon: <CheckSquareOutlined />,
       label: 'Công việc',
+    },
+  ];
+
+  const userMenuItems: MenuProps['items'] = [
+    {
+      key: 'user-info',
+      disabled: true,
+      label: (
+        <div style={{ padding: '4px 0' }}>
+          <div style={{ fontWeight: 600, color: '#1f1f1f' }}>{user?.name || 'Tài khoản'}</div>
+          <div style={{ fontSize: 12, color: '#8c8c8c' }}>{user?.email}</div>
+        </div>
+      ),
+    },
+    {
+      type: 'divider',
+    },
+    {
+      key: 'logout',
+      icon: <LogoutOutlined />,
+      danger: true,
+      label: 'Đăng xuất',
+      onClick: () => {
+        logout();
+        onReload();
+      },
     },
   ];
 
@@ -139,24 +170,29 @@ export default function AppLayout({
           </Space>
 
           <Space size="middle">
-            <Button
-              icon={<ReloadOutlined />}
-              onClick={onReload}
-              loading={loading}
-            >
+            <Button icon={<ReloadOutlined />} onClick={onReload} loading={loading}>
               Tải lại
             </Button>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={onCreateTask}
-            >
+            <Button type="primary" icon={<PlusOutlined />} onClick={onCreateTask}>
               Thêm công việc
             </Button>
-            <Avatar
-              style={{ backgroundColor: '#1677ff', verticalAlign: 'middle' }}
-              icon={<UserOutlined />}
-            />
+
+            {user ? (
+              <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click']}>
+                <Space style={{ cursor: 'pointer' }}>
+                  <Avatar style={{ backgroundColor: '#1677ff' }}>
+                    {user.name ? user.name.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
+                  </Avatar>
+                  <Text strong style={{ maxWidth: 140 }} ellipsis>
+                    {user.name || user.email}
+                  </Text>
+                </Space>
+              </Dropdown>
+            ) : (
+              <Button icon={<LoginOutlined />} onClick={onOpenAuth}>
+                Đăng nhập
+              </Button>
+            )}
           </Space>
         </Header>
 
@@ -167,9 +203,7 @@ export default function AppLayout({
             minHeight: 'calc(100vh - 64px)',
           }}
         >
-          <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-            {children}
-          </div>
+          <div style={{ maxWidth: 1200, margin: '0 auto' }}>{children}</div>
         </Content>
       </Layout>
     </Layout>

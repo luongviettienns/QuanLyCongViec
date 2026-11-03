@@ -5,6 +5,7 @@ import type {
   UpdateTaskPayload,
   TaskStatus,
 } from '../types/task.types';
+import { getAuthHeaders } from './auth.api';
 
 async function parseError(response: Response, defaultMessage: string): Promise<Error> {
   try {
@@ -36,7 +37,12 @@ export async function getTasks(
 
   const queryString = searchParams.toString();
   const url = queryString ? `/tasks?${queryString}` : '/tasks';
-  const response = await fetch(url, { signal });
+  const response = await fetch(url, {
+    headers: {
+      ...getAuthHeaders(),
+    },
+    signal,
+  });
 
   if (!response.ok) {
     throw await parseError(response, 'Không thể tải danh sách công việc');
@@ -46,7 +52,12 @@ export async function getTasks(
 }
 
 export async function getCategories(signal?: AbortSignal): Promise<Category[]> {
-  const response = await fetch('/categories', { signal });
+  const response = await fetch('/categories', {
+    headers: {
+      ...getAuthHeaders(),
+    },
+    signal,
+  });
 
   if (!response.ok) {
     throw await parseError(response, 'Không thể tải danh mục');
@@ -60,6 +71,7 @@ export async function createTask(payload: CreateTaskPayload): Promise<Task> {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...getAuthHeaders(),
     },
     body: JSON.stringify(payload),
   });
@@ -76,6 +88,7 @@ export async function updateTask(id: number, payload: UpdateTaskPayload): Promis
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
+      ...getAuthHeaders(),
     },
     body: JSON.stringify(payload),
   });
@@ -90,6 +103,9 @@ export async function updateTask(id: number, payload: UpdateTaskPayload): Promis
 export async function deleteTask(id: number): Promise<void> {
   const response = await fetch(`/tasks/${id}`, {
     method: 'DELETE',
+    headers: {
+      ...getAuthHeaders(),
+    },
   });
 
   if (!response.ok) {
@@ -102,6 +118,7 @@ export async function reorderTasks(taskIds: number[], status?: TaskStatus): Prom
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
+      ...getAuthHeaders(),
     },
     body: JSON.stringify({ taskIds, status }),
   });

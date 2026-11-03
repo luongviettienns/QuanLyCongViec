@@ -64,8 +64,7 @@ export function useTasks() {
 
   useEffect(() => {
     async function init() {
-      await fetchCategories();
-      await fetchTasks('', 'ALL');
+      await Promise.all([fetchCategories(), fetchTasks('', 'ALL')]);
     }
 
     void init();

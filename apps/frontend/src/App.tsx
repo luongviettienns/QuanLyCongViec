@@ -4,10 +4,12 @@ import KanbanBoard from './components/KanbanBoard';
 import TaskToolbar from './components/TaskToolbar';
 import TaskTable from './components/TaskTable';
 import TaskFormModal from './components/TaskFormModal';
+import AuthModal from './components/AuthModal';
+import { AuthProvider } from './context/AuthContext';
 import { useTasks } from './hooks/useTasks';
 import type { Task } from './types/task.types';
 
-function App() {
+function TaskApp() {
   const {
     tasks,
     categories,
@@ -29,6 +31,8 @@ function App() {
     task: null,
   });
 
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+
   function handleOpenCreate() {
     setModalState({ open: true, task: null });
   }
@@ -45,6 +49,7 @@ function App() {
     <AppLayout
       onReload={() => void refetch()}
       onCreateTask={handleOpenCreate}
+      onOpenAuth={() => setAuthModalOpen(true)}
       loading={loading}
     >
       <TaskToolbar
@@ -74,7 +79,21 @@ function App() {
         onClose={handleCloseModal}
         onSuccess={refetch}
       />
+
+      <AuthModal
+        open={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        onSuccess={() => void refetch()}
+      />
     </AppLayout>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <TaskApp />
+    </AuthProvider>
   );
 }
 
