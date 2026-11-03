@@ -20,4 +20,14 @@ export class FilterTasksDto {
     message: 'Trạng thái lọc phải là TODO, IN_PROGRESS hoặc DONE',
   })
   status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
+
+  @ApiPropertyOptional({
+    description: 'Mức độ ưu tiên cần lọc',
+    enum: ['LOW', 'MEDIUM', 'HIGH'],
+  })
+  @IsOptional()
+  @IsIn(['LOW', 'MEDIUM', 'HIGH'], {
+    message: 'Mức độ ưu tiên lọc phải là LOW, MEDIUM hoặc HIGH',
+  })
+  priority?: 'LOW' | 'MEDIUM' | 'HIGH';
 }

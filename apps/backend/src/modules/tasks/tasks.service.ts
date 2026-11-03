@@ -43,6 +43,10 @@ export class TasksService {
       where.status = query.status;
     }
 
+    if (query?.priority) {
+      where.priority = query.priority;
+    }
+
     return this.prisma.task.findMany({
       where,
       orderBy: [
@@ -126,6 +130,7 @@ export class TasksService {
     }
 
     const initialStatus = data.status ? data.status : 'TODO';
+    const initialPriority = data.priority ? data.priority : 'MEDIUM';
 
     const currentCount = await this.prisma.task.count({
       where: { status: initialStatus },
@@ -136,6 +141,7 @@ export class TasksService {
         title: cleanTitle,
         description: cleanDescription,
         status: initialStatus,
+        priority: initialPriority,
         position: currentCount,
         startDate: parsedStartDate,
         dueDate: parsedDueDate,
@@ -154,8 +160,9 @@ export class TasksService {
     const hasStatus = data.status !== undefined;
     const hasStartDate = data.startDate !== undefined;
     const hasDueDate = data.dueDate !== undefined;
+    const hasPriority = data.priority !== undefined;
 
-    if (!hasTitle && !hasDescription && !hasStatus && !hasStartDate && !hasDueDate) {
+    if (!hasTitle && !hasDescription && !hasStatus && !hasStartDate && !hasDueDate && !hasPriority) {
       throw new BadRequestException('Vui lòng cung cấp ít nhất một thông tin cần cập nhật');
     }
 
@@ -166,6 +173,7 @@ export class TasksService {
       position?: number;
       startDate?: Date | null;
       dueDate?: Date | null;
+      priority?: 'LOW' | 'MEDIUM' | 'HIGH';
     } = {};
 
     let parsedStartDate: Date | null = null;
@@ -229,6 +237,10 @@ export class TasksService {
     if (hasDescription && data.description !== undefined) {
       const trimmedDesc = data.description.trim();
       updateData.description = trimmedDesc.length > 0 ? trimmedDesc : null;
+    }
+
+    if (hasPriority && data.priority !== undefined) {
+      updateData.priority = data.priority;
     }
 
     const isStatusChanged = hasStatus && data.status !== undefined && data.status !== currentTask.status;
@@ -400,7 +412,7 @@ export class TasksService {
           },
         }),
       );
-
+        
       await this.prisma.$transaction([
         ...oldColReindexOps,
         ...targetOps,

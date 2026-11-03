@@ -21,6 +21,7 @@ interface Task {
   title: string;
   description?: string;
   status: 'TODO' | 'IN_PROGRESS' | 'DONE';
+  priority?: 'LOW' | 'MEDIUM' | 'HIGH';
   position?: number;
   startDate?: string | null;
   dueDate?: string | null;
@@ -32,6 +33,7 @@ interface TaskFormValues {
   title: string;
   description?: string;
   status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
+  priority?: 'LOW' | 'MEDIUM' | 'HIGH';
   startDate?: Dayjs | null;
   dueDate?: Dayjs | null;
 }
@@ -137,11 +139,24 @@ function App() {
 
   function handleOpenCreate() {
     setEditingTask(null);
+    form.resetFields();
+    form.setFieldsValue({
+      status: 'TODO',
+      priority: 'MEDIUM',
+    });
     setOpen(true);
   }
 
   function handleOpenEdit(task: Task) {
     setEditingTask(task);
+    form.setFieldsValue({
+      title: task.title,
+      description: task.description,
+      status: task.status,
+      priority: task.priority || 'MEDIUM',
+      startDate: task.startDate ? dayjs(task.startDate) : null,
+      dueDate: task.dueDate ? dayjs(task.dueDate) : null,
+    });
     setOpen(true);
   }
 
@@ -157,6 +172,7 @@ function App() {
         title: values.title,
         description: values.description,
         status: values.status,
+        priority: values.priority || 'MEDIUM',
         startDate: values.startDate ? values.startDate.toISOString() : null,
         dueDate: values.dueDate ? values.dueDate.toISOString() : null,
       };
@@ -283,6 +299,21 @@ function App() {
       render: (status: Task['status']) => {
         const color = status === 'DONE' ? 'green' : status === 'IN_PROGRESS' ? 'blue' : 'orange';
         return <Tag color={color}>{status}</Tag>;
+      },
+    },
+    {
+      title: 'Độ ưu tiên',
+      dataIndex: 'priority',
+      width: 130,
+      render: (priority?: Task['priority']) => {
+        const val = priority || 'MEDIUM';
+        const config: Record<string, { color: string; label: string }> = {
+          HIGH: { color: 'red', label: 'Cao' },
+          MEDIUM: { color: 'orange', label: 'Trung bình' },
+          LOW: { color: 'blue', label: 'Thấp' },
+        };
+        const item = config[val] || { color: 'default', label: val };
+        return <Tag color={item.color}>{item.label}</Tag>;
       },
     },
     {
@@ -496,15 +527,27 @@ function App() {
             </Form.Item>
           </div>
 
-          <Form.Item name="status" label="Trạng thái">
-            <Select
-              options={[
-                { value: 'TODO', label: 'TODO' },
-                { value: 'IN_PROGRESS', label: 'IN_PROGRESS' },
-                { value: 'DONE', label: 'DONE' },
-              ]}
-            />
-          </Form.Item>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <Form.Item name="status" label="Trạng thái" style={{ flex: 1 }}>
+              <Select
+                options={[
+                  { value: 'TODO', label: 'TODO' },
+                  { value: 'IN_PROGRESS', label: 'IN_PROGRESS' },
+                  { value: 'DONE', label: 'DONE' },
+                ]}
+              />
+            </Form.Item>
+
+            <Form.Item name="priority" label="Độ ưu tiên" style={{ flex: 1 }}>
+              <Select
+                options={[
+                  { value: 'LOW', label: 'Thấp (LOW)' },
+                  { value: 'MEDIUM', label: 'Trung bình (MEDIUM)' },
+                  { value: 'HIGH', label: 'Cao (HIGH)' },
+                ]}
+              />
+            </Form.Item>
+          </div>
         </Form>
       </Modal>
     </div>

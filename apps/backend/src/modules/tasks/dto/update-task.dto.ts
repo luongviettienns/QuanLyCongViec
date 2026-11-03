@@ -53,4 +53,14 @@ export class UpdateTaskDto {
   @IsOptional()
   @IsISO8601({}, { message: 'Hạn chót phải là định dạng ngày hợp lệ (ISO8601)' })
   dueDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Mức độ ưu tiên mới của công việc',
+    enum: ['LOW', 'MEDIUM', 'HIGH'],
+  })
+  @IsOptional()
+  @IsIn(['LOW', 'MEDIUM', 'HIGH'], {
+    message: 'Mức độ ưu tiên phải là một trong các giá trị: LOW, MEDIUM, HIGH',
+  })
+  priority?: 'LOW' | 'MEDIUM' | 'HIGH';
 }

@@ -1,5 +1,7 @@
-import { useState } from 'react';
 import { Card, Badge, Alert, Tag } from 'antd';
+import { DragDropProvider, useDroppable } from '@dnd-kit/react';
+import { useSortable } from '@dnd-kit/react/sortable';
+import { Feedback } from '@dnd-kit/dom';
 
 export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE';
 
@@ -11,7 +13,26 @@ export interface Task {
   position?: number;
   startDate?: string | null;
   dueDate?: string | null;
+  priority?: 'LOW' | 'MEDIUM' | 'HIGH';
 }
+
+interface Props {
+  tasks: Task[];
+  onReorder: (taskIds: number[], status?: TaskStatus) => Promise<void>;
+  isFiltering?: boolean;
+}
+
+const columns: { id: TaskStatus; title: string; color: string }[] = [
+  { id: 'TODO', title: 'Cần làm', color: '#fa8c16' },
+  { id: 'IN_PROGRESS', title: 'Đang làm', color: '#1890ff' },
+  { id: 'DONE', title: 'Hoàn thành', color: '#52c41a' },
+];
+
+const priorityMap: Record<string, { color: string; label: string }> = {
+  HIGH: { color: 'red', label: 'Cao' },
+  MEDIUM: { color: 'orange', label: 'Trung bình' },
+  LOW: { color: 'blue', label: 'Thấp' },
+};
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '';
@@ -30,107 +51,34 @@ function checkIsOverdue(dueDateStr?: string | null, status?: TaskStatus) {
   return due.getTime() < Date.now();
 }
 
-interface Props {
-  tasks: Task[];
-  onReorder: (taskIds: number[], status?: TaskStatus) => Promise<void>;
-  isFiltering?: boolean;
-}
-
-const columns: { id: TaskStatus; title: string; color: string }[] = [
-  { id: 'TODO', title: 'Cần làm', color: '#fa8c16' },
-  { id: 'IN_PROGRESS', title: 'Đang làm', color: '#1890ff' },
-  { id: 'DONE', title: 'Hoàn thành', color: '#52c41a' },
-];
-
-function useSortable({
-  id,
-  index,
-  group,
-  isDragging,
-  isOver,
-  disabled,
-}: {
-  id: number;
-  index: number;
-  group: TaskStatus;
-  isDragging: boolean;
-  isOver: boolean;
-  disabled?: boolean;
-}) {
-  return {
-    id,
-    index,
-    group,
-    isDragging,
-    isOver,
-    dragProps: {
-      draggable: !disabled,
-    },
-  };
-}
-
 function TaskCard({
   task,
   index,
   columnId,
-  isDragging,
-  isOver,
   isFiltering,
-  onDragStart,
-  onDragEnd,
-  onDragEnter,
-  onDrop,
 }: {
   task: Task;
   index: number;
   columnId: TaskStatus;
-  isDragging: boolean;
-  isOver: boolean;
   isFiltering?: boolean;
-  onDragStart: (task: Task, index: number, columnId: TaskStatus) => void;
-  onDragEnd: () => void;
-  onDragEnter: (taskId: number) => void;
-  onDrop: (targetTask: Task, targetIndex: number, targetColumn: TaskStatus) => void;
 }) {
-  const { dragProps } = useSortable({
-    id: task.id,
+  const { ref, isDragging } = useSortable({
+    id: `task-${task.id}`,
     index,
     group: columnId,
-    isDragging,
-    isOver,
     disabled: isFiltering,
+    plugins: [],
+    transition: null,
   });
 
   return (
     <div
-      {...dragProps}
-      onDragStart={() => {
-        if (isFiltering) return;
-        onDragStart(task, index, columnId);
-      }}
-      onDragEnd={onDragEnd}
-      onDragOver={(e) => {
-        if (isFiltering) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-      }}
-      onDragEnter={() => {
-        if (isFiltering) return;
-        onDragEnter(task.id);
-      }}
-      onDrop={(e) => {
-        if (isFiltering) return;
-        e.preventDefault();
-        e.stopPropagation();
-        onDrop(task, index, columnId);
-      }}
+      ref={ref}
       style={{
         marginBottom: 10,
         cursor: isFiltering ? 'default' : (isDragging ? 'grabbing' : 'grab'),
         opacity: isDragging ? 0.35 : 1,
-        transition: 'all 0.15s ease',
-        borderTop: isOver && !isDragging && !isFiltering ? '3px solid #1677ff' : '3px solid transparent',
-        paddingTop: isOver && !isDragging && !isFiltering ? 4 : 0,
+        transition: 'opacity 0.15s ease',
       }}
     >
       <Card
@@ -144,7 +92,14 @@ function TaskCard({
           userSelect: 'none',
         }}
       >
-        <div style={{ fontWeight: 600, color: '#333' }}>{task.title}</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+          <div style={{ fontWeight: 600, color: '#333', flex: 1 }}>{task.title}</div>
+          {task.priority && priorityMap[task.priority] && (
+            <Tag color={priorityMap[task.priority].color} style={{ fontSize: 11, margin: 0, flexShrink: 0 }}>
+              {priorityMap[task.priority].label}
+            </Tag>
+          )}
+        </div>
         {task.description && (
           <div
             style={{
@@ -185,58 +140,30 @@ function TaskCard({
 function KanbanColumn({
   column,
   tasks,
-  activeTaskId,
-  hoverTaskId,
-  hoverColumnId,
   isFiltering,
-  onDragStart,
-  onDragEnd,
-  onCardDragEnter,
-  onColumnDragEnter,
-  onCardDrop,
-  onColumnDrop,
 }: {
   column: (typeof columns)[number];
   tasks: Task[];
-  activeTaskId: number | null;
-  hoverTaskId: number | null;
-  hoverColumnId: TaskStatus | null;
   isFiltering?: boolean;
-  onDragStart: (task: Task, index: number, columnId: TaskStatus) => void;
-  onDragEnd: () => void;
-  onCardDragEnter: (taskId: number) => void;
-  onColumnDragEnter: (columnId: TaskStatus) => void;
-  onCardDrop: (targetTask: Task, targetIndex: number, targetColumn: TaskStatus) => void;
-  onColumnDrop: (columnId: TaskStatus) => void;
 }) {
+  const { ref, isDropTarget } = useDroppable({
+    id: `column-${column.id}`,
+    disabled: isFiltering,
+  });
+
   const columnTasks = tasks
     .filter((task) => task.status === column.id)
     .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-  const isColumnHovered = !isFiltering && hoverColumnId === column.id && activeTaskId !== null;
-
   return (
     <div
-      onDragOver={(e) => {
-        if (isFiltering) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-      }}
-      onDragEnter={() => {
-        if (isFiltering) return;
-        onColumnDragEnter(column.id);
-      }}
-      onDrop={(e) => {
-        if (isFiltering) return;
-        e.preventDefault();
-        onColumnDrop(column.id);
-      }}
+      ref={ref}
       style={{
-        background: isColumnHovered ? '#e6f4ff' : '#f8f9fa',
+        background: isDropTarget ? '#e6f4ff' : '#f8f9fa',
         padding: 16,
         borderRadius: 8,
         minHeight: 320,
-        border: isColumnHovered ? '2px dashed #1677ff' : '2px solid #e9ecef',
+        border: isDropTarget ? '2px dashed #1677ff' : '2px solid #e9ecef',
         transition: 'all 0.2s ease',
         display: 'flex',
         flexDirection: 'column',
@@ -258,24 +185,19 @@ function KanbanColumn({
       </div>
 
       <div style={{ flex: 1 }}>
-        {columnTasks.map((task, index) => (
-          <TaskCard
-            key={task.id}
-            task={task}
-            index={index}
-            columnId={column.id}
-            isDragging={activeTaskId === task.id}
-            isOver={hoverTaskId === task.id}
-            isFiltering={isFiltering}
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            onDragEnter={onCardDragEnter}
-            onDrop={onCardDrop}
-          />
-        ))}
-
-        {columnTasks.length === 0 && (
+        {columnTasks.length > 0 ? (
+          columnTasks.map((task, index) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              index={index}
+              columnId={column.id}
+              isFiltering={isFiltering}
+            />
+          ))
+        ) : (
           <div
+            key="empty-placeholder"
             style={{
               textAlign: 'center',
               color: '#adb5bd',
@@ -295,111 +217,8 @@ function KanbanColumn({
 }
 
 export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
-  const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [activeColumnId, setActiveColumnId] = useState<TaskStatus | null>(null);
-  const [activeFromIndex, setActiveFromIndex] = useState<number | null>(null);
-
-  const [hoverTaskId, setHoverTaskId] = useState<number | null>(null);
-  const [hoverColumnId, setHoverColumnId] = useState<TaskStatus | null>(null);
-
-  function handleDragStart(task: Task, index: number, columnId: TaskStatus) {
-    if (isFiltering) return;
-    setActiveTask(task);
-    setActiveColumnId(columnId);
-    setActiveFromIndex(index);
-  }
-
-  function handleDragEnd() {
-    setActiveTask(null);
-    setActiveColumnId(null);
-    setActiveFromIndex(null);
-    setHoverTaskId(null);
-    setHoverColumnId(null);
-  }
-
-  function handleCardDrop(_targetTask: Task, targetIndex: number, targetColumn: TaskStatus) {
-    if (isFiltering) {
-      handleDragEnd();
-      return;
-    }
-    if (!activeTask || activeFromIndex === null || !activeColumnId) {
-      handleDragEnd();
-      return;
-    }
-
-    if (activeColumnId === targetColumn) {
-      const currentColumnTasks = tasks
-        .filter((t) => t.status === activeColumnId)
-        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-
-      const fromIndex = activeFromIndex;
-      const toIndex = targetIndex;
-
-      if (fromIndex === toIndex) {
-        handleDragEnd();
-        return;
-      }
-
-      const updatedList = [...currentColumnTasks];
-      const [movedItem] = updatedList.splice(fromIndex, 1);
-      updatedList.splice(toIndex, 0, movedItem);
-
-      const orderedIds = updatedList.map((t) => t.id);
-
-      void onReorder(orderedIds, activeColumnId);
-    }
-
-    if (activeColumnId !== targetColumn) {
-      const targetColumnTasks = tasks
-        .filter((t) => t.status === targetColumn)
-        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-
-      const updatedTargetList = [...targetColumnTasks];
-      updatedTargetList.splice(targetIndex, 0, {
-        ...activeTask,
-        status: targetColumn,
-      });
-
-      const orderedIds = updatedTargetList.map((t) => t.id);
-
-      void onReorder(orderedIds, targetColumn);
-    }
-
-    handleDragEnd();
-  }
-
-  function handleColumnDrop(targetColumn: TaskStatus) {
-    if (isFiltering) {
-      handleDragEnd();
-      return;
-    }
-    if (!activeTask || !activeColumnId) {
-      handleDragEnd();
-      return;
-    }
-
-    if (activeColumnId === targetColumn) {
-      handleDragEnd();
-      return;
-    }
-
-    const targetColumnTasks = tasks
-      .filter((t) => t.status === targetColumn)
-      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-
-    const updatedTargetList = [
-      ...targetColumnTasks,
-      { ...activeTask, status: targetColumn },
-    ];
-
-    const orderedIds = updatedTargetList.map((t) => t.id);
-
-    void onReorder(orderedIds, targetColumn);
-    handleDragEnd();
-  }
-
   return (
-    <div>
+    <div translate="no">
       {isFiltering && (
         <Alert
           type="info"
@@ -409,31 +228,109 @@ export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
           style={{ marginBottom: 16 }}
         />
       )}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-          gap: 16,
+      <DragDropProvider
+        plugins={[Feedback.configure({ feedback: 'none', dropAnimation: null })]}
+        onDragEnd={(event) => {
+          if (isFiltering || event.canceled) return;
+
+          const { source, target } = event.operation;
+          if (!source || !target) return;
+
+          const sourceIdStr = String(source.id);
+          if (!sourceIdStr.startsWith('task-')) return;
+
+          const sourceTaskId = Number(sourceIdStr.replace('task-', ''));
+          const sourceTask = tasks.find((t) => t.id === sourceTaskId);
+          if (!sourceTask) return;
+
+          const sourceColumn = sourceTask.status;
+
+          const targetIdStr = String(target.id);
+          let targetColumn: TaskStatus | undefined;
+          let targetTaskId: number | undefined;
+
+          if (targetIdStr.startsWith('task-')) {
+            targetTaskId = Number(targetIdStr.replace('task-', ''));
+            const targetTask = tasks.find((t) => t.id === targetTaskId);
+            if (targetTask) {
+              targetColumn = targetTask.status;
+            }
+          } else if (targetIdStr.startsWith('column-')) {
+            targetColumn = targetIdStr.replace('column-', '') as TaskStatus;
+          }
+
+          if (!targetColumn) return;
+
+          if (sourceColumn === targetColumn) {
+            const currentColumnTasks = tasks
+              .filter((t) => t.status === sourceColumn)
+              .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
+            const fromIndex = currentColumnTasks.findIndex(
+              (t) => t.id === sourceTaskId
+            );
+
+            const toIndex = targetTaskId !== undefined
+              ? currentColumnTasks.findIndex((t) => t.id === targetTaskId)
+              : fromIndex;
+
+            if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
+              return;
+            }
+
+            const updatedList = [...currentColumnTasks];
+            const [movedItem] = updatedList.splice(fromIndex, 1);
+            updatedList.splice(toIndex, 0, movedItem);
+
+            const orderedIds = updatedList.map((t) => t.id);
+            setTimeout(() => {
+              void onReorder(orderedIds, sourceColumn);
+            }, 0);
+          }
+
+          if (sourceColumn !== targetColumn) {
+            const targetColumnTasks = tasks
+              .filter((t) => t.status === targetColumn)
+              .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
+            let insertIndex = targetTaskId !== undefined
+              ? targetColumnTasks.findIndex((t) => t.id === targetTaskId)
+              : targetColumnTasks.length;
+
+            if (insertIndex === -1) {
+              insertIndex = targetColumnTasks.length;
+            }
+
+            const updatedTargetList = [...targetColumnTasks];
+            updatedTargetList.splice(insertIndex, 0, {
+              ...sourceTask,
+              status: targetColumn,
+            });
+
+            const orderedIds = updatedTargetList.map((t) => t.id);
+            setTimeout(() => {
+              void onReorder(orderedIds, targetColumn);
+            }, 0);
+          }
         }}
       >
-        {columns.map((column) => (
-          <KanbanColumn
-            key={column.id}
-            column={column}
-            tasks={tasks}
-            activeTaskId={activeTask ? activeTask.id : null}
-            hoverTaskId={hoverTaskId}
-            hoverColumnId={hoverColumnId}
-            isFiltering={isFiltering}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-            onCardDragEnter={(taskId) => setHoverTaskId(taskId)}
-            onColumnDragEnter={(columnId) => setHoverColumnId(columnId)}
-            onCardDrop={handleCardDrop}
-            onColumnDrop={handleColumnDrop}
-          />
-        ))}
-      </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+            gap: 16,
+          }}
+        >
+          {columns.map((column) => (
+            <KanbanColumn
+              key={column.id}
+              column={column}
+              tasks={tasks}
+              isFiltering={isFiltering}
+            />
+          ))}
+        </div>
+      </DragDropProvider>
     </div>
   );
 }
