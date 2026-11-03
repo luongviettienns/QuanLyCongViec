@@ -3,15 +3,19 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
+  Query,
   ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TasksService } from './tasks.service.js';
 import { CreateTaskDto } from './dto/create-task.dto.js';
 import { UpdateTaskDto } from './dto/update-task.dto.js';
+import { ReorderTasksDto } from './dto/reorder-tasks.dto.js';
+import { FilterTasksDto } from './dto/filter-tasks.dto.js';
 
 @ApiTags('Tasks')
 @Controller('tasks')
@@ -20,8 +24,15 @@ export class TasksController {
 
   @ApiOperation({ summary: 'Lấy danh sách toàn bộ công việc' })
   @Get()
-  findAll() {
-    return this.tasksService.findAll();
+  findAll(@Query() query: FilterTasksDto) {
+    return this.tasksService.findAll(query);
+  }
+
+  // PATCH /tasks/reorder - Sắp xếp lại thứ tự công việc (đặt trước :id để không bị nhầm route)
+  @ApiOperation({ summary: 'Sắp xếp lại thứ tự công việc theo vị trí mới' })
+  @Patch('reorder')
+  reorder(@Body() body: ReorderTasksDto) {
+    return this.tasksService.reorder(body);
   }
 
   @ApiOperation({ summary: 'Lấy chi tiết công việc theo ID' })

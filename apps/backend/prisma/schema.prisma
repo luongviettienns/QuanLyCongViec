@@ -18,7 +18,11 @@ model Task {
   title       String     @unique
   description String?
   status      TaskStatus @default(TODO)
+  
+  position    Int        @default(0)
 
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+
+  @@index([status,position])
 }

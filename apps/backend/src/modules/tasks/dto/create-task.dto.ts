@@ -1,18 +1,31 @@
-import { IsNotEmpty, IsString, IsOptional, IsIn } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  IsOptional,
+  IsIn,
+  MinLength,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateTaskDto {
-  @ApiProperty({ description: 'Tiêu đề công việc', example: 'Học NestJS' })
+  @ApiProperty({
+    description: 'Tiêu đề công việc (từ 3 đến 100 ký tự)',
+    example: 'Học NestJS cơ bản',
+  })
   @IsNotEmpty({ message: 'Tiêu đề không được để trống' })
   @IsString({ message: 'Tiêu đề phải là chuỗi ký tự' })
+  @MinLength(3, { message: 'Tiêu đề phải có ít nhất 3 ký tự' })
+  @MaxLength(100, { message: 'Tiêu đề không được vượt quá 100 ký tự' })
   title: string;
 
   @ApiPropertyOptional({
-    description: 'Mô tả chi tiết',
-    example: 'Tìm hiểu về Module, Controller, Service',
+    description: 'Mô tả chi tiết công việc (tối đa 500 ký tự)',
+    example: 'Tìm hiểu về Module, Controller, Service và Prisma',
   })
   @IsOptional()
   @IsString({ message: 'Mô tả phải là chuỗi ký tự' })
+  @MaxLength(500, { message: 'Mô tả không được vượt quá 500 ký tự' })
   description?: string;
 
   @ApiPropertyOptional({
@@ -22,7 +35,7 @@ export class CreateTaskDto {
   })
   @IsOptional()
   @IsIn(['TODO', 'IN_PROGRESS', 'DONE'], {
-    message: 'Trạng thái phải là TODO, IN_PROGRESS hoặc DONE',
+    message: 'Trạng thái phải là một trong các giá trị: TODO, IN_PROGRESS, DONE',
   })
   status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
 }

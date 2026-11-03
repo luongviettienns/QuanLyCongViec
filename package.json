@@ -17,5 +17,10 @@
     "test": "npm run test --workspaces --if-present",
     "test:backend": "npm run test --workspace=@taskflow/backend",
     "lint": "npm run lint --workspaces --if-present"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.3.4",
+    "antd": "^6.6.8",
+    "axios": "^1.21.0"
   }
 }

@@ -1,0 +1,23 @@
+import { IsOptional, IsString, MaxLength, IsIn } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+
+export class FilterTasksDto {
+  @ApiPropertyOptional({
+    description: 'Từ khoá tìm kiếm theo tiêu đề hoặc mô tả',
+    maxLength: 100,
+  })
+  @IsOptional()
+  @IsString({ message: 'Từ khoá tìm kiếm phải là chuỗi ký tự' })
+  @MaxLength(100, { message: 'Từ khoá tìm kiếm không được vượt quá 100 ký tự' })
+  search?: string;
+
+  @ApiPropertyOptional({
+    description: 'Trạng thái công việc cần lọc',
+    enum: ['TODO', 'IN_PROGRESS', 'DONE'],
+  })
+  @IsOptional()
+  @IsIn(['TODO', 'IN_PROGRESS', 'DONE'], {
+    message: 'Trạng thái lọc phải là TODO, IN_PROGRESS hoặc DONE',
+  })
+  status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
+}
