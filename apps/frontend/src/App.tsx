@@ -7,9 +7,11 @@ import TaskFormModal from './components/TaskFormModal';
 import AuthModal from './components/AuthModal';
 import { AuthProvider } from './context/AuthContext';
 import { useTasks } from './hooks/useTasks';
+import { useAuth } from './hooks/useAuth';
 import type { Task } from './types/task.types';
 
 function TaskApp() {
+  const { user } = useAuth();
   const {
     tasks,
     categories,
@@ -34,6 +36,10 @@ function TaskApp() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
   function handleOpenCreate() {
+    if (!user) {
+      setAuthModalOpen(true);
+      return;
+    }
     setModalState({ open: true, task: null });
   }
 

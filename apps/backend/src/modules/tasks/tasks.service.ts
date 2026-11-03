@@ -80,18 +80,16 @@ export class TasksService {
     return task;
   }
 
-  async create(data: CreateTaskDto, userId = 1): Promise<Task> {
+  async create(data: CreateTaskDto, userId: number): Promise<Task> {
     const cleanTitle = data.title.trim();
 
     if (cleanTitle.length < 3) {
       throw new BadRequestException('Tiêu đề công việc phải có ít nhất 3 ký tự (không tính khoảng trắng thừa)');
     }
 
-    const targetUserId = data.userId || userId;
-
     const existingTask = await this.prisma.task.findFirst({
       where: {
-        userId: targetUserId,
+        userId,
         title: {
           equals: cleanTitle,
           mode: 'insensitive',
@@ -138,7 +136,7 @@ export class TasksService {
       const category = await this.prisma.category.findFirst({
         where: {
           id: data.categoryId,
-          OR: [{ userId: null }, { userId: targetUserId }],
+          userId,
         },
       });
       if (!category) {
@@ -147,12 +145,12 @@ export class TasksService {
     }
 
     const currentCount = await this.prisma.task.count({
-      where: { userId: targetUserId, status: initialStatus },
+      where: { userId, status: initialStatus },
     });
 
     const newTask = await this.prisma.task.create({
       data: {
-        userId: targetUserId,
+        userId,
         title: cleanTitle,
         description: cleanDescription,
         status: initialStatus,
@@ -270,7 +268,7 @@ export class TasksService {
         const category = await this.prisma.category.findFirst({
           where: {
             id: data.categoryId,
-            OR: [{ userId: null }, { userId: currentTask.userId }],
+            userId: currentTask.userId,
           },
         });
         if (!category) {

@@ -108,7 +108,15 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
                 onFinish={(values) => void handleRegisterSubmit(values)}
                 style={{ marginTop: 16 }}
               >
-                <Form.Item label="Họ tên (tuỳ chọn)" name="name">
+                <Form.Item
+                  label="Họ và tên"
+                  name="name"
+                  rules={[
+                    { required: true, message: 'Vui lòng nhập họ và tên' },
+                    { min: 2, message: 'Họ tên phải có ít nhất 2 ký tự' },
+                    { max: 50, message: 'Họ tên không được vượt quá 50 ký tự' },
+                  ]}
+                >
                   <Input prefix={<UserOutlined />} placeholder="Nguyễn Văn A" />
                 </Form.Item>
 
@@ -128,10 +136,10 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
                   name="password"
                   rules={[
                     { required: true, message: 'Vui lòng nhập mật khẩu' },
-                    { min: 6, message: 'Mật khẩu tối thiểu 6 ký tự' },
+                    { min: 8, message: 'Mật khẩu phải có ít nhất 8 ký tự' },
                   ]}
                 >
-                  <Input.Password prefix={<LockOutlined />} placeholder="Tối thiểu 6 ký tự" />
+                  <Input.Password prefix={<LockOutlined />} placeholder="Tối thiểu 8 ký tự" />
                 </Form.Item>
 
                 <Form.Item style={{ marginBottom: 0, marginTop: 24 }}>

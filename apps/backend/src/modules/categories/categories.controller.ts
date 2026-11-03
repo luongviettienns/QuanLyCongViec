@@ -20,12 +20,12 @@ import {
 import { CategoriesService } from './categories.service.js';
 import { CreateCategoryDto } from './dto/create-category.dto.js';
 import { UpdateCategoryDto } from './dto/update-category.dto.js';
-import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard.js';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js';
 
 @ApiTags('Categories')
 @ApiBearerAuth()
-@UseGuards(OptionalJwtAuthGuard)
+@UseGuards(JwtAuthGuard)
 @Controller('categories')
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
@@ -33,9 +33,8 @@ export class CategoriesController {
   @Get()
   @ApiOperation({ summary: 'Lấy danh sách tất cả các danh mục' })
   @ApiResponse({ status: 200, description: 'Danh sách danh mục' })
-  async findAll(@CurrentUser() user?: AuthenticatedUser) {
-    const userId = user?.id ?? 1;
-    return this.categoriesService.findAll(userId);
+  async findAll(@CurrentUser() user: AuthenticatedUser) {
+    return this.categoriesService.findAll(user.id);
   }
 
   @Get(':id')
@@ -44,10 +43,9 @@ export class CategoriesController {
   @ApiResponse({ status: 404, description: 'Không tìm thấy danh mục' })
   async findOne(
     @Param('id', ParseIntPipe) id: number,
-    @CurrentUser() user?: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const userId = user?.id ?? 1;
-    return this.categoriesService.findOne(id, userId);
+    return this.categoriesService.findOne(id, user.id);
   }
 
   @Post()
@@ -58,10 +56,9 @@ export class CategoriesController {
   @ApiResponse({ status: 409, description: 'Tên danh mục đã tồn tại' })
   async create(
     @Body() createCategoryDto: CreateCategoryDto,
-    @CurrentUser() user?: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const userId = user?.id ?? 1;
-    return this.categoriesService.create(createCategoryDto, userId);
+    return this.categoriesService.create(createCategoryDto, user.id);
   }
 
   @Put(':id')
@@ -73,10 +70,9 @@ export class CategoriesController {
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateCategoryDto: UpdateCategoryDto,
-    @CurrentUser() user?: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const userId = user?.id ?? 1;
-    return this.categoriesService.update(id, updateCategoryDto, userId);
+    return this.categoriesService.update(id, updateCategoryDto, user.id);
   }
 
   @Delete(':id')
@@ -85,9 +81,8 @@ export class CategoriesController {
   @ApiResponse({ status: 404, description: 'Không tìm thấy danh mục' })
   async remove(
     @Param('id', ParseIntPipe) id: number,
-    @CurrentUser() user?: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const userId = user?.id ?? 1;
-    return this.categoriesService.remove(id, userId);
+    return this.categoriesService.remove(id, user.id);
   }
 }

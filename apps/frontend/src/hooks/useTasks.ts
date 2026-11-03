@@ -7,19 +7,38 @@ import {
   deleteTask,
   reorderTasks,
 } from '../api/tasks.api';
+import { useAuth } from './useAuth';
 
 export function useTasks() {
+  const { user, loading: authLoading } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const isFiltering = searchText.trim() !== '' || statusFilter !== 'ALL';
 
+  const resetState = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setTasks([]);
+    setCategories([]);
+    setSearchText('');
+    setStatusFilter('ALL');
+    setLoading(false);
+  }, []);
+
   const fetchTasks = useCallback(
     async (search = '', status: StatusFilter = 'ALL') => {
+      if (!user) {
+        setTasks([]);
+        setLoading(false);
+        return;
+      }
+
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
@@ -47,10 +66,15 @@ export function useTasks() {
         }
       }
     },
-    [],
+    [user],
   );
 
   const fetchCategories = useCallback(async () => {
+    if (!user) {
+      setCategories([]);
+      return;
+    }
+
     try {
       const data = await getCategories();
       setCategories(data);
@@ -60,35 +84,61 @@ export function useTasks() {
       }
       console.error('Lỗi danh mục:', error);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
-    async function init() {
+    if (authLoading) {
+      return;
+    }
+
+    let active = true;
+
+    async function sync() {
+      if (!user) {
+        await Promise.resolve();
+        if (active) {
+          resetState();
+        }
+        return;
+      }
+
+      setLoading(true);
       await Promise.all([fetchCategories(), fetchTasks('', 'ALL')]);
     }
 
-    void init();
+    void sync();
 
     return () => {
+      active = false;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     };
-  }, [fetchCategories, fetchTasks]);
+  }, [user, authLoading, resetState, fetchCategories, fetchTasks]);
 
   function handleSearch(value: string) {
+    if (!user) {
+      return;
+    }
     setSearchText(value);
     setLoading(true);
     void fetchTasks(value, statusFilter);
   }
 
   function handleStatusChange(value: StatusFilter) {
+    if (!user) {
+      return;
+    }
     setStatusFilter(value);
     setLoading(true);
     void fetchTasks(searchText, value);
   }
 
   function handleReset() {
+    if (!user) {
+      resetState();
+      return;
+    }
     setSearchText('');
     setStatusFilter('ALL');
     setLoading(true);
@@ -96,11 +146,18 @@ export function useTasks() {
   }
 
   async function refetch() {
+    if (!user) {
+      resetState();
+      return;
+    }
     setLoading(true);
     await Promise.all([fetchTasks(searchText, statusFilter), fetchCategories()]);
   }
 
   async function handleDelete(id: number) {
+    if (!user) {
+      return;
+    }
     try {
       await deleteTask(id);
       message.success('Xoá công việc thành công');
@@ -113,6 +170,9 @@ export function useTasks() {
   }
 
   async function handleReorder(taskIds: number[], status?: TaskStatus) {
+    if (!user) {
+      return;
+    }
     const previousTasks = [...tasks];
 
     setTasks((prev) => {
@@ -132,12 +192,9 @@ export function useTasks() {
 
     try {
       await reorderTasks(taskIds, status);
-      message.success('Cập nhật thứ tự công việc thành công');
-      await fetchTasks(searchText, statusFilter);
     } catch (error) {
-      console.error(error);
       setTasks(previousTasks);
-      message.error(error instanceof Error ? error.message : 'Lỗi khi sắp xếp lại');
+      message.error(error instanceof Error ? error.message : 'Không thể lưu vị trí công việc');
     }
   }
 
@@ -155,5 +212,6 @@ export function useTasks() {
     refetch,
     handleDelete,
     handleReorder,
+    resetState,
   };
 }

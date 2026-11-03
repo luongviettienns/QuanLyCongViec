@@ -13,11 +13,9 @@ import { Category } from '@prisma/client';
 export class CategoriesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(userId = 1): Promise<Category[]> {
+  async findAll(userId: number): Promise<Category[]> {
     const count = await this.prisma.category.count({
-      where: {
-        OR: [{ userId: null }, { userId }],
-      },
+      where: { userId },
     });
 
     if (count === 0) {
@@ -31,14 +29,12 @@ export class CategoriesService {
     }
 
     return this.prisma.category.findMany({
-      where: {
-        OR: [{ userId: null }, { userId }],
-      },
+      where: { userId },
       orderBy: { createdAt: 'asc' },
     });
   }
 
-  async findOne(id: number, userId = 1): Promise<Category> {
+  async findOne(id: number, userId: number): Promise<Category> {
     if (isNaN(id) || id <= 0) {
       throw new BadRequestException('Mã danh mục (ID) phải là số nguyên dương hợp lệ');
     }
@@ -46,7 +42,7 @@ export class CategoriesService {
     const category = await this.prisma.category.findFirst({
       where: {
         id,
-        OR: [{ userId: null }, { userId }],
+        userId,
       },
     });
 
@@ -57,7 +53,7 @@ export class CategoriesService {
     return category;
   }
 
-  async create(data: CreateCategoryDto, userId = 1): Promise<Category> {
+  async create(data: CreateCategoryDto, userId: number): Promise<Category> {
     const cleanName = data.name.trim();
 
     if (cleanName.length < 2) {
@@ -89,7 +85,7 @@ export class CategoriesService {
     });
   }
 
-  async update(id: number, data: UpdateCategoryDto, userId = 1): Promise<Category> {
+  async update(id: number, data: UpdateCategoryDto, userId: number): Promise<Category> {
     await this.findOne(id, userId);
 
     const updateData: { name?: string; color?: string } = {};
@@ -128,7 +124,7 @@ export class CategoriesService {
     });
   }
 
-  async remove(id: number, userId = 1): Promise<{ success: boolean; message: string; deletedCategory: Category }> {
+  async remove(id: number, userId: number): Promise<{ success: boolean; message: string; deletedCategory: Category }> {
     const categoryToDelete = await this.findOne(id, userId);
 
     const deletedCategory = await this.prisma.category.delete({

@@ -17,12 +17,12 @@ import { CreateTaskDto } from './dto/create-task.dto.js';
 import { UpdateTaskDto } from './dto/update-task.dto.js';
 import { ReorderTasksDto } from './dto/reorder-tasks.dto.js';
 import { FilterTasksDto } from './dto/filter-tasks.dto.js';
-import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard.js';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js';
 
 @ApiTags('Tasks')
 @ApiBearerAuth()
-@UseGuards(OptionalJwtAuthGuard)
+@UseGuards(JwtAuthGuard)
 @Controller('tasks')
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
@@ -31,40 +31,36 @@ export class TasksController {
   @Get()
   findAll(
     @Query() query: FilterTasksDto,
-    @CurrentUser() user?: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const userId = user?.id ?? 1;
-    return this.tasksService.findAll(query, userId);
+    return this.tasksService.findAll(query, user.id);
   }
 
   @ApiOperation({ summary: 'Sắp xếp lại thứ tự công việc theo vị trí mới' })
   @Patch('reorder')
   reorder(
     @Body() body: ReorderTasksDto,
-    @CurrentUser() user?: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const userId = user?.id ?? 1;
-    return this.tasksService.reorder(body, userId);
+    return this.tasksService.reorder(body, user.id);
   }
 
   @ApiOperation({ summary: 'Lấy chi tiết công việc theo ID' })
   @Get(':id')
   findOne(
     @Param('id', ParseIntPipe) id: number,
-    @CurrentUser() user?: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const userId = user?.id ?? 1;
-    return this.tasksService.findOne(id, userId);
+    return this.tasksService.findOne(id, user.id);
   }
 
   @ApiOperation({ summary: 'Tạo công việc mới' })
   @Post()
   create(
     @Body() body: CreateTaskDto,
-    @CurrentUser() user?: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const userId = user?.id ?? 1;
-    return this.tasksService.create(body, userId);
+    return this.tasksService.create(body, user.id);
   }
 
   @ApiOperation({ summary: 'Cập nhật công việc theo ID' })
@@ -72,19 +68,17 @@ export class TasksController {
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: UpdateTaskDto,
-    @CurrentUser() user?: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const userId = user?.id ?? 1;
-    return this.tasksService.update(id, body, userId);
+    return this.tasksService.update(id, body, user.id);
   }
 
   @ApiOperation({ summary: 'Xoá công việc theo ID' })
   @Delete(':id')
   remove(
     @Param('id', ParseIntPipe) id: number,
-    @CurrentUser() user?: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const userId = user?.id ?? 1;
-    return this.tasksService.remove(id, userId);
+    return this.tasksService.remove(id, user.id);
   }
 }

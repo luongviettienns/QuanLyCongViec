@@ -75,12 +75,4 @@ export class CreateTaskDto {
   @IsOptional()
   @IsInt({ message: 'Mã danh mục phải là số nguyên' })
   categoryId?: number;
-
-  @ApiPropertyOptional({
-    description: 'ID người dùng sở hữu công việc',
-    example: 1,
-  })
-  @IsOptional()
-  @IsInt({ message: 'Mã người dùng phải là số nguyên' })
-  userId?: number;
 }
