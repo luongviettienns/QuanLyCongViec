@@ -1,17 +1,17 @@
 import { useState } from 'react';
+import { Spin } from 'antd';
 import AppLayout from './components/AppLayout';
 import KanbanBoard from './components/KanbanBoard';
 import TaskToolbar from './components/TaskToolbar';
 import TaskTable from './components/TaskTable';
 import TaskFormModal from './components/TaskFormModal';
-import AuthModal from './components/AuthModal';
+import AuthScreen from './components/AuthScreen';
 import { AuthProvider } from './context/AuthContext';
 import { useTasks } from './hooks/useTasks';
 import { useAuth } from './hooks/useAuth';
 import type { Task } from './types/task.types';
 
 function TaskApp() {
-  const { user } = useAuth();
   const {
     tasks,
     categories,
@@ -33,13 +33,7 @@ function TaskApp() {
     task: null,
   });
 
-  const [authModalOpen, setAuthModalOpen] = useState(false);
-
   function handleOpenCreate() {
-    if (!user) {
-      setAuthModalOpen(true);
-      return;
-    }
     setModalState({ open: true, task: null });
   }
 
@@ -55,7 +49,6 @@ function TaskApp() {
     <AppLayout
       onReload={() => void refetch()}
       onCreateTask={handleOpenCreate}
-      onOpenAuth={() => setAuthModalOpen(true)}
       loading={loading}
     >
       <TaskToolbar
@@ -85,22 +78,40 @@ function TaskApp() {
         onClose={handleCloseModal}
         onSuccess={refetch}
       />
-
-      <AuthModal
-        open={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
-        onSuccess={() => void refetch()}
-      />
     </AppLayout>
   );
 }
 
-function App() {
+function MainApp() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: '#f5f7fa',
+        }}
+      >
+        <Spin size="large" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthScreen />;
+  }
+
+  return <TaskApp />;
+}
+
+export default function App() {
   return (
     <AuthProvider>
-      <TaskApp />
+      <MainApp />
     </AuthProvider>
   );
 }
-
-export default App;

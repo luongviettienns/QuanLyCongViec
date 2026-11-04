@@ -18,7 +18,7 @@ interface AppLayoutProps {
   children: ReactNode;
   onReload: () => void;
   onCreateTask: () => void;
-  onOpenAuth: () => void;
+  onOpenAuth?: () => void;
   loading?: boolean;
 }
 
@@ -157,7 +157,7 @@ export default function AppLayout({
             zIndex: 99,
           }}
         >
-          <Space size="middle">
+          <Space size="middle" align="center">
             <Button
               type="text"
               icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
@@ -169,7 +169,7 @@ export default function AppLayout({
             </span>
           </Space>
 
-          <Space size="middle">
+          <Space size="middle" align="center">
             <Button icon={<ReloadOutlined />} onClick={onReload} loading={loading}>
               Tải lại
             </Button>
@@ -179,14 +179,14 @@ export default function AppLayout({
 
             {user ? (
               <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click']}>
-                <Space style={{ cursor: 'pointer' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
                   <Avatar style={{ backgroundColor: '#1677ff' }}>
                     {user.name ? user.name.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
                   </Avatar>
-                  <Text strong style={{ maxWidth: 140 }} ellipsis>
+                  <Text strong style={{ maxWidth: 140, margin: 0, lineHeight: '32px' }} ellipsis>
                     {user.name || user.email}
                   </Text>
-                </Space>
+                </div>
               </Dropdown>
             ) : (
               <Button icon={<LoginOutlined />} onClick={onOpenAuth}>
