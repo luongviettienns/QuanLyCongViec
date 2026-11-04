@@ -88,7 +88,7 @@ export default function TaskToolbar({
       }}
     >
       <Input.Search
-        placeholder="Tìm kiếm theo tiêu đề hoặc mô tả..."
+        placeholder="Tìm kiếm theo tiêu đề..."
         value={searchText}
         onChange={(e) => handleInputChange(e.target.value)}
         onSearch={handleImmediateSearch}
