@@ -5,6 +5,7 @@ import KanbanBoard from './components/KanbanBoard';
 import TaskToolbar from './components/TaskToolbar';
 import TaskTable from './components/TaskTable';
 import TaskFormModal from './components/TaskFormModal';
+import CategoryManagerModal from './components/CategoryManagerModal';
 import AuthScreen from './components/AuthScreen';
 import { AuthProvider } from './context/AuthContext';
 import { useTasks } from './hooks/useTasks';
@@ -18,10 +19,12 @@ function TaskApp() {
     loading,
     searchText,
     statusFilter,
+    categoryFilter,
     isFiltering,
     setSearchText,
     handleSearch,
     handleStatusChange,
+    handleCategoryChange,
     handleReset,
     refetch,
     handleDelete,
@@ -32,6 +35,8 @@ function TaskApp() {
     open: false,
     task: null,
   });
+
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
 
   function handleOpenCreate() {
     setModalState({ open: true, task: null });
@@ -49,14 +54,18 @@ function TaskApp() {
     <AppLayout
       onReload={() => void refetch()}
       onCreateTask={handleOpenCreate}
+      onOpenCategories={() => setCategoryModalOpen(true)}
       loading={loading}
     >
       <TaskToolbar
         searchText={searchText}
         statusFilter={statusFilter}
+        categoryFilter={categoryFilter}
+        categories={categories}
         onSearchChange={setSearchText}
         onSearch={handleSearch}
         onStatusChange={handleStatusChange}
+        onCategoryChange={handleCategoryChange}
         onReset={handleReset}
       />
 
@@ -77,6 +86,12 @@ function TaskApp() {
         categories={categories}
         onClose={handleCloseModal}
         onSuccess={refetch}
+      />
+
+      <CategoryManagerModal
+        open={categoryModalOpen}
+        onClose={() => setCategoryModalOpen(false)}
+        onChanged={() => void refetch()}
       />
     </AppLayout>
   );

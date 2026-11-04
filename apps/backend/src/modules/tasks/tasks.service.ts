@@ -48,6 +48,10 @@ export class TasksService {
       where.priority = query.priority;
     }
 
+    if (query?.categoryId !== undefined) {
+      where.categoryId = query.categoryId;
+    }
+
     return this.prisma.task.findMany({
       where,
       include: {

@@ -54,3 +54,13 @@ export interface UpdateTaskPayload {
   startDate?: string | null;
   dueDate?: string | null;
 }
+
+export interface CreateCategoryPayload {
+  name: string;
+  color?: string;
+}
+
+export interface UpdateCategoryPayload {
+  name?: string;
+  color?: string;
+}

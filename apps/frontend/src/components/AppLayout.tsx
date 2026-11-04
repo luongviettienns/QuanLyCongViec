@@ -8,6 +8,7 @@ import {
   MenuUnfoldOutlined,
   LogoutOutlined,
   LoginOutlined,
+  TagsOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../hooks/useAuth';
 
@@ -18,6 +19,7 @@ interface AppLayoutProps {
   children: ReactNode;
   onReload: () => void;
   onCreateTask: () => void;
+  onOpenCategories?: () => void;
   onOpenAuth?: () => void;
   loading?: boolean;
 }
@@ -26,6 +28,7 @@ export default function AppLayout({
   children,
   onReload,
   onCreateTask,
+  onOpenCategories,
   onOpenAuth,
   loading = false,
 }: AppLayoutProps) {
@@ -37,6 +40,11 @@ export default function AppLayout({
       key: 'tasks',
       icon: <CheckSquareOutlined />,
       label: 'Công việc',
+    },
+    {
+      key: 'categories',
+      icon: <TagsOutlined />,
+      label: 'Danh mục',
     },
   ];
 
@@ -125,6 +133,11 @@ export default function AppLayout({
             defaultSelectedKeys={['tasks']}
             selectedKeys={['tasks']}
             items={menuItems}
+            onClick={({ key }) => {
+              if (key === 'categories') {
+                onOpenCategories?.();
+              }
+            }}
             style={{ borderRight: 0 }}
           />
         </div>
