@@ -20,11 +20,13 @@ function TaskApp() {
     searchText,
     statusFilter,
     categoryFilter,
+    priorityFilter,
     isFiltering,
     setSearchText,
     handleSearch,
     handleStatusChange,
     handleCategoryChange,
+    handlePriorityChange,
     handleReset,
     refetch,
     handleDelete,
@@ -61,11 +63,13 @@ function TaskApp() {
         searchText={searchText}
         statusFilter={statusFilter}
         categoryFilter={categoryFilter}
+        priorityFilter={priorityFilter}
         categories={categories}
         onSearchChange={setSearchText}
         onSearch={handleSearch}
         onStatusChange={handleStatusChange}
         onCategoryChange={handleCategoryChange}
+        onPriorityChange={handlePriorityChange}
         onReset={handleReset}
       />
 

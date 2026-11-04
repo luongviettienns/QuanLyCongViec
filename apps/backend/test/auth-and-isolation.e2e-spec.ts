@@ -380,5 +380,16 @@ describe('Authentication and Data Isolation (e2e)', () => {
       expect(Array.isArray(res.body)).toBe(true);
       expect(res.body.length).toBe(0);
     });
+
+    it('filters tasks by priority via GET /tasks?priority=HIGH', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/tasks?priority=HIGH')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBeGreaterThanOrEqual(1);
+      expect(res.body.every((t: { priority: string }) => t.priority === 'HIGH')).toBe(true);
+    });
   });
 });
