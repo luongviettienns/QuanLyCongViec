@@ -5,7 +5,7 @@ import type {
   UpdateTaskPayload,
   TaskStatus,
 } from '../types/task.types';
-import { getAuthHeaders } from './auth.api';
+import { getAuthHeaders, notifyUnauthorized } from './auth.api';
 
 async function parseError(response: Response, defaultMessage: string): Promise<Error> {
   try {
@@ -20,6 +20,19 @@ async function parseError(response: Response, defaultMessage: string): Promise<E
   } catch {
     return new Error(defaultMessage);
   }
+}
+
+async function handleApiResponse<T>(response: Response, defaultMessage: string): Promise<T> {
+  if (response.status === 401) {
+    notifyUnauthorized();
+    throw new Error('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại');
+  }
+
+  if (!response.ok) {
+    throw await parseError(response, defaultMessage);
+  }
+
+  return response.json();
 }
 
 export async function getTasks(
@@ -44,11 +57,7 @@ export async function getTasks(
     signal,
   });
 
-  if (!response.ok) {
-    throw await parseError(response, 'Không thể tải danh sách công việc');
-  }
-
-  return response.json();
+  return handleApiResponse<Task[]>(response, 'Không thể tải danh sách công việc');
 }
 
 export async function getCategories(signal?: AbortSignal): Promise<Category[]> {
@@ -59,11 +68,7 @@ export async function getCategories(signal?: AbortSignal): Promise<Category[]> {
     signal,
   });
 
-  if (!response.ok) {
-    throw await parseError(response, 'Không thể tải danh mục');
-  }
-
-  return response.json();
+  return handleApiResponse<Category[]>(response, 'Không thể tải danh mục');
 }
 
 export async function createTask(payload: CreateTaskPayload): Promise<Task> {
@@ -76,11 +81,7 @@ export async function createTask(payload: CreateTaskPayload): Promise<Task> {
     body: JSON.stringify(payload),
   });
 
-  if (!response.ok) {
-    throw await parseError(response, 'Không thể tạo công việc');
-  }
-
-  return response.json();
+  return handleApiResponse<Task>(response, 'Không thể tạo công việc');
 }
 
 export async function updateTask(id: number, payload: UpdateTaskPayload): Promise<Task> {
@@ -93,11 +94,7 @@ export async function updateTask(id: number, payload: UpdateTaskPayload): Promis
     body: JSON.stringify(payload),
   });
 
-  if (!response.ok) {
-    throw await parseError(response, 'Không thể cập nhật công việc');
-  }
-
-  return response.json();
+  return handleApiResponse<Task>(response, 'Không thể cập nhật công việc');
 }
 
 export async function deleteTask(id: number): Promise<void> {
@@ -107,6 +104,11 @@ export async function deleteTask(id: number): Promise<void> {
       ...getAuthHeaders(),
     },
   });
+
+  if (response.status === 401) {
+    notifyUnauthorized();
+    throw new Error('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại');
+  }
 
   if (!response.ok) {
     throw await parseError(response, 'Không thể xoá công việc');
@@ -122,6 +124,11 @@ export async function reorderTasks(taskIds: number[], status?: TaskStatus): Prom
     },
     body: JSON.stringify({ taskIds, status }),
   });
+
+  if (response.status === 401) {
+    notifyUnauthorized();
+    throw new Error('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại');
+  }
 
   if (!response.ok) {
     throw await parseError(response, 'Không thể lưu thứ tự công việc');

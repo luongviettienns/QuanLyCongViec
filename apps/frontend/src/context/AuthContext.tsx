@@ -1,4 +1,5 @@
 import { useState, useEffect, type ReactNode } from 'react';
+import { message } from 'antd';
 import type { User, LoginPayload, RegisterPayload } from '../types/auth.types';
 import {
   getProfile,
@@ -6,12 +7,27 @@ import {
   register as apiRegister,
   removeAuthToken,
   getAuthToken,
+  subscribeUnauthorized,
 } from '../api/auth.api';
 import { AuthContext } from './auth-context.base';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    const unsubscribe = subscribeUnauthorized(() => {
+      setUser(null);
+      void message.error({
+        content: 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại',
+        key: 'session-expired',
+      });
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     async function initAuth() {

@@ -1,8 +1,10 @@
 import { defineConfig } from 'vitest/config';
+import dotenv from 'dotenv';
+import path from 'path';
+
+dotenv.config({ path: path.resolve(import.meta.dirname, '.env') });
 
 export default defineConfig({
-  // Resolves the path aliases declared in tsconfig.json, including the ones
-  // added by `nest g library`. Requires Vite 8, which ships this option.
   resolve: { tsconfigPaths: true },
   test: {
     globals: true,
