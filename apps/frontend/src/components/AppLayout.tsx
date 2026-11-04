@@ -292,6 +292,28 @@ export default function AppLayout({
           <div style={{ maxWidth: 1200, margin: '0 auto' }}>{children}</div>
         </Content>
       </Layout>
+
+      {isMobile && (
+        <Button
+          type="primary"
+          shape="circle"
+          icon={<PlusOutlined style={{ fontSize: 20 }} />}
+          onClick={onCreateTask}
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            right: 20,
+            width: 52,
+            height: 52,
+            boxShadow: '0 4px 16px rgba(22, 119, 255, 0.45)',
+            zIndex: 999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          aria-label="Thêm công việc"
+        />
+      )}
     </Layout>
   );
 }
