@@ -31,6 +31,27 @@ export function removeAuthToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+export function getTokenRemainingTime(): number | null {
+  const token = getAuthToken();
+  if (!token) {
+    return null;
+  }
+  try {
+    const base64Url = token.split('.')[1];
+    if (!base64Url) {
+      return null;
+    }
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(window.atob(base64));
+    if (typeof payload.exp !== 'number') {
+      return null;
+    }
+    return payload.exp * 1000 - Date.now();
+  } catch {
+    return null;
+  }
+}
+
 export function getAuthHeaders(): HeadersInit {
   const token = getAuthToken();
   if (token) {
