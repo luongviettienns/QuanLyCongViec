@@ -1,4 +1,4 @@
-import { Badge } from 'antd';
+import { Badge, Grid } from 'antd';
 import { useDroppable } from '@dnd-kit/react';
 import type { Task, TaskStatus } from '../../types/task.types';
 import { TaskCard } from './TaskCard';
@@ -20,6 +20,7 @@ export function KanbanColumn({
   tasks,
   isFiltering,
 }: KanbanColumnProps) {
+  const screens = Grid.useBreakpoint();
   const { ref, isDropTarget } = useDroppable({
     id: `column-${column.id}`,
     disabled: isFiltering,
@@ -41,6 +42,10 @@ export function KanbanColumn({
         transition: 'all 0.2s ease',
         display: 'flex',
         flexDirection: 'column',
+        minWidth: screens.md ? undefined : 280,
+        width: screens.md ? undefined : '82vw',
+        flexShrink: screens.md ? undefined : 0,
+        scrollSnapAlign: screens.md ? undefined : 'start',
       }}
     >
       <div
