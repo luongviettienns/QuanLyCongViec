@@ -2,6 +2,23 @@ import type { AuthResponse, LoginPayload, RegisterPayload, User } from '../types
 
 const TOKEN_KEY = 'taskflow_auth_token';
 
+type UnauthorizedListener = () => void;
+const unauthorizedListeners = new Set<UnauthorizedListener>();
+
+export function subscribeUnauthorized(listener: UnauthorizedListener): () => void {
+  unauthorizedListeners.add(listener);
+  return () => {
+    unauthorizedListeners.delete(listener);
+  };
+}
+
+export function notifyUnauthorized(): void {
+  removeAuthToken();
+  for (const listener of unauthorizedListeners) {
+    listener();
+  }
+}
+
 export function getAuthToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -88,10 +105,14 @@ export async function getProfile(signal?: AbortSignal): Promise<User> {
     signal,
   });
 
+  if (response.status === 401) {
+    notifyUnauthorized();
+    throw new Error('Phiên đăng nhập đã hết hạn');
+  }
+
   if (!response.ok) {
-    removeAuthToken();
     throw await parseError(response, 'Phiên đăng nhập đã hết hạn');
-  } 
+  }
 
   return response.json();
 }
