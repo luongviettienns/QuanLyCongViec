@@ -1,0 +1,60 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  verify:
+    name: Lint, Build and Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password123
+          POSTGRES_DB: QuanLyCV_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Linters
+        run: npm run lint
+
+      - name: Setup Database Schema
+        env:
+          DATABASE_URL: "postgresql://postgres:password123@localhost:5432/QuanLyCV_test?schema=public"
+        run: |
+          npx prisma generate --schema=apps/backend/prisma/schema.prisma
+          npx prisma migrate deploy --schema=apps/backend/prisma/schema.prisma
+
+      - name: Build Monorepo Workspaces
+        run: npm run build
+
+      - name: Run Automated Test Suites
+        env:
+          DATABASE_URL: "postgresql://postgres:password123@localhost:5432/QuanLyCV_test?schema=public"
+          JWT_SECRET: "ci_super_secret_jwt_key_for_testing_123456789"
+          JWT_EXPIRATION: "7d"
+        run: npm test
