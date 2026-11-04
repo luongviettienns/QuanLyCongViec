@@ -8,6 +8,8 @@ import {
   removeAuthToken,
   getAuthToken,
   subscribeUnauthorized,
+  getTokenRemainingTime,
+  notifyUnauthorized,
 } from '../api/auth.api';
 import { AuthContext } from './auth-context.base';
 
@@ -28,6 +30,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    function checkExpiration() {
+      const remaining = getTokenRemainingTime();
+      if (remaining !== null && remaining <= 0) {
+        notifyUnauthorized();
+      }
+    }
+
+    checkExpiration();
+
+    const remaining = getTokenRemainingTime();
+    if (remaining === null) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      notifyUnauthorized();
+    }, Math.max(remaining, 0));
+
+    const interval = setInterval(checkExpiration, 30000);
+
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
+  }, [user]);
 
   useEffect(() => {
     async function initAuth() {
