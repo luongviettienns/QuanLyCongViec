@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Input, Select, Button, Space } from 'antd';
+import { Input, Select, Button, Space, Grid } from 'antd';
 import type { StatusFilter, Category } from '../types/task.types';
 
 interface TaskToolbarProps {
@@ -26,6 +26,8 @@ export default function TaskToolbar({
   onReset,
 }: TaskToolbarProps) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.sm;
 
   function handleInputChange(val: string) {
     onSearchChange(val);
@@ -91,12 +93,16 @@ export default function TaskToolbar({
         onChange={(e) => handleInputChange(e.target.value)}
         onSearch={handleImmediateSearch}
         allowClear
-        style={{ width: 300 }}
+        style={{ width: isMobile ? '100%' : 300 }}
       />
       <Select<StatusFilter>
         value={statusFilter}
         onChange={handleStatusChange}
-        style={{ width: 170 }}
+        style={{
+          flex: isMobile ? '1 1 calc(50% - 6px)' : undefined,
+          width: isMobile ? undefined : 170,
+          minWidth: isMobile ? 140 : undefined,
+        }}
         options={[
           { value: 'ALL', label: 'Tất cả trạng thái' },
           { value: 'TODO', label: 'Cần làm (TODO)' },
@@ -107,7 +113,11 @@ export default function TaskToolbar({
       <Select<number | 'ALL'>
         value={categoryFilter}
         onChange={handleCategoryChange}
-        style={{ width: 180 }}
+        style={{
+          flex: isMobile ? '1 1 calc(50% - 6px)' : undefined,
+          width: isMobile ? undefined : 180,
+          minWidth: isMobile ? 140 : undefined,
+        }}
         options={[
           { value: 'ALL', label: 'Tất cả danh mục' },
           ...categories.map((cat) => ({
@@ -129,7 +139,12 @@ export default function TaskToolbar({
           })),
         ]}
       />
-      <Button onClick={handleResetClick}>
+      <Button
+        onClick={handleResetClick}
+        style={{
+          width: isMobile ? '100%' : undefined,
+        }}
+      >
         Đặt lại
       </Button>
     </div>

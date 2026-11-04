@@ -1,4 +1,4 @@
-import { Table, Tag, Button, Popconfirm, Space } from 'antd';
+import { Table, Tag, Button, Popconfirm, Space, Grid } from 'antd';
 import type { TableProps } from 'antd';
 import type { Task, Category } from '../types/task.types';
 
@@ -25,6 +25,8 @@ export default function TaskTable({
   onEdit,
   onDelete,
 }: TaskTableProps) {
+  const screens = Grid.useBreakpoint();
+
   const columns: TableProps<Task>['columns'] = [
     {
       title: 'ID',
@@ -125,7 +127,8 @@ export default function TaskTable({
       columns={columns}
       dataSource={tasks}
       loading={loading}
-      pagination={{ pageSize: 10 }}
+      scroll={{ x: 800 }}
+      pagination={{ pageSize: 10, responsive: true, size: screens.xs ? 'small' : undefined }}
     />
   );
 }

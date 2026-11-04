@@ -8,6 +8,7 @@ import {
   DatePicker,
   Tag,
   message,
+  Grid,
 } from 'antd';
 import type { Task, Category, TaskFormValues } from '../types/task.types';
 import { createTask, updateTask } from '../api/tasks.api';
@@ -29,6 +30,7 @@ export default function TaskFormModal({
 }: TaskFormModalProps) {
   const [form] = Form.useForm<TaskFormValues>();
   const [saving, setSaving] = useState(false);
+  const screens = Grid.useBreakpoint();
 
   async function handleSubmit(values: TaskFormValues) {
     try {
@@ -97,6 +99,8 @@ export default function TaskFormModal({
       okText={task ? 'Lưu thay đổi' : 'Tạo mới'}
       cancelText="Huỷ"
       destroyOnHidden
+      width={screens.sm ? 540 : '95%'}
+      style={{ maxWidth: 540 }}
     >
       <Form
         form={form}
@@ -137,7 +141,7 @@ export default function TaskFormModal({
           />
         </Form.Item>
 
-        <div style={{ display: 'flex', gap: 16 }}>
+        <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', gap: screens.xs ? 0 : 16 }}>
           <Form.Item name="startDate" label="Ngày bắt đầu" style={{ flex: 1 }}>
             <DatePicker
               format="DD/MM/YYYY"
@@ -171,7 +175,7 @@ export default function TaskFormModal({
           </Form.Item>
         </div>
 
-        <div style={{ display: 'flex', gap: 16 }}>
+        <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', gap: screens.xs ? 0 : 16 }}>
           <Form.Item name="status" label="Trạng thái" style={{ flex: 1 }}>
             <Select
               options={[

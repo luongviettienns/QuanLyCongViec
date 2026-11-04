@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert } from 'antd';
+import { Alert, Grid } from 'antd';
 import { DragDropProvider, DragOverlay } from '@dnd-kit/react';
 import { PointerSensor, PointerActivationConstraints, KeyboardSensor } from '@dnd-kit/dom';
 import type { Task, TaskStatus } from '../types/task.types';
@@ -20,6 +20,7 @@ const columns: ColumnConfig[] = [
 
 export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const screens = Grid.useBreakpoint();
 
   return (
     <div translate="no">
@@ -124,9 +125,13 @@ export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
       >
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
+            display: screens.md ? 'grid' : 'flex',
+            gridTemplateColumns: screens.md ? 'repeat(3, 1fr)' : undefined,
+            overflowX: screens.md ? 'visible' : 'auto',
             gap: 16,
+            paddingBottom: screens.md ? 0 : 12,
+            scrollSnapType: screens.md ? undefined : 'x mandatory',
+            WebkitOverflowScrolling: 'touch',
           }}
         >
           {columns.map((column) => (

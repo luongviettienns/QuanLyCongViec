@@ -11,6 +11,7 @@ import {
   Popconfirm,
   Typography,
   Card,
+  Grid,
   type TableColumnsType,
 } from 'antd';
 import {
@@ -54,6 +55,7 @@ export default function CategoryManagerModal({
     handleDelete,
   } = useCategories();
 
+  const screens = Grid.useBreakpoint();
   const [createForm] = Form.useForm<{ name: string; color: string }>();
   const [editForm] = Form.useForm<{ name: string; color: string }>();
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -107,7 +109,7 @@ export default function CategoryManagerModal({
       title: 'Màu',
       dataIndex: 'color',
       key: 'color',
-      width: 80,
+      width: 70,
       render: (color: string) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div
@@ -135,7 +137,7 @@ export default function CategoryManagerModal({
     {
       title: 'Thao tác',
       key: 'action',
-      width: 140,
+      width: 100,
       align: 'right',
       render: (_, record: Category) => (
         <Space size="small">
@@ -177,7 +179,7 @@ export default function CategoryManagerModal({
           </Space>
         }
         footer={null}
-        width={600}
+        width={screens.sm ? 600 : '95%'}
         destroyOnClose
       >
         <Card
@@ -187,40 +189,51 @@ export default function CategoryManagerModal({
         >
           <Form
             form={createForm}
-            layout="inline"
+            layout="vertical"
             onFinish={(values) => void onFinishCreate(values)}
-            style={{ alignItems: 'center' }}
           >
-            <Form.Item
-              name="name"
-              rules={[
-                { required: true, message: 'Nhập tên danh mục' },
-                { min: 2, message: 'Tối thiểu 2 ký tự' },
-                { max: 50, message: 'Tối đa 50 ký tự' },
-              ]}
-              style={{ flex: 1, marginRight: 8, marginBottom: 0 }}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: screens.sm ? 'row' : 'column',
+                gap: 8,
+                alignItems: screens.sm ? 'center' : 'stretch',
+              }}
             >
-              <Input placeholder="Tên danh mục mới (vd: Họp dự án, Cá nhân...)" />
-            </Form.Item>
-
-            <Form.Item style={{ marginRight: 8, marginBottom: 0 }}>
-              <ColorPicker
-                value={createColor}
-                onChange={(c) => setCreateColor(c.toHexString())}
-                presets={[{ label: 'Màu gợi ý', colors: PRESET_COLORS }]}
-              />
-            </Form.Item>
-
-            <Form.Item style={{ marginBottom: 0 }}>
-              <Button
-                type="primary"
-                htmlType="submit"
-                icon={<PlusOutlined />}
-                loading={loading}
+              <Form.Item
+                name="name"
+                rules={[
+                  { required: true, message: 'Nhập tên danh mục' },
+                  { min: 2, message: 'Tối thiểu 2 ký tự' },
+                  { max: 50, message: 'Tối đa 50 ký tự' },
+                ]}
+                style={{ flex: 1, margin: 0 }}
               >
-                Thêm
-              </Button>
-            </Form.Item>
+                <Input placeholder="Tên danh mục mới (vd: Họp dự án, Cá nhân...)" />
+              </Form.Item>
+
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <Form.Item style={{ margin: 0 }}>
+                  <ColorPicker
+                    value={createColor}
+                    onChange={(c) => setCreateColor(c.toHexString())}
+                    presets={[{ label: 'Màu gợi ý', colors: PRESET_COLORS }]}
+                  />
+                </Form.Item>
+
+                <Form.Item style={{ margin: 0, flex: screens.sm ? undefined : 1 }}>
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    icon={<PlusOutlined />}
+                    loading={loading}
+                    style={{ width: screens.sm ? undefined : '100%' }}
+                  >
+                    Thêm
+                  </Button>
+                </Form.Item>
+              </div>
+            </div>
           </Form>
         </Card>
 
@@ -248,7 +261,7 @@ export default function CategoryManagerModal({
         onOk={() => editForm.submit()}
         confirmLoading={loading}
         destroyOnClose
-        width={420}
+        width={screens.sm ? 420 : '90%'}
       >
         <Form
           form={editForm}
