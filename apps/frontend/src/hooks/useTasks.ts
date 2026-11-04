@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { message } from 'antd';
-import type { Task, Category, StatusFilter, TaskStatus } from '../types/task.types';
+import type { Task, Category, StatusFilter, PriorityFilter, TaskStatus } from '../types/task.types';
 import {
   getTasks,
   getCategories,
@@ -17,10 +17,14 @@ export function useTasks() {
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<number | 'ALL'>('ALL');
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('ALL');
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const isFiltering =
-    searchText.trim() !== '' || statusFilter !== 'ALL' || categoryFilter !== 'ALL';
+    searchText.trim() !== '' ||
+    statusFilter !== 'ALL' ||
+    categoryFilter !== 'ALL' ||
+    priorityFilter !== 'ALL';
 
   const resetState = useCallback(() => {
     if (abortControllerRef.current) {
@@ -31,6 +35,7 @@ export function useTasks() {
     setSearchText('');
     setStatusFilter('ALL');
     setCategoryFilter('ALL');
+    setPriorityFilter('ALL');
     setLoading(false);
   }, []);
 
@@ -39,6 +44,7 @@ export function useTasks() {
       search = '',
       status: StatusFilter = 'ALL',
       catId: number | 'ALL' = 'ALL',
+      priority: PriorityFilter = 'ALL',
     ) => {
       if (!user) {
         setTasks([]);
@@ -59,6 +65,7 @@ export function useTasks() {
             search,
             status: status === 'ALL' ? undefined : status,
             categoryId: catId === 'ALL' ? undefined : catId,
+            priority: priority === 'ALL' ? undefined : priority,
           },
           controller.signal,
         );
@@ -119,7 +126,7 @@ export function useTasks() {
       setLoading(true);
       await Promise.all([
         fetchCategories(),
-        fetchTasks('', 'ALL', 'ALL'),
+        fetchTasks('', 'ALL', 'ALL', 'ALL'),
       ]);
     }
 
@@ -139,7 +146,7 @@ export function useTasks() {
     }
     setSearchText(value);
     setLoading(true);
-    void fetchTasks(value, statusFilter, categoryFilter);
+    void fetchTasks(value, statusFilter, categoryFilter, priorityFilter);
   }
 
   function handleStatusChange(value: StatusFilter) {
@@ -148,7 +155,7 @@ export function useTasks() {
     }
     setStatusFilter(value);
     setLoading(true);
-    void fetchTasks(searchText, value, categoryFilter);
+    void fetchTasks(searchText, value, categoryFilter, priorityFilter);
   }
 
   function handleCategoryChange(value: number | 'ALL') {
@@ -157,7 +164,16 @@ export function useTasks() {
     }
     setCategoryFilter(value);
     setLoading(true);
-    void fetchTasks(searchText, statusFilter, value);
+    void fetchTasks(searchText, statusFilter, value, priorityFilter);
+  }
+
+  function handlePriorityChange(value: PriorityFilter) {
+    if (!user) {
+      return;
+    }
+    setPriorityFilter(value);
+    setLoading(true);
+    void fetchTasks(searchText, statusFilter, categoryFilter, value);
   }
 
   function handleReset() {
@@ -168,8 +184,9 @@ export function useTasks() {
     setSearchText('');
     setStatusFilter('ALL');
     setCategoryFilter('ALL');
+    setPriorityFilter('ALL');
     setLoading(true);
-    void fetchTasks('', 'ALL', 'ALL');
+    void fetchTasks('', 'ALL', 'ALL', 'ALL');
   }
 
   async function refetch() {
@@ -179,7 +196,7 @@ export function useTasks() {
     }
     setLoading(true);
     await Promise.all([
-      fetchTasks(searchText, statusFilter, categoryFilter),
+      fetchTasks(searchText, statusFilter, categoryFilter, priorityFilter),
       fetchCategories(),
     ]);
   }
@@ -192,7 +209,7 @@ export function useTasks() {
       await deleteTask(id);
       message.success('Xoá công việc thành công');
       setLoading(true);
-      await fetchTasks(searchText, statusFilter, categoryFilter);
+      await fetchTasks(searchText, statusFilter, categoryFilter, priorityFilter);
     } catch (error) {
       message.error(
         error instanceof Error ? error.message : 'Xoá công việc thất bại',
@@ -238,11 +255,13 @@ export function useTasks() {
     searchText,
     statusFilter,
     categoryFilter,
+    priorityFilter,
     isFiltering,
     setSearchText,
     handleSearch,
     handleStatusChange,
     handleCategoryChange,
+    handlePriorityChange,
     handleReset,
     refetch,
     handleDelete,

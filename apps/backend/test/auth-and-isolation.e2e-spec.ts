@@ -349,5 +349,47 @@ describe('Authentication and Data Isolation (e2e)', () => {
         .set('Authorization', `Bearer ${tokenB}`)
         .expect(404);
     });
+
+    it('filters tasks by matching title case-insensitively via GET /tasks?search=...', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/tasks?search=${encodeURIComponent('task a')}`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBeGreaterThanOrEqual(1);
+      expect(res.body.some((t: { id: number; title: string }) => t.id === taskAId)).toBe(true);
+    });
+
+    it('does not match tasks when search term only appears in description', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/tasks?search=Description%20A')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.some((t: { id: number }) => t.id === taskAId)).toBe(false);
+    });
+
+    it('returns empty list when search term does not match any title', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/tasks?search=NonExistentTaskTitleXYZ999')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBe(0);
+    });
+
+    it('filters tasks by priority via GET /tasks?priority=HIGH', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/tasks?priority=HIGH')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBeGreaterThanOrEqual(1);
+      expect(res.body.every((t: { priority: string }) => t.priority === 'HIGH')).toBe(true);
+    });
   });
 });

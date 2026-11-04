@@ -4,7 +4,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class FilterTasksDto {
   @ApiPropertyOptional({
-    description: 'Từ khoá tìm kiếm theo tiêu đề hoặc mô tả',
+    description: 'Từ khoá tìm kiếm theo tiêu đề công việc',
     maxLength: 100,
   })
   @IsOptional()

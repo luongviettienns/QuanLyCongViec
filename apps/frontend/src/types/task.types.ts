@@ -6,6 +6,8 @@ export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH';
 
 export type StatusFilter = 'ALL' | TaskStatus;
 
+export type PriorityFilter = 'ALL' | TaskPriority;
+
 export interface Category {
   id: number;
   name: string;

@@ -23,20 +23,10 @@ export class TasksService {
     if (query?.search) {
       const keyword = query.search.trim();
       if (keyword.length > 0) {
-        where.OR = [
-          {
-            title: {
-              contains: keyword,
-              mode: 'insensitive',
-            },
-          },
-          {
-            description: {
-              contains: keyword,
-              mode: 'insensitive',
-            },
-          },
-        ];
+        where.title = {
+          contains: keyword,
+          mode: 'insensitive',
+        };
       }
     }
  
