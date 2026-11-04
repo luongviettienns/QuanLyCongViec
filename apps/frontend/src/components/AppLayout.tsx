@@ -33,15 +33,18 @@ interface AppLayoutProps {
   onOpenCategories?: () => void;
   onOpenAuth?: () => void;
   loading?: boolean;
+  currentNav?: 'tasks' | 'categories';
+  onNavChange?: (key: 'tasks' | 'categories') => void;
 }
 
 export default function AppLayout({
   children,
   onReload,
   onCreateTask,
-  onOpenCategories,
   onOpenAuth,
   loading = false,
+  currentNav = 'tasks',
+  onNavChange,
 }: AppLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -128,15 +131,14 @@ export default function AppLayout({
       <div style={{ flex: 1, padding: '12px 0' }}>
         <Menu
           mode="inline"
-          defaultSelectedKeys={['tasks']}
-          selectedKeys={['tasks']}
+          selectedKeys={[currentNav]}
           items={menuItems}
           onClick={({ key }) => {
             if (isMobile) {
               setDrawerOpen(false);
             }
-            if (key === 'categories') {
-              onOpenCategories?.();
+            if (key === 'tasks' || key === 'categories') {
+              onNavChange?.(key);
             }
           }}
           style={{ borderRight: 0 }}
@@ -228,7 +230,7 @@ export default function AppLayout({
             />
             {screens.sm && (
               <span style={{ fontWeight: 600, fontSize: 16, color: '#1f1f1f' }}>
-                Không gian làm việc
+                {currentNav === 'categories' ? 'Quản lý danh mục' : 'Không gian làm việc'}
               </span>
             )}
           </Space>
@@ -242,14 +244,17 @@ export default function AppLayout({
             >
               {screens.sm ? 'Tải lại' : undefined}
             </Button>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={onCreateTask}
-              aria-label="Thêm công việc"
-            >
-              {screens.sm ? 'Thêm công việc' : undefined}
-            </Button>
+
+            {currentNav === 'tasks' && (
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={onCreateTask}
+                aria-label="Thêm công việc"
+              >
+                {screens.sm ? 'Thêm công việc' : undefined}
+              </Button>
+            )}
 
             {user ? (
               <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click']}>
@@ -293,7 +298,7 @@ export default function AppLayout({
         </Content>
       </Layout>
 
-      {isMobile && (
+      {isMobile && currentNav === 'tasks' && (
         <Button
           type="primary"
           shape="circle"
