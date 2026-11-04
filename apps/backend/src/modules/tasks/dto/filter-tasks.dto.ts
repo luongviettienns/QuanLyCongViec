@@ -1,4 +1,5 @@
-import { IsOptional, IsString, MaxLength, IsIn } from 'class-validator';
+import { IsOptional, IsString, MaxLength, IsIn, IsInt } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class FilterTasksDto {
@@ -30,4 +31,13 @@ export class FilterTasksDto {
     message: 'Mức độ ưu tiên lọc phải là LOW, MEDIUM hoặc HIGH',
   })
   priority?: 'LOW' | 'MEDIUM' | 'HIGH';
+
+  @ApiPropertyOptional({
+    description: 'Mã danh mục cần lọc (ID)',
+    example: 1,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'Mã danh mục lọc phải là số nguyên' })
+  categoryId?: number;
 }

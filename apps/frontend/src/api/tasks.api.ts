@@ -36,7 +36,7 @@ async function handleApiResponse<T>(response: Response, defaultMessage: string):
 }
 
 export async function getTasks(
-  params?: { search?: string; status?: string },
+  params?: { search?: string; status?: string; categoryId?: number },
   signal?: AbortSignal,
 ): Promise<Task[]> {
   const searchParams = new URLSearchParams();
@@ -46,6 +46,9 @@ export async function getTasks(
   }
   if (params?.status && params.status !== 'ALL') {
     searchParams.append('status', params.status);
+  }
+  if (params?.categoryId !== undefined) {
+    searchParams.append('categoryId', String(params.categoryId));
   }
 
   const queryString = searchParams.toString();

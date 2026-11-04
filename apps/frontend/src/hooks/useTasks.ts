@@ -16,9 +16,11 @@ export function useTasks() {
   const [loading, setLoading] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
+  const [categoryFilter, setCategoryFilter] = useState<number | 'ALL'>('ALL');
 
   const abortControllerRef = useRef<AbortController | null>(null);
-  const isFiltering = searchText.trim() !== '' || statusFilter !== 'ALL';
+  const isFiltering =
+    searchText.trim() !== '' || statusFilter !== 'ALL' || categoryFilter !== 'ALL';
 
   const resetState = useCallback(() => {
     if (abortControllerRef.current) {
@@ -28,11 +30,16 @@ export function useTasks() {
     setCategories([]);
     setSearchText('');
     setStatusFilter('ALL');
+    setCategoryFilter('ALL');
     setLoading(false);
   }, []);
 
   const fetchTasks = useCallback(
-    async (search = '', status: StatusFilter = 'ALL') => {
+    async (
+      search = '',
+      status: StatusFilter = 'ALL',
+      catId: number | 'ALL' = 'ALL',
+    ) => {
       if (!user) {
         setTasks([]);
         setLoading(false);
@@ -48,7 +55,11 @@ export function useTasks() {
 
       try {
         const data = await getTasks(
-          { search, status: status === 'ALL' ? undefined : status },
+          {
+            search,
+            status: status === 'ALL' ? undefined : status,
+            categoryId: catId === 'ALL' ? undefined : catId,
+          },
           controller.signal,
         );
         if (abortControllerRef.current === controller) {
@@ -58,8 +69,9 @@ export function useTasks() {
         if (error instanceof DOMException && error.name === 'AbortError') {
           return;
         }
-        console.error('Lỗi API:', error);
-        message.error(error instanceof Error ? error.message : 'Lỗi khi tải dữ liệu');
+        message.error(
+          error instanceof Error ? error.message : 'Lỗi khi tải dữ liệu',
+        );
       } finally {
         if (abortControllerRef.current === controller) {
           setLoading(false);
@@ -82,7 +94,9 @@ export function useTasks() {
       if (error instanceof DOMException && error.name === 'AbortError') {
         return;
       }
-      console.error('Lỗi danh mục:', error);
+      message.error(
+        error instanceof Error ? error.message : 'Lỗi khi tải danh mục',
+      );
     }
   }, [user]);
 
@@ -103,7 +117,10 @@ export function useTasks() {
       }
 
       setLoading(true);
-      await Promise.all([fetchCategories(), fetchTasks('', 'ALL')]);
+      await Promise.all([
+        fetchCategories(),
+        fetchTasks('', 'ALL', 'ALL'),
+      ]);
     }
 
     void sync();
@@ -122,7 +139,7 @@ export function useTasks() {
     }
     setSearchText(value);
     setLoading(true);
-    void fetchTasks(value, statusFilter);
+    void fetchTasks(value, statusFilter, categoryFilter);
   }
 
   function handleStatusChange(value: StatusFilter) {
@@ -131,7 +148,16 @@ export function useTasks() {
     }
     setStatusFilter(value);
     setLoading(true);
-    void fetchTasks(searchText, value);
+    void fetchTasks(searchText, value, categoryFilter);
+  }
+
+  function handleCategoryChange(value: number | 'ALL') {
+    if (!user) {
+      return;
+    }
+    setCategoryFilter(value);
+    setLoading(true);
+    void fetchTasks(searchText, statusFilter, value);
   }
 
   function handleReset() {
@@ -141,8 +167,9 @@ export function useTasks() {
     }
     setSearchText('');
     setStatusFilter('ALL');
+    setCategoryFilter('ALL');
     setLoading(true);
-    void fetchTasks('', 'ALL');
+    void fetchTasks('', 'ALL', 'ALL');
   }
 
   async function refetch() {
@@ -151,7 +178,10 @@ export function useTasks() {
       return;
     }
     setLoading(true);
-    await Promise.all([fetchTasks(searchText, statusFilter), fetchCategories()]);
+    await Promise.all([
+      fetchTasks(searchText, statusFilter, categoryFilter),
+      fetchCategories(),
+    ]);
   }
 
   async function handleDelete(id: number) {
@@ -162,10 +192,11 @@ export function useTasks() {
       await deleteTask(id);
       message.success('Xoá công việc thành công');
       setLoading(true);
-      await fetchTasks(searchText, statusFilter);
+      await fetchTasks(searchText, statusFilter, categoryFilter);
     } catch (error) {
-      console.error(error);
-      message.error(error instanceof Error ? error.message : 'Xoá công việc thất bại');
+      message.error(
+        error instanceof Error ? error.message : 'Xoá công việc thất bại',
+      );
     }
   }
 
@@ -194,7 +225,9 @@ export function useTasks() {
       await reorderTasks(taskIds, status);
     } catch (error) {
       setTasks(previousTasks);
-      message.error(error instanceof Error ? error.message : 'Không thể lưu vị trí công việc');
+      message.error(
+        error instanceof Error ? error.message : 'Không thể lưu vị trí công việc',
+      );
     }
   }
 
@@ -204,10 +237,12 @@ export function useTasks() {
     loading,
     searchText,
     statusFilter,
+    categoryFilter,
     isFiltering,
     setSearchText,
     handleSearch,
     handleStatusChange,
+    handleCategoryChange,
     handleReset,
     refetch,
     handleDelete,
