@@ -31,7 +31,7 @@ export function TaskCard({
         marginBottom: 10,
         cursor: isFiltering ? 'default' : (isDragging ? 'grabbing' : 'grab'),
         opacity: isDragging ? 0.35 : 1,
-        touchAction: isFiltering ? 'auto' : 'none',
+        touchAction: isFiltering ? 'auto' : 'pan-y',
         borderTop: isDropTarget && !isDragging ? '3px solid #1677ff' : '3px solid transparent',
         transition: 'opacity 0.15s ease',
       }}

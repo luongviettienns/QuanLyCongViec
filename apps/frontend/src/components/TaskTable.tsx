@@ -1,6 +1,8 @@
-import { Table, Tag, Button, Popconfirm, Space, Grid } from 'antd';
+import { useState } from 'react';
+import { Table, Tag, Button, Popconfirm, Space, Grid, List, Card } from 'antd';
+import { EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import type { Task, Category } from '../types/task.types';
+import type { Task, Category, TaskPriority } from '../types/task.types';
 
 interface TaskTableProps {
   tasks: Task[];
@@ -8,6 +10,12 @@ interface TaskTableProps {
   onEdit: (task: Task) => void;
   onDelete: (id: number) => void;
 }
+
+const priorityConfig: Record<TaskPriority, { color: string; label: string }> = {
+  HIGH: { color: 'red', label: 'Cao' },
+  MEDIUM: { color: 'orange', label: 'Trung bình' },
+  LOW: { color: 'blue', label: 'Thấp' },
+};
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '';
@@ -26,6 +34,7 @@ export default function TaskTable({
   onDelete,
 }: TaskTableProps) {
   const screens = Grid.useBreakpoint();
+  const [now] = useState(() => Date.now());
 
   const columns: TableProps<Task>['columns'] = [
     {
@@ -58,12 +67,7 @@ export default function TaskTable({
       width: 130,
       render: (priority?: Task['priority']) => {
         const val = priority || 'MEDIUM';
-        const config: Record<string, { color: string; label: string }> = {
-          HIGH: { color: 'red', label: 'Cao' },
-          MEDIUM: { color: 'orange', label: 'Trung bình' },
-          LOW: { color: 'blue', label: 'Thấp' },
-        };
-        const item = config[val] || { color: 'default', label: val };
+        const item = priorityConfig[val] || { color: 'default', label: val };
         return <Tag color={item.color}>{item.label}</Tag>;
       },
     },
@@ -87,7 +91,7 @@ export default function TaskTable({
       width: 160,
       render: (date?: string | null, record?: Task) => {
         if (!date) return <span style={{ color: '#bbb' }}>-</span>;
-        const overdue = record && record.status !== 'DONE' && new Date(date).getTime() < Date.now();
+        const overdue = record && record.status !== 'DONE' && new Date(date).getTime() < now;
         return (
           <span style={{ color: overdue ? '#ff4d4f' : 'inherit', fontWeight: overdue ? 600 : 400 }}>
             {formatDate(date)} {overdue ? '(Quá hạn)' : ''}
@@ -121,6 +125,109 @@ export default function TaskTable({
     },
   ];
 
+  if (screens.xs) {
+    return (
+      <List
+        loading={loading}
+        dataSource={tasks}
+        pagination={{ pageSize: 6, align: 'center', size: 'small' }}
+        locale={{ emptyText: 'Không có công việc nào' }}
+        renderItem={(task) => {
+          const statusColor = task.status === 'DONE' ? 'green' : task.status === 'IN_PROGRESS' ? 'blue' : 'orange';
+          const priority = task.priority || 'MEDIUM';
+          const pConfig = priorityConfig[priority] || { color: 'default', label: priority };
+          const isOverdue = task.status !== 'DONE' && task.dueDate && new Date(task.dueDate).getTime() < now;
+
+          return (
+            <Card
+              size="small"
+              style={{
+                marginBottom: 12,
+                borderRadius: 8,
+                border: '1px solid #f0f0f0',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                <div style={{ fontWeight: 600, fontSize: 15, color: '#1f1f1f', flex: 1 }}>
+                  {task.title}
+                </div>
+                <Tag color={statusColor} style={{ margin: 0 }}>
+                  {task.status}
+                </Tag>
+              </div>
+
+              {task.description && (
+                <div style={{ fontSize: 13, color: '#595959', margin: '8px 0' }}>
+                  {task.description}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0' }}>
+                <Tag color={pConfig.color} style={{ margin: 0 }}>
+                  {pConfig.label}
+                </Tag>
+                {task.category && (
+                  <Tag color={task.category.color} style={{ margin: 0 }}>
+                    {task.category.name}
+                  </Tag>
+                )}
+                {task.startDate && (
+                  <Tag style={{ margin: 0, fontSize: 11 }}>
+                    Bắt đầu: {formatDate(task.startDate)}
+                  </Tag>
+                )}
+                {task.dueDate && (
+                  <Tag color={isOverdue ? 'error' : 'default'} style={{ margin: 0, fontSize: 11 }}>
+                    Hạn: {formatDate(task.dueDate)} {isOverdue ? '(Quá hạn)' : ''}
+                  </Tag>
+                )}
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: 8,
+                  borderTop: '1px solid #f5f5f5',
+                  paddingTop: 8,
+                  marginTop: 8,
+                }}
+              >
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<EditOutlined />}
+                  onClick={() => onEdit(task)}
+                  style={{ color: '#1677ff' }}
+                >
+                  Sửa
+                </Button>
+                <Popconfirm
+                  title="Xác nhận xoá"
+                  description={`Bạn có chắc muốn xoá "${task.title}"?`}
+                  onConfirm={() => onDelete(task.id)}
+                  okText="Xoá"
+                  cancelText="Huỷ"
+                  okButtonProps={{ danger: true }}
+                >
+                  <Button
+                    size="small"
+                    type="text"
+                    danger
+                    icon={<DeleteOutlined />}
+                  >
+                    Xoá
+                  </Button>
+                </Popconfirm>
+              </div>
+            </Card>
+          );
+        }}
+      />
+    );
+  }
+
   return (
     <Table
       rowKey="id"
@@ -128,7 +235,7 @@ export default function TaskTable({
       dataSource={tasks}
       loading={loading}
       scroll={{ x: 800 }}
-      pagination={{ pageSize: 10, responsive: true, size: screens.xs ? 'small' : undefined }}
+      pagination={{ pageSize: 10, responsive: true, size: undefined }}
     />
   );
 }

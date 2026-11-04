@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Alert, Grid } from 'antd';
+import { useState, useRef } from 'react';
+import { Alert, Grid, Button } from 'antd';
 import { DragDropProvider, DragOverlay } from '@dnd-kit/react';
 import { PointerSensor, PointerActivationConstraints, KeyboardSensor } from '@dnd-kit/dom';
 import type { Task, TaskStatus } from '../types/task.types';
@@ -21,6 +21,14 @@ const columns: ColumnConfig[] = [
 export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const screens = Grid.useBreakpoint();
+  const columnRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  function scrollToColumn(columnId: string) {
+    const el = columnRefs.current[columnId];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }
 
   return (
     <div translate="no">
@@ -32,11 +40,44 @@ export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
           style={{ marginBottom: 16 }}
         />
       )}
+
+      {!screens.md && (
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            marginBottom: 12,
+            overflowX: 'auto',
+            paddingBottom: 4,
+          }}
+        >
+          {columns.map((column) => {
+            const count = tasks.filter((t) => t.status === column.id).length;
+            return (
+              <Button
+                key={column.id}
+                size="small"
+                shape="round"
+                onClick={() => scrollToColumn(column.id)}
+                style={{
+                  borderColor: column.color,
+                  color: column.color,
+                  fontWeight: 500,
+                  flexShrink: 0,
+                }}
+              >
+                {column.title} ({count})
+              </Button>
+            );
+          })}
+        </div>
+      )}
+
       <DragDropProvider
         sensors={[
           PointerSensor.configure({
             activationConstraints: () => [
-              new PointerActivationConstraints.Distance({ value: 3 }),
+              new PointerActivationConstraints.Distance({ value: 5 }),
             ],
           }),
           KeyboardSensor,
@@ -140,6 +181,9 @@ export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
               column={column}
               tasks={tasks}
               isFiltering={isFiltering}
+              domRef={(el) => {
+                columnRefs.current[column.id] = el;
+              }}
             />
           ))}
         </div>

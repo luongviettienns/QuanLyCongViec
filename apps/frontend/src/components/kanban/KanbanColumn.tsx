@@ -13,12 +13,14 @@ interface KanbanColumnProps {
   column: ColumnConfig;
   tasks: Task[];
   isFiltering?: boolean;
+  domRef?: (node: HTMLDivElement | null) => void;
 }
 
 export function KanbanColumn({
   column,
   tasks,
   isFiltering,
+  domRef,
 }: KanbanColumnProps) {
   const screens = Grid.useBreakpoint();
   const { ref, isDropTarget } = useDroppable({
@@ -32,7 +34,10 @@ export function KanbanColumn({
 
   return (
     <div
-      ref={ref}
+      ref={(node) => {
+        ref(node);
+        domRef?.(node);
+      }}
       style={{
         background: isDropTarget ? '#e6f4ff' : '#f8f9fa',
         padding: 16,
