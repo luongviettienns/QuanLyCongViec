@@ -289,7 +289,7 @@ export function useTasks(options?: { enabled?: boolean }) {
     });
 
     try {
-      await reorderTasks(taskIds, status);
+      await reorderTasks(taskIds, status, teamFilter !== 'ALL' ? teamFilter : undefined);
     } catch (error) {
       setTasks(previousTasks);
       message.error(

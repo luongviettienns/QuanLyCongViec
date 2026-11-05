@@ -15,6 +15,10 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { TasksService } from './tasks.service.js';
 import { CreateTaskDto } from './dto/create-task.dto.js';
 import { UpdateTaskDto } from './dto/update-task.dto.js';
+import { UpdateTaskContentDto } from './dto/update-task-content.dto.js';
+import { UpdateTaskStatusDto } from './dto/update-task-status.dto.js';
+import { UpdateTaskAssigneeDto } from './dto/update-task-assignee.dto.js';
+import { ReturnTaskDto } from './dto/return-task.dto.js';
 import { ReorderTasksDto } from './dto/reorder-tasks.dto.js';
 import { FilterTasksDto } from './dto/filter-tasks.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
@@ -69,7 +73,47 @@ export class TasksController {
     return this.tasksService.create(body, user.id);
   }
 
-  @ApiOperation({ summary: 'Cập nhật công việc theo ID' })
+  @ApiOperation({ summary: 'Cập nhật nội dung công việc (title, description, dates, priority, category)' })
+  @Patch(':id')
+  updateContent(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: UpdateTaskContentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasksService.updateContent(id, body, user.id);
+  }
+
+  @ApiOperation({ summary: 'Cập nhật trạng thái công việc (TODO, IN_PROGRESS, DONE)' })
+  @Patch(':id/status')
+  updateStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: UpdateTaskStatusDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasksService.updateStatus(id, body, user.id);
+  }
+
+  @ApiOperation({ summary: 'Phân công hoặc thay đổi người thực hiện công việc' })
+  @Patch(':id/assignee')
+  updateAssignee(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: UpdateTaskAssigneeDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasksService.updateAssignee(id, body, user.id);
+  }
+
+  @ApiOperation({ summary: 'Trả lại công việc cho người tạo (chỉ dành cho Assignee)' })
+  @Patch(':id/return')
+  returnTask(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: ReturnTaskDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasksService.returnTask(id, body, user.id);
+  }
+
+  @ApiOperation({ summary: 'Cập nhật công việc theo ID (tương thích ngược)' })
   @Put(':id')
   update(
     @Param('id', ParseIntPipe) id: number,

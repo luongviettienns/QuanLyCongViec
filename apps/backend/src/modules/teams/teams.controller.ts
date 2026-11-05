@@ -15,6 +15,7 @@ import { CreateTeamDto } from './dto/create-team.dto.js';
 import { UpdateTeamDto } from './dto/update-team.dto.js';
 import { AddMemberDto } from './dto/add-member.dto.js';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto.js';
+import { TransferOwnershipDto } from './dto/transfer-ownership.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js';
 
@@ -57,6 +58,16 @@ export class TeamsController {
     @Body() dto: UpdateTeamDto,
   ) {
     return this.teamsService.update(user.id, id, dto);
+  }
+
+  @ApiOperation({ summary: 'Chuyển quyền sở hữu nhóm (chỉ OWNER)' })
+  @Patch(':id/transfer-ownership')
+  transferOwnership(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: TransferOwnershipDto,
+  ) {
+    return this.teamsService.transferOwnership(user.id, id, dto);
   }
 
   @ApiOperation({ summary: 'Giải tán nhóm (chỉ OWNER)' })

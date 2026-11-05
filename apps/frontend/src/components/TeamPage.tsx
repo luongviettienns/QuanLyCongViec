@@ -38,6 +38,7 @@ import {
   addTeamMember,
   updateTeamMemberRole,
   removeTeamMember,
+  transferOwnership,
 } from '../api/teams.api';
 import type { Team, TeamMember, TeamRole, CreateTeamPayload, UpdateTeamPayload, AddMemberPayload } from '../types/task.types';
 
@@ -221,6 +222,22 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
     }
   }
 
+  async function handleTransferOwnership(newOwnerId: number) {
+    if (!selectedTeamId) return;
+    try {
+      setActionSubmitting(true);
+      await transferOwnership(selectedTeamId, newOwnerId);
+      message.success('Đã chuyển quyền sở hữu nhóm thành công');
+      await loadTeamDetail(selectedTeamId);
+      await loadTeams(selectedTeamId);
+      onTeamChanged?.();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : 'Không thể chuyển quyền sở hữu');
+    } finally {
+      setActionSubmitting(false);
+    }
+  }
+
   const callerRole = selectedTeam?.currentUserRole;
   const isOwner = callerRole === 'OWNER';
   const isAdmin = callerRole === 'ADMIN';
@@ -290,16 +307,32 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
         return (
           <Space size="small">
             {isOwner && (
-              <Select
-                size="small"
-                value={record.role}
-                style={{ width: 140 }}
-                onChange={(role) => void handleUpdateMemberRole(record.id, role)}
-                options={[
-                  { label: 'Quản trị viên', value: 'ADMIN' },
-                  { label: 'Thành viên', value: 'MEMBER' },
-                ]}
-              />
+              <>
+                <Select
+                  size="small"
+                  value={record.role}
+                  style={{ width: 140 }}
+                  onChange={(role) => void handleUpdateMemberRole(record.id, role)}
+                  options={[
+                    { label: 'Quản trị viên', value: 'ADMIN' },
+                    { label: 'Thành viên', value: 'MEMBER' },
+                  ]}
+                />
+                <Popconfirm
+                  title="Chuyển quyền chủ nhóm?"
+                  description={`Bạn có chắc muốn chuyển quyền sở hữu nhóm cho "${record.user?.name}"? Bạn sẽ trở thành Quản trị viên.`}
+                  onConfirm={() => void handleTransferOwnership(record.userId)}
+                  okText="Chuyển quyền"
+                  cancelText="Hủy"
+                >
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<CrownOutlined style={{ color: '#faad14' }} />}
+                    title="Chuyển quyền sở hữu nhóm"
+                  />
+                </Popconfirm>
+              </>
             )}
 
             {(isOwner || (isAdmin && record.role === 'MEMBER')) && (

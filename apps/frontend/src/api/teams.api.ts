@@ -137,6 +137,19 @@ export async function updateTeamMemberRole(
   return handleApiResponse<TeamMember>(response, 'Không thể thay đổi vai trò thành viên');
 }
 
+export async function transferOwnership(teamId: number, newOwnerId: number): Promise<Team> {
+  const response = await fetch(`/teams/${teamId}/transfer-ownership`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({ newOwnerId }),
+  });
+
+  return handleApiResponse<Team>(response, 'Không thể chuyển quyền sở hữu nhóm');
+}
+
 export async function removeTeamMember(teamId: number, memberId: number): Promise<void> {
   const response = await fetch(`/teams/${teamId}/members/${memberId}`, {
     method: 'DELETE',

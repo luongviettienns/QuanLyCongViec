@@ -3,6 +3,7 @@ import type {
   Category,
   CreateTaskPayload,
   UpdateTaskPayload,
+  UpdateTaskContentPayload,
   TaskStatus,
   TaskStats,
 } from '../types/task.types';
@@ -121,6 +122,58 @@ export async function updateTask(id: number, payload: UpdateTaskPayload): Promis
   return handleApiResponse<Task>(response, 'Không thể cập nhật công việc');
 }
 
+export async function updateTaskContent(id: number, payload: UpdateTaskContentPayload): Promise<Task> {
+  const response = await fetch(`/tasks/${id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return handleApiResponse<Task>(response, 'Không thể cập nhật nội dung công việc');
+}
+
+export async function updateTaskStatus(id: number, status: TaskStatus): Promise<Task> {
+  const response = await fetch(`/tasks/${id}/status`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({ status }),
+  });
+
+  return handleApiResponse<Task>(response, 'Không thể cập nhật trạng thái công việc');
+}
+
+export async function updateTaskAssignee(id: number, assigneeId: number | null): Promise<Task> {
+  const response = await fetch(`/tasks/${id}/assignee`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({ assigneeId }),
+  });
+
+  return handleApiResponse<Task>(response, 'Không thể thay đổi người thực hiện công việc');
+}
+
+export async function returnTask(id: number, reason?: string): Promise<Task> {
+  const response = await fetch(`/tasks/${id}/return`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({ reason }),
+  });
+
+  return handleApiResponse<Task>(response, 'Không thể trả lại công việc');
+}
+
 export async function deleteTask(id: number): Promise<void> {
   const response = await fetch(`/tasks/${id}`, {
     method: 'DELETE',
@@ -139,14 +192,14 @@ export async function deleteTask(id: number): Promise<void> {
   }
 }
 
-export async function reorderTasks(taskIds: number[], status?: TaskStatus): Promise<void> {
+export async function reorderTasks(taskIds: number[], status?: TaskStatus, teamId?: number): Promise<void> {
   const response = await fetch('/tasks/reorder', {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
       ...getAuthHeaders(),
     },
-    body: JSON.stringify({ taskIds, status }),
+    body: JSON.stringify({ taskIds, status, teamId }),
   });
 
   if (response.status === 401) {

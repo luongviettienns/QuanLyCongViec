@@ -9,6 +9,7 @@ import { CreateTeamDto } from './dto/create-team.dto.js';
 import { UpdateTeamDto } from './dto/update-team.dto.js';
 import { AddMemberDto } from './dto/add-member.dto.js';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto.js';
+import { TransferOwnershipDto } from './dto/transfer-ownership.dto.js';
 import { TeamRole } from '@prisma/client';
 
 @Injectable()
@@ -303,6 +304,84 @@ export class TeamsService {
           select: { id: true, name: true, email: true },
         },
       },
+    });
+  }
+
+  async transferOwnership(userId: number, teamId: number, dto: TransferOwnershipDto) {
+    const team = await this.prisma.team.findUnique({
+      where: { id: teamId },
+    });
+
+    if (!team) {
+      throw new NotFoundException('Không tìm thấy nhóm');
+    }
+
+    const caller = await this.prisma.teamMember.findUnique({
+      where: {
+        teamId_userId: { teamId, userId },
+      },
+    });
+
+    if (!caller) {
+      throw new NotFoundException('Không tìm thấy nhóm');
+    }
+
+    if (caller.role !== TeamRole.OWNER) {
+      throw new ForbiddenException('Chỉ chủ nhóm (OWNER) mới có quyền chuyển quyền sở hữu');
+    }
+
+    if (dto.newOwnerId === userId) {
+      throw new BadRequestException('Bạn đang là chủ sở hữu của nhóm này');
+    }
+
+    const targetMember = await this.prisma.teamMember.findUnique({
+      where: {
+        teamId_userId: { teamId, userId: dto.newOwnerId },
+      },
+    });
+
+    if (!targetMember) {
+      throw new BadRequestException('Người nhận quyền sở hữu phải là thành viên trong nhóm');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.team.update({
+        where: { id: teamId },
+        data: { ownerId: dto.newOwnerId },
+      });
+
+      await tx.teamMember.update({
+        where: {
+          teamId_userId: { teamId, userId },
+        },
+        data: { role: TeamRole.ADMIN },
+      });
+
+      await tx.teamMember.update({
+        where: {
+          teamId_userId: { teamId, userId: dto.newOwnerId },
+        },
+        data: { role: TeamRole.OWNER },
+      });
+
+      return tx.team.findUnique({
+        where: { id: teamId },
+        include: {
+          owner: {
+            select: { id: true, name: true, email: true },
+          },
+          members: {
+            include: {
+              user: {
+                select: { id: true, name: true, email: true },
+              },
+            },
+          },
+          _count: {
+            select: { members: true, tasks: true },
+          },
+        },
+      });
     });
   }
 

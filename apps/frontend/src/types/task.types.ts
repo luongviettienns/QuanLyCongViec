@@ -100,6 +100,23 @@ export interface UpdateTaskPayload {
   dueDate?: string | null;
 }
 
+export interface UpdateTaskContentPayload {
+  title?: string;
+  description?: string | null;
+  priority?: TaskPriority;
+  startDate?: string | null;
+  dueDate?: string | null;
+  categoryId?: number | null;
+}
+
+export interface ReturnTaskPayload {
+  reason?: string;
+}
+
+export interface TransferOwnershipPayload {
+  newOwnerId: number;
+}
+
 export interface CreateCategoryPayload {
   name: string;
   color?: string;
