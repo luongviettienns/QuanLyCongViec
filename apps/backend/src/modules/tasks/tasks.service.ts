@@ -12,6 +12,7 @@ import { UpdateTaskContentDto } from './dto/update-task-content.dto.js';
 import { UpdateTaskStatusDto } from './dto/update-task-status.dto.js';
 import { UpdateTaskAssigneeDto } from './dto/update-task-assignee.dto.js';
 import { ReturnTaskDto } from './dto/return-task.dto.js';
+import { MoveTaskTeamDto } from './dto/move-task-team.dto.js';
 import { ReorderTasksDto } from './dto/reorder-tasks.dto.js';
 import { FilterTasksDto } from './dto/filter-tasks.dto.js';
 import { TaskPolicyService, type TaskWithTeamAndMembers } from './task-policy.service.js';
@@ -55,14 +56,26 @@ export class TasksService {
       }
       baseWhere = { teamId: query.teamId };
     } else if (query?.scope === 'assigned_to_me') {
-      baseWhere = { assigneeId: userId };
+      baseWhere = {
+        assigneeId: userId,
+        OR: [
+          { teamId: null },
+          { team: { members: { some: { userId } } } },
+        ],
+      };
     } else if (query?.scope === 'created_by_me') {
-      baseWhere = { userId };
+      baseWhere = {
+        userId,
+        OR: [
+          { teamId: null },
+          { team: { members: { some: { userId } } } },
+        ],
+      };
     } else {
       baseWhere = {
         OR: [
-          { userId },
-          { assigneeId: userId },
+          { teamId: null, userId },
+          { teamId: null, assigneeId: userId },
           { team: { members: { some: { userId } } } },
         ],
       };
@@ -532,6 +545,17 @@ export class TasksService {
     });
   }
 
+  async moveTeam(id: number, dto: MoveTaskTeamDto, userId: number): Promise<Task> {
+    return this.update(
+      id,
+      {
+        teamId: dto.teamId,
+        assigneeId: dto.assigneeId,
+      },
+      userId,
+    );
+  }
+
   async update(id: number, data: UpdateTaskDto, userId = 1): Promise<Task> {
     const currentTask = await this.findOne(id, userId);
 
@@ -580,27 +604,42 @@ export class TasksService {
       throw new ForbiddenException('Bạn không có quyền phân công công việc này');
     }
 
-    const effectiveTeamId = hasTeamId ? data.teamId : currentTask.teamId;
+    const effectiveTeamId = hasTeamId ? (data.teamId ?? null) : currentTask.teamId;
+    const isTeamChanged = effectiveTeamId !== currentTask.teamId;
+    let effectiveAssigneeId = hasAssigneeId ? (data.assigneeId ?? null) : currentTask.assigneeId;
 
-    if (effectiveTeamId) {
-      const isMember = await this.prisma.teamMember.findUnique({
+    if (effectiveTeamId !== null) {
+      const isCallerMember = await this.prisma.teamMember.findUnique({
         where: { teamId_userId: { teamId: effectiveTeamId, userId } },
       });
-      if (!isMember) {
+      if (!isCallerMember) {
         throw new NotFoundException('Không tìm thấy nhóm');
       }
 
-      if (hasAssigneeId && data.assigneeId) {
+      if (hasAssigneeId) {
+        if (effectiveAssigneeId) {
+          const isAssigneeMember = await this.prisma.teamMember.findUnique({
+            where: { teamId_userId: { teamId: effectiveTeamId, userId: effectiveAssigneeId } },
+          });
+          if (!isAssigneeMember) {
+            throw new BadRequestException('Người được phân công không thuộc nhóm này');
+          }
+        }
+      } else if (isTeamChanged && effectiveAssigneeId) {
         const isAssigneeMember = await this.prisma.teamMember.findUnique({
-          where: { teamId_userId: { teamId: effectiveTeamId, userId: data.assigneeId } },
+          where: { teamId_userId: { teamId: effectiveTeamId, userId: effectiveAssigneeId } },
         });
         if (!isAssigneeMember) {
-          throw new BadRequestException('Người được phân công không thuộc nhóm này');
+          effectiveAssigneeId = null;
         }
       }
     } else {
-      if (hasAssigneeId && data.assigneeId && data.assigneeId !== currentTask.userId) {
-        throw new BadRequestException('Công việc cá nhân chỉ có thể phân công cho chính bạn');
+      if (hasAssigneeId) {
+        if (effectiveAssigneeId && effectiveAssigneeId !== currentTask.userId) {
+          throw new BadRequestException('Công việc cá nhân chỉ có thể phân công cho chính bạn');
+        }
+      } else if (isTeamChanged && effectiveAssigneeId !== currentTask.userId) {
+        effectiveAssigneeId = null;
       }
     }
 
@@ -633,10 +672,10 @@ export class TasksService {
       throw new BadRequestException('Ngày bắt đầu không được lớn hơn hạn chót (deadline)');
     }
 
-    if (hasTitle && data.title !== undefined) {
-      const cleanTitle = data.title.trim();
+    const checkTitle = hasTitle && data.title !== undefined ? data.title.trim() : currentTask.title;
 
-      if (cleanTitle.length < 3) {
+    if (isTeamChanged || (hasTitle && data.title !== undefined)) {
+      if (hasTitle && data.title !== undefined && checkTitle.length < 3) {
         throw new BadRequestException('Tiêu đề công việc mới phải có ít nhất 3 ký tự');
       }
 
@@ -648,7 +687,7 @@ export class TasksService {
         where: {
           ...duplicateScopeWhere,
           title: {
-            equals: cleanTitle,
+            equals: checkTitle,
             mode: 'insensitive',
           },
           NOT: {
@@ -658,15 +697,17 @@ export class TasksService {
       });
 
       if (duplicateTask) {
-        throw new ConflictException(`Tiêu đề '${cleanTitle}' đã được sử dụng bởi một công việc khác`);
+        throw new ConflictException(`Tiêu đề '${checkTitle}' đã được sử dụng bởi một công việc khác`);
       }
 
-      updateData.title = cleanTitle;
+      if (hasTitle && data.title !== undefined) {
+        updateData.title = checkTitle;
+      }
     }
 
     if (hasDescription && data.description !== undefined) {
-      const trimmedDesc = data.description.trim();
-      updateData.description = trimmedDesc.length > 0 ? trimmedDesc : null;
+      const trimmedDesc = data.description?.trim();
+      updateData.description = trimmedDesc && trimmedDesc.length > 0 ? trimmedDesc : null;
     }
 
     if (hasPriority && data.priority !== undefined) {
@@ -691,43 +732,42 @@ export class TasksService {
     }
 
     if (hasTeamId) {
-      if (data.teamId) {
-        updateData.team = { connect: { id: data.teamId } };
+      if (effectiveTeamId) {
+        updateData.team = { connect: { id: effectiveTeamId } };
       } else {
         updateData.team = { disconnect: true };
       }
     }
 
-    if (hasAssigneeId) {
-      if (data.assigneeId) {
-        updateData.assignee = { connect: { id: data.assigneeId } };
+    if (hasAssigneeId || (isTeamChanged && effectiveAssigneeId !== currentTask.assigneeId)) {
+      if (effectiveAssigneeId) {
+        updateData.assignee = { connect: { id: effectiveAssigneeId } };
       } else {
         updateData.assignee = { disconnect: true };
       }
     }
 
-    const isStatusChanged = hasStatus && data.status !== undefined && data.status !== currentTask.status;
+    const effectiveStatus = hasStatus && data.status !== undefined ? data.status : currentTask.status;
+    const isScopeOrStatusChanged = isTeamChanged || (hasStatus && data.status !== undefined && data.status !== currentTask.status);
 
-    if (isStatusChanged && data.status !== undefined) {
-      const newStatus = data.status;
+    if (isScopeOrStatusChanged) {
+      const destScope = effectiveTeamId
+        ? { teamId: effectiveTeamId, status: effectiveStatus }
+        : { userId: currentTask.userId, teamId: null, status: effectiveStatus };
 
-      const posScope = currentTask.teamId
-        ? { teamId: currentTask.teamId, status: newStatus }
-        : { userId: currentTask.userId, teamId: null, status: newStatus };
-
-      const newColCount = await this.prisma.task.count({
-        where: posScope,
+      const newPosition = await this.prisma.task.count({
+        where: destScope,
       });
 
-      updateData.status = newStatus;
-      updateData.position = newColCount;
+      updateData.status = effectiveStatus;
+      updateData.position = newPosition;
 
-      const oldPosScope = currentTask.teamId
+      const sourceScope = currentTask.teamId
         ? { teamId: currentTask.teamId, status: currentTask.status, NOT: { id } }
         : { userId: currentTask.userId, teamId: null, status: currentTask.status, NOT: { id } };
 
       const remainingOldTasks = await this.prisma.task.findMany({
-        where: oldPosScope,
+        where: sourceScope,
         orderBy: [
           { position: 'asc' },
           { createdAt: 'desc' },
@@ -1070,11 +1110,29 @@ export class TasksService {
       }
       whereSql = Prisma.sql`"teamId" = ${query.teamId}`;
     } else if (query?.scope === 'created_by_me') {
-      whereSql = Prisma.sql`"userId" = ${userId}`;
+      whereSql = Prisma.sql`
+        "userId" = ${userId}
+        AND (
+          "teamId" IS NULL
+          OR "teamId" IN (SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId})
+        )
+      `;
     } else if (query?.scope === 'assigned_to_me') {
-      whereSql = Prisma.sql`"assigneeId" = ${userId}`;
+      whereSql = Prisma.sql`
+        "assigneeId" = ${userId}
+        AND (
+          "teamId" IS NULL
+          OR "teamId" IN (SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId})
+        )
+      `;
     } else {
-      whereSql = Prisma.sql`("userId" = ${userId} OR "assigneeId" = ${userId})`;
+      whereSql = Prisma.sql`
+        ("userId" = ${userId} OR "assigneeId" = ${userId})
+        AND (
+          "teamId" IS NULL
+          OR "teamId" IN (SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId})
+        )
+      `;
     }
 
     const [statsResult, deadlinesResult] = await Promise.all([

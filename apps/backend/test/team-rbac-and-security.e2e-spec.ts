@@ -781,5 +781,179 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
         .set('Authorization', `Bearer ${tokenOutsider}`)
         .expect(404);
     });
+
+    it('excludes team tasks from findAll and stats after creator has left team', async () => {
+      const leaverEmail = `leaver_${Date.now()}@taskflow.test`;
+      const leaverReg = await request(app.getHttpServer())
+        .post('/auth/register')
+        .send({
+          name: 'Team Leaver',
+          email: leaverEmail,
+          password: 'Password123!',
+        })
+        .expect(201);
+      const leaverToken = leaverReg.body.accessToken;
+
+      const addRes = await request(app.getHttpServer())
+        .post(`/teams/${team1Id}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          email: leaverEmail,
+          role: 'MEMBER',
+        })
+        .expect(201);
+      const leaverMemberId = addRes.body.id;
+
+      const teamTaskRes = await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${leaverToken}`)
+        .send({
+          title: `Leaver Team Task ${Date.now()}`,
+          teamId: team1Id,
+        })
+        .expect(201);
+      const taskCreatedByLeaverId = teamTaskRes.body.id;
+
+      const personalTaskRes = await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${leaverToken}`)
+        .send({
+          title: `Leaver Personal Task ${Date.now()}`,
+        })
+        .expect(201);
+      const personalTaskId = personalTaskRes.body.id;
+
+      await request(app.getHttpServer())
+        .delete(`/teams/${team1Id}/members/${leaverMemberId}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      const allTasksRes = await request(app.getHttpServer())
+        .get('/tasks')
+        .set('Authorization', `Bearer ${leaverToken}`)
+        .expect(200);
+      const allTaskIds = allTasksRes.body.map((t: { id: number }) => t.id);
+      expect(allTaskIds).toContain(personalTaskId);
+      expect(allTaskIds).not.toContain(taskCreatedByLeaverId);
+
+      const createdTasksRes = await request(app.getHttpServer())
+        .get('/tasks?scope=created_by_me')
+        .set('Authorization', `Bearer ${leaverToken}`)
+        .expect(200);
+      const createdTaskIds = createdTasksRes.body.map((t: { id: number }) => t.id);
+      expect(createdTaskIds).toContain(personalTaskId);
+      expect(createdTaskIds).not.toContain(taskCreatedByLeaverId);
+
+      const leaverStatsRes = await request(app.getHttpServer())
+        .get('/tasks/stats')
+        .set('Authorization', `Bearer ${leaverToken}`)
+        .expect(200);
+      expect(leaverStatsRes.body.total).toBe(1);
+    });
+  });
+
+  describe('8. Cross-team and Team-to-Personal transfer integrity', () => {
+    let transferTaskId = 0;
+
+    beforeAll(async () => {
+      const taskRes = await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `Movable Task ${Date.now()}`,
+          teamId: team1Id,
+          assigneeId: memberId,
+        })
+        .expect(201);
+      transferTaskId = taskRes.body.id;
+    });
+
+    it('rejects moving task to another team with assignee who is not member of target team', async () => {
+      const teamBRes = await request(app.getHttpServer())
+        .post('/teams')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          name: `Team B Target ${Date.now()}`,
+        })
+        .expect(201);
+      const teamBId = teamBRes.body.id;
+
+      await request(app.getHttpServer())
+        .put(`/tasks/${transferTaskId}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          teamId: teamBId,
+          assigneeId: memberId,
+        })
+        .expect(400);
+    });
+
+    it('auto-clears non-member assignee when transferring task to another team without assignee param', async () => {
+      const teamCRes = await request(app.getHttpServer())
+        .post('/teams')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          name: `Team C Target ${Date.now()}`,
+        })
+        .expect(201);
+      const teamCId = teamCRes.body.id;
+
+      const movedRes = await request(app.getHttpServer())
+        .put(`/tasks/${transferTaskId}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          teamId: teamCId,
+        })
+        .expect(200);
+
+      expect(movedRes.body.teamId).toBe(teamCId);
+      expect(movedRes.body.assigneeId).toBeNull();
+    });
+
+    it('rejects converting team task to personal task with another user as assignee', async () => {
+      await request(app.getHttpServer())
+        .put(`/tasks/${transferTaskId}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          teamId: null,
+          assigneeId: memberId,
+        })
+        .expect(400);
+    });
+
+    it('auto-clears assignee when converting team task to personal task without assignee param', async () => {
+      const movedPersonal = await request(app.getHttpServer())
+        .put(`/tasks/${transferTaskId}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          teamId: null,
+        })
+        .expect(200);
+
+      expect(movedPersonal.body.teamId).toBeNull();
+      expect(movedPersonal.body.assigneeId).toBeNull();
+    });
+
+    it('allows dedicated PATCH /tasks/:id/team endpoint to move task to another team', async () => {
+      const teamDRes = await request(app.getHttpServer())
+        .post('/teams')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          name: `Team D Target ${Date.now()}`,
+        })
+        .expect(201);
+      const teamDId = teamDRes.body.id;
+
+      const patchTeamRes = await request(app.getHttpServer())
+        .patch(`/tasks/${transferTaskId}/team`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          teamId: teamDId,
+        })
+        .expect(200);
+
+      expect(patchTeamRes.body.teamId).toBe(teamDId);
+      expect(patchTeamRes.body.assigneeId).toBeNull();
+    });
   });
 });

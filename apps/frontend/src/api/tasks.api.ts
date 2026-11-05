@@ -212,6 +212,23 @@ export async function reorderTasks(taskIds: number[], status?: TaskStatus, teamI
   }
 }
 
+export async function moveTaskTeam(
+  id: number,
+  teamId: number | null,
+  assigneeId?: number | null,
+): Promise<Task> {
+  const response = await fetch(`/tasks/${id}/team`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({ teamId, assigneeId }),
+  });
+
+  return handleApiResponse<Task>(response, 'Không thể chuyển nhóm cho công việc');
+}
+
 export async function getTaskStats(
   paramsOrSignal?: { teamId?: number; scope?: string } | AbortSignal,
   maybeSignal?: AbortSignal,

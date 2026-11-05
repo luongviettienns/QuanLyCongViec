@@ -19,6 +19,7 @@ import { UpdateTaskContentDto } from './dto/update-task-content.dto.js';
 import { UpdateTaskStatusDto } from './dto/update-task-status.dto.js';
 import { UpdateTaskAssigneeDto } from './dto/update-task-assignee.dto.js';
 import { ReturnTaskDto } from './dto/return-task.dto.js';
+import { MoveTaskTeamDto } from './dto/move-task-team.dto.js';
 import { ReorderTasksDto } from './dto/reorder-tasks.dto.js';
 import { FilterTasksDto } from './dto/filter-tasks.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
@@ -114,6 +115,16 @@ export class TasksController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.tasksService.returnTask(id, body, user.id);
+  }
+
+  @ApiOperation({ summary: 'Chuyển công việc sang nhóm khác hoặc về cá nhân' })
+  @Patch(':id/team')
+  moveTeam(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: MoveTaskTeamDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasksService.moveTeam(id, body, user.id);
   }
 
   @ApiOperation({ summary: 'Cập nhật công việc theo ID (tương thích ngược)' })
