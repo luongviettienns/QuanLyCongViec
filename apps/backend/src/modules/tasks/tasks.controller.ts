@@ -45,6 +45,12 @@ export class TasksController {
     return this.tasksService.reorder(body, user.id);
   }
 
+  @ApiOperation({ summary: 'Lấy thống kê tổng quát công việc' })
+  @Get('stats')
+  getStats(@CurrentUser() user: AuthenticatedUser) {
+    return this.tasksService.getStats(user.id);
+  }
+
   @ApiOperation({ summary: 'Lấy chi tiết công việc theo ID' })
   @Get(':id')
   findOne(

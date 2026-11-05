@@ -4,6 +4,7 @@ import type {
   CreateTaskPayload,
   UpdateTaskPayload,
   TaskStatus,
+  TaskStats,
 } from '../types/task.types';
 import { getAuthHeaders, notifyUnauthorized } from './auth.api';
 
@@ -139,4 +140,15 @@ export async function reorderTasks(taskIds: number[], status?: TaskStatus): Prom
   if (!response.ok) {
     throw await parseError(response, 'Không thể lưu thứ tự công việc');
   }
+}
+
+export async function getTaskStats(signal?: AbortSignal): Promise<TaskStats> {
+  const response = await fetch('/tasks/stats', {
+    headers: {
+      ...getAuthHeaders(),
+    },
+    signal,
+  });
+
+  return handleApiResponse<TaskStats>(response, 'Không thể tải số liệu thống kê công việc');
 }

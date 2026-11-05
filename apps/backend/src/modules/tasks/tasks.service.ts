@@ -475,4 +475,50 @@ export class TasksService {
       message: 'Cập nhật thứ tự công việc vào database thành công',
     };
   }
+  async getStats(userId = 1) {
+    const now = new Date();
+    const next7Days = new Date(now);
+    next7Days.setDate(next7Days.getDate() + 7);
+
+    const [total, todo, inProgress, done, overdue, dueSoon] = await Promise.all([
+      this.prisma.task.count({
+        where: { userId },
+      }),
+      this.prisma.task.count({
+        where: { userId, status: 'TODO' },
+      }),
+      this.prisma.task.count({
+        where: { userId, status: 'IN_PROGRESS' },
+      }),
+      this.prisma.task.count({
+        where: { userId, status: 'DONE' },
+      }),
+      this.prisma.task.count({
+        where: {
+          userId,
+          status: { not: 'DONE' },
+          dueDate: { lt: now },
+        },
+      }),
+      this.prisma.task.count({
+        where: {
+          userId,
+          status: { not: 'DONE' },
+          dueDate: { gte: now, lte: next7Days },
+        },
+      }),
+    ]);
+
+    const completionRate = total > 0 ? Math.round((done / total) * 100) : 0;
+
+    return {
+      total,
+      todo,
+      inProgress,
+      done,
+      overdue,
+      dueSoon,
+      completionRate,
+    };
+  }
 }

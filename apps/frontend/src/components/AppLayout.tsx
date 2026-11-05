@@ -13,6 +13,7 @@ import {
 } from 'antd';
 import {
   CheckSquareOutlined,
+  DashboardOutlined,
   ReloadOutlined,
   PlusOutlined,
   MenuFoldOutlined,
@@ -33,8 +34,8 @@ interface AppLayoutProps {
   onOpenCategories?: () => void;
   onOpenAuth?: () => void;
   loading?: boolean;
-  currentNav?: 'tasks' | 'categories';
-  onNavChange?: (key: 'tasks' | 'categories') => void;
+  currentNav?: 'dashboard' | 'tasks' | 'categories';
+  onNavChange?: (key: 'dashboard' | 'tasks' | 'categories') => void;
 }
 
 export default function AppLayout({
@@ -53,6 +54,11 @@ export default function AppLayout({
   const { user, logout } = useAuth();
 
   const menuItems = [
+    {
+      key: 'dashboard',
+      icon: <DashboardOutlined />,
+      label: 'Tổng quan',
+    },
     {
       key: 'tasks',
       icon: <CheckSquareOutlined />,
@@ -137,7 +143,7 @@ export default function AppLayout({
             if (isMobile) {
               setDrawerOpen(false);
             }
-            if (key === 'tasks' || key === 'categories') {
+            if (key === 'dashboard' || key === 'tasks' || key === 'categories') {
               onNavChange?.(key);
             }
           }}

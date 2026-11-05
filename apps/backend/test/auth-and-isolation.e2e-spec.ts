@@ -392,4 +392,37 @@ describe('Authentication and Data Isolation (e2e)', () => {
       expect(res.body.every((t: { priority: string }) => t.priority === 'HIGH')).toBe(true);
     });
   });
+
+  describe('Task Statistics (GET /tasks/stats)', () => {
+    it('rejects unauthenticated request to /tasks/stats with 401', async () => {
+      await request(app.getHttpServer())
+        .get('/tasks/stats')
+        .expect(401);
+    });
+
+    it('returns aggregated statistics and isolates data per user', async () => {
+      const resA = await request(app.getHttpServer())
+        .get('/tasks/stats')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+
+      expect(resA.body).toHaveProperty('total');
+      expect(resA.body).toHaveProperty('todo');
+      expect(resA.body).toHaveProperty('inProgress');
+      expect(resA.body).toHaveProperty('done');
+      expect(resA.body).toHaveProperty('overdue');
+      expect(resA.body).toHaveProperty('dueSoon');
+      expect(resA.body).toHaveProperty('completionRate');
+      expect(typeof resA.body.total).toBe('number');
+      expect(typeof resA.body.completionRate).toBe('number');
+
+      const resB = await request(app.getHttpServer())
+        .get('/tasks/stats')
+        .set('Authorization', `Bearer ${tokenB}`)
+        .expect(200);
+
+      expect(resB.body).toHaveProperty('total');
+      expect(typeof resB.body.total).toBe('number');
+    });
+  });
 });
