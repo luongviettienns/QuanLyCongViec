@@ -40,4 +40,32 @@ export class FilterTasksDto {
   @Type(() => Number)
   @IsInt({ message: 'Mã danh mục lọc phải là số nguyên' })
   categoryId?: number;
+
+  @ApiPropertyOptional({
+    description: 'Mã nhóm làm việc cần lọc (ID)',
+    example: 1,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'Mã nhóm lọc phải là số nguyên' })
+  teamId?: number;
+
+  @ApiPropertyOptional({
+    description: 'Mã người được phân công cần lọc (ID)',
+    example: 2,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'Mã người được phân công lọc phải là số nguyên' })
+  assigneeId?: number;
+
+  @ApiPropertyOptional({
+    description: 'Phạm vi công việc: all (mặc định), created_by_me, assigned_to_me',
+    enum: ['all', 'created_by_me', 'assigned_to_me'],
+  })
+  @IsOptional()
+  @IsIn(['all', 'created_by_me', 'assigned_to_me'], {
+    message: 'Phạm vi phải là all, created_by_me hoặc assigned_to_me',
+  })
+  scope?: 'all' | 'created_by_me' | 'assigned_to_me';
 }

@@ -5,6 +5,8 @@ import { AppService } from './app.service.js';
 import { TaskModule } from './modules/tasks/task.module.js';
 import { CategoriesModule } from './modules/categories/categories.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { TeamsModule } from './modules/teams/teams.module.js';
+
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
 @Module({
@@ -17,6 +19,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     AuthModule,
     TaskModule,
     CategoriesModule,
+    TeamsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

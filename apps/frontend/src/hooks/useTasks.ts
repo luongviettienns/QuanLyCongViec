@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { message } from 'antd';
-import type { Task, Category, StatusFilter, PriorityFilter, TaskStatus } from '../types/task.types';
+import type { Task, Category, Team, StatusFilter, PriorityFilter, TaskStatus } from '../types/task.types';
 import {
   getTasks,
   getCategories,
   deleteTask,
   reorderTasks,
 } from '../api/tasks.api';
+import { getTeams } from '../api/teams.api';
 import { useAuth } from './useAuth';
 
 export function useTasks(options?: { enabled?: boolean }) {
@@ -14,18 +15,23 @@ export function useTasks(options?: { enabled?: boolean }) {
   const { user, loading: authLoading } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<number | 'ALL'>('ALL');
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('ALL');
+  const [teamFilter, setTeamFilter] = useState<number | 'ALL'>('ALL');
+  const [scopeFilter, setScopeFilter] = useState<'all' | 'created_by_me' | 'assigned_to_me'>('all');
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const isFiltering =
     searchText.trim() !== '' ||
     statusFilter !== 'ALL' ||
     categoryFilter !== 'ALL' ||
-    priorityFilter !== 'ALL';
+    priorityFilter !== 'ALL' ||
+    teamFilter !== 'ALL' ||
+    scopeFilter !== 'all';
 
   const resetState = useCallback(() => {
     if (abortControllerRef.current) {
@@ -33,10 +39,13 @@ export function useTasks(options?: { enabled?: boolean }) {
     }
     setTasks([]);
     setCategories([]);
+    setTeams([]);
     setSearchText('');
     setStatusFilter('ALL');
     setCategoryFilter('ALL');
     setPriorityFilter('ALL');
+    setTeamFilter('ALL');
+    setScopeFilter('all');
     setLoading(false);
   }, []);
 
@@ -46,6 +55,8 @@ export function useTasks(options?: { enabled?: boolean }) {
       status: StatusFilter = 'ALL',
       catId: number | 'ALL' = 'ALL',
       priority: PriorityFilter = 'ALL',
+      tId: number | 'ALL' = 'ALL',
+      scope: 'all' | 'created_by_me' | 'assigned_to_me' = 'all',
     ) => {
       if (!user) {
         setTasks([]);
@@ -67,6 +78,8 @@ export function useTasks(options?: { enabled?: boolean }) {
             status: status === 'ALL' ? undefined : status,
             categoryId: catId === 'ALL' ? undefined : catId,
             priority: priority === 'ALL' ? undefined : priority,
+            teamId: tId === 'ALL' ? undefined : tId,
+            scope: scope === 'all' ? undefined : scope,
           },
           controller.signal,
         );
@@ -108,6 +121,20 @@ export function useTasks(options?: { enabled?: boolean }) {
     }
   }, [user]);
 
+  const fetchTeams = useCallback(async () => {
+    if (!user) {
+      setTeams([]);
+      return;
+    }
+
+    try {
+      const data = await getTeams();
+      setTeams(data);
+    } catch {
+      // ignore
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!enabled || authLoading) {
       return;
@@ -127,7 +154,8 @@ export function useTasks(options?: { enabled?: boolean }) {
       setLoading(true);
       await Promise.all([
         fetchCategories(),
-        fetchTasks('', 'ALL', 'ALL', 'ALL'),
+        fetchTeams(),
+        fetchTasks('', 'ALL', 'ALL', 'ALL', 'ALL', 'all'),
       ]);
     }
 
@@ -139,7 +167,7 @@ export function useTasks(options?: { enabled?: boolean }) {
         abortControllerRef.current.abort();
       }
     };
-  }, [enabled, user, authLoading, resetState, fetchCategories, fetchTasks]);
+  }, [enabled, user, authLoading, resetState, fetchCategories, fetchTeams, fetchTasks]);
 
   function handleSearch(value: string) {
     if (!user) {
@@ -147,7 +175,7 @@ export function useTasks(options?: { enabled?: boolean }) {
     }
     setSearchText(value);
     setLoading(true);
-    void fetchTasks(value, statusFilter, categoryFilter, priorityFilter);
+    void fetchTasks(value, statusFilter, categoryFilter, priorityFilter, teamFilter, scopeFilter);
   }
 
   function handleStatusChange(value: StatusFilter) {
@@ -156,7 +184,7 @@ export function useTasks(options?: { enabled?: boolean }) {
     }
     setStatusFilter(value);
     setLoading(true);
-    void fetchTasks(searchText, value, categoryFilter, priorityFilter);
+    void fetchTasks(searchText, value, categoryFilter, priorityFilter, teamFilter, scopeFilter);
   }
 
   function handleCategoryChange(value: number | 'ALL') {
@@ -165,7 +193,7 @@ export function useTasks(options?: { enabled?: boolean }) {
     }
     setCategoryFilter(value);
     setLoading(true);
-    void fetchTasks(searchText, statusFilter, value, priorityFilter);
+    void fetchTasks(searchText, statusFilter, value, priorityFilter, teamFilter, scopeFilter);
   }
 
   function handlePriorityChange(value: PriorityFilter) {
@@ -174,7 +202,25 @@ export function useTasks(options?: { enabled?: boolean }) {
     }
     setPriorityFilter(value);
     setLoading(true);
-    void fetchTasks(searchText, statusFilter, categoryFilter, value);
+    void fetchTasks(searchText, statusFilter, categoryFilter, value, teamFilter, scopeFilter);
+  }
+
+  function handleTeamChange(value: number | 'ALL') {
+    if (!user) {
+      return;
+    }
+    setTeamFilter(value);
+    setLoading(true);
+    void fetchTasks(searchText, statusFilter, categoryFilter, priorityFilter, value, scopeFilter);
+  }
+
+  function handleScopeChange(value: 'all' | 'created_by_me' | 'assigned_to_me') {
+    if (!user) {
+      return;
+    }
+    setScopeFilter(value);
+    setLoading(true);
+    void fetchTasks(searchText, statusFilter, categoryFilter, priorityFilter, teamFilter, value);
   }
 
   function handleReset() {
@@ -186,8 +232,10 @@ export function useTasks(options?: { enabled?: boolean }) {
     setStatusFilter('ALL');
     setCategoryFilter('ALL');
     setPriorityFilter('ALL');
+    setTeamFilter('ALL');
+    setScopeFilter('all');
     setLoading(true);
-    void fetchTasks('', 'ALL', 'ALL', 'ALL');
+    void fetchTasks('', 'ALL', 'ALL', 'ALL', 'ALL', 'all');
   }
 
   async function refetch() {
@@ -197,8 +245,9 @@ export function useTasks(options?: { enabled?: boolean }) {
     }
     setLoading(true);
     await Promise.all([
-      fetchTasks(searchText, statusFilter, categoryFilter, priorityFilter),
+      fetchTasks(searchText, statusFilter, categoryFilter, priorityFilter, teamFilter, scopeFilter),
       fetchCategories(),
+      fetchTeams(),
     ]);
   }
 
@@ -210,7 +259,7 @@ export function useTasks(options?: { enabled?: boolean }) {
       await deleteTask(id);
       message.success('Xoá công việc thành công');
       setLoading(true);
-      await fetchTasks(searchText, statusFilter, categoryFilter, priorityFilter);
+      await fetchTasks(searchText, statusFilter, categoryFilter, priorityFilter, teamFilter, scopeFilter);
     } catch (error) {
       message.error(
         error instanceof Error ? error.message : 'Xoá công việc thất bại',
@@ -252,22 +301,28 @@ export function useTasks(options?: { enabled?: boolean }) {
   return {
     tasks,
     categories,
+    teams,
     loading,
     searchText,
     statusFilter,
     categoryFilter,
     priorityFilter,
+    teamFilter,
+    scopeFilter,
     isFiltering,
     setSearchText,
     handleSearch,
     handleStatusChange,
     handleCategoryChange,
     handlePriorityChange,
+    handleTeamChange,
+    handleScopeChange,
     handleReset,
     refetch,
     handleDelete,
     handleReorder,
     resetState,
     fetchCategories,
+    fetchTeams,
   };
 }

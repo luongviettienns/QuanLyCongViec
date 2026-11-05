@@ -10,13 +10,14 @@ import {
   message,
   Grid,
 } from 'antd';
-import type { Task, Category, TaskFormValues } from '../types/task.types';
+import type { Task, Category, Team, TaskFormValues } from '../types/task.types';
 import { createTask, updateTask } from '../api/tasks.api';
 
 interface TaskFormModalProps {
   open: boolean;
   task: Task | null;
   categories: Category[];
+  teams?: Team[];
   onClose: () => void;
   onSuccess: () => Promise<void> | void;
 }
@@ -25,12 +26,20 @@ export default function TaskFormModal({
   open,
   task,
   categories,
+  teams = [],
   onClose,
   onSuccess,
 }: TaskFormModalProps) {
   const [form] = Form.useForm<TaskFormValues>();
   const [saving, setSaving] = useState(false);
   const screens = Grid.useBreakpoint();
+
+  const selectedTeamId = Form.useWatch('teamId', form);
+  const currentTeam = teams.find((t) => t.id === selectedTeamId);
+  const assigneeOptions = currentTeam?.members?.map((m) => ({
+    value: m.userId,
+    label: `${m.user?.name} (${m.user?.email})`,
+  })) ?? [];
 
   async function handleSubmit(values: TaskFormValues) {
     try {
@@ -42,6 +51,8 @@ export default function TaskFormModal({
         status: values.status,
         priority: values.priority || 'MEDIUM',
         categoryId: values.categoryId ?? null,
+        teamId: values.teamId ?? null,
+        assigneeId: values.teamId ? (values.assigneeId ?? null) : null,
         startDate: values.startDate ? values.startDate.format('YYYY-MM-DD') : null,
         dueDate: values.dueDate ? values.dueDate.format('YYYY-MM-DD') : null,
       };
@@ -58,7 +69,6 @@ export default function TaskFormModal({
       onClose();
       await onSuccess();
     } catch (error) {
-      console.error(error);
       message.error(error instanceof Error ? error.message : 'Thao tác thất bại');
     } finally {
       setSaving(false);
@@ -80,6 +90,8 @@ export default function TaskFormModal({
               status: task.status,
               priority: task.priority || 'MEDIUM',
               categoryId: task.categoryId ?? null,
+              teamId: task.teamId ?? null,
+              assigneeId: task.assigneeId ?? null,
               startDate: task.startDate ? dayjs(task.startDate) : null,
               dueDate: task.dueDate ? dayjs(task.dueDate) : null,
             });
@@ -89,6 +101,8 @@ export default function TaskFormModal({
               status: 'TODO',
               priority: 'MEDIUM',
               categoryId: null,
+              teamId: null,
+              assigneeId: null,
               startDate: null,
               dueDate: null,
             });
@@ -99,8 +113,8 @@ export default function TaskFormModal({
       okText={task ? 'Lưu thay đổi' : 'Tạo mới'}
       cancelText="Huỷ"
       destroyOnHidden
-      width={screens.sm ? 540 : '95%'}
-      style={{ maxWidth: 540 }}
+      width={screens.sm ? 560 : '95%'}
+      style={{ maxWidth: 560 }}
     >
       <Form
         form={form}
@@ -140,6 +154,29 @@ export default function TaskFormModal({
             showCount
           />
         </Form.Item>
+
+        <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', gap: screens.xs ? 0 : 16 }}>
+          <Form.Item name="teamId" label="Nhóm làm việc" style={{ flex: 1 }}>
+            <Select
+              allowClear
+              placeholder="Chọn nhóm (hoặc để trống nếu cá nhân)"
+              onChange={() => form.setFieldValue('assigneeId', null)}
+              options={teams.map((t) => ({
+                value: t.id,
+                label: t.name,
+              }))}
+            />
+          </Form.Item>
+
+          <Form.Item name="assigneeId" label="Người thực hiện (Assignee)" style={{ flex: 1 }}>
+            <Select
+              allowClear
+              disabled={!selectedTeamId}
+              placeholder={selectedTeamId ? 'Chọn thành viên thực hiện' : 'Chọn nhóm trước để giao việc'}
+              options={assigneeOptions}
+            />
+          </Form.Item>
+        </div>
 
         <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', gap: screens.xs ? 0 : 16 }}>
           <Form.Item name="startDate" label="Ngày bắt đầu" style={{ flex: 1 }}>
