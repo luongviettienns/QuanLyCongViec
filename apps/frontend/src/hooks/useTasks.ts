@@ -6,6 +6,7 @@ import {
   getCategories,
   deleteTask,
   reorderTasks,
+  updateTaskStatus,
 } from '../api/tasks.api';
 import { getTeams } from '../api/teams.api';
 import { useAuth } from './useAuth';
@@ -31,7 +32,6 @@ export function useTasks(options?: { enabled?: boolean }) {
     statusFilter !== 'ALL' ||
     categoryFilter !== 'ALL' ||
     priorityFilter !== 'ALL' ||
-    teamFilter !== 'ALL' ||
     scopeFilter !== 'all';
 
   const resetState = useCallback(() => {
@@ -276,9 +276,48 @@ export function useTasks(options?: { enabled?: boolean }) {
     }
   }
 
+  async function handleStatusMove(taskId: number, newStatus: TaskStatus) {
+    if (!user) {
+      return;
+    }
+    const targetTask = tasks.find((t) => t.id === taskId);
+    if (!targetTask || targetTask.status === newStatus) {
+      return;
+    }
+    const previousTasks = [...tasks];
+
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)),
+    );
+
+    try {
+      const updated = await updateTaskStatus(taskId, newStatus);
+      setTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, ...updated } : t)),
+      );
+      message.success('Cập nhật trạng thái thành công');
+    } catch (error) {
+      setTasks(previousTasks);
+      if (error instanceof UnauthorizedError || (error instanceof Error && error.name === 'UnauthorizedError')) {
+        return;
+      }
+      message.error(
+        error instanceof Error ? error.message : 'Không thể cập nhật trạng thái',
+      );
+    }
+  }
+
   async function handleReorder(taskIds: number[], status?: TaskStatus) {
     if (!user) {
       return;
+    }
+    if (teamFilter === 'ALL') {
+      const reorderedTasks = tasks.filter((t) => taskIds.includes(t.id));
+      const hasTeamTasks = reorderedTasks.some((t) => t.teamId !== null && t.teamId !== undefined);
+      if (hasTeamTasks) {
+        message.info('Vui lòng chọn một Nhóm cụ thể để sắp xếp thứ tự công việc trong nhóm');
+        return;
+      }
     }
     const previousTasks = [...tasks];
 
@@ -333,6 +372,7 @@ export function useTasks(options?: { enabled?: boolean }) {
     refetch,
     handleDelete,
     handleReorder,
+    handleStatusMove,
     resetState,
     fetchCategories,
     fetchTeams,

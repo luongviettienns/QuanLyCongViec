@@ -13,13 +13,12 @@ export function TaskCard({
   task,
   index,
   columnId,
-  isFiltering,
 }: TaskCardProps) {
   const { ref, isDragging, isDropTarget } = useSortable({
     id: `task-${task.id}`,
     index,
     group: columnId,
-    disabled: isFiltering,
+    disabled: false,
     plugins: [],
     transition: null,
   });
@@ -29,9 +28,9 @@ export function TaskCard({
       ref={ref}
       style={{
         marginBottom: 10,
-        cursor: isFiltering ? 'default' : (isDragging ? 'grabbing' : 'grab'),
+        cursor: isDragging ? 'grabbing' : 'grab',
         opacity: isDragging ? 0.35 : 1,
-        touchAction: isFiltering ? 'auto' : 'pan-y',
+        touchAction: 'pan-y',
         borderTop: isDropTarget && !isDragging ? '3px solid #1677ff' : '3px solid transparent',
         transition: 'opacity 0.15s ease',
       }}

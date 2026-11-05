@@ -41,6 +41,7 @@ function TaskApp() {
     refetch,
     handleDelete,
     handleReorder,
+    handleStatusMove,
     fetchCategories,
     fetchTeams,
   } = useTasks({ enabled: currentNav === 'tasks' });
@@ -126,7 +127,12 @@ function TaskApp() {
             />
 
             <div style={{ marginBottom: 30 }}>
-              <KanbanBoard tasks={tasks} onReorder={handleReorder} isFiltering={isFiltering} />
+              <KanbanBoard
+                tasks={tasks}
+                onReorder={handleReorder}
+                onStatusChange={handleStatusMove}
+                isFiltering={isFiltering}
+              />
             </div>
 
             <TaskTable

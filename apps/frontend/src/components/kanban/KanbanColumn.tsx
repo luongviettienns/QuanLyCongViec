@@ -25,7 +25,7 @@ export function KanbanColumn({
   const screens = Grid.useBreakpoint();
   const { ref, isDropTarget } = useDroppable({
     id: `column-${column.id}`,
-    disabled: isFiltering,
+    disabled: false,
   });
 
   const columnTasks = tasks

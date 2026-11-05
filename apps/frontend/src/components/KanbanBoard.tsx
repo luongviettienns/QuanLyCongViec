@@ -9,6 +9,7 @@ import { TaskCardView } from './kanban/TaskCardView';
 interface Props {
   tasks: Task[];
   onReorder: (taskIds: number[], status?: TaskStatus) => Promise<void>;
+  onStatusChange?: (taskId: number, newStatus: TaskStatus) => Promise<void>;
   isFiltering?: boolean;
 }
 
@@ -18,7 +19,7 @@ const columns: ColumnConfig[] = [
   { id: 'DONE', title: 'Hoàn thành', color: '#52c41a' },
 ];
 
-export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
+export default function KanbanBoard({ tasks, onReorder, onStatusChange, isFiltering }: Props) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const screens = Grid.useBreakpoint();
   const columnRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -34,7 +35,7 @@ export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
     <div translate="no">
       {isFiltering && (
         <Alert
-          message="Đang lọc dữ liệu: Tính năng kéo thả tạm thời bị khoá để tránh sai lệch thứ tự các công việc bị ẩn."
+          message="Đang lọc dữ liệu: Vị trí trong cùng cột tạm thời được giữ nguyên. Bạn vẫn có thể kéo thả giữa các cột để chuyển trạng thái công việc."
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
@@ -83,7 +84,6 @@ export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
           KeyboardSensor,
         ]}
         onDragStart={(event) => {
-          if (isFiltering) return;
           const sourceIdStr = String(event.operation.source?.id);
           if (sourceIdStr.startsWith('task-')) {
             const sourceTaskId = Number(sourceIdStr.replace('task-', ''));
@@ -93,7 +93,7 @@ export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
         }}
         onDragEnd={(event) => {
           setActiveTask(null);
-          if (isFiltering || event.canceled) return;
+          if (event.canceled) return;
 
           const { source, target } = event.operation;
           if (!source || !target) return;
@@ -133,6 +133,9 @@ export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
           if (!targetColumn) return;
 
           if (sourceColumn === targetColumn) {
+            if (isFiltering) {
+              return;
+            }
             const colTasks = tasks
               .filter((t) => t.status === sourceColumn)
               .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
@@ -149,18 +152,24 @@ export default function KanbanBoard({ tasks, onReorder, isFiltering }: Props) {
               void onReorder(newIds, sourceColumn);
             }, 0);
           } else {
-            const destTasks = tasks
-              .filter((t) => t.status === targetColumn && t.id !== sourceTaskId)
-              .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+            if (onStatusChange) {
+              setTimeout(() => {
+                void onStatusChange(sourceTaskId, targetColumn);
+              }, 0);
+            } else {
+              const destTasks = tasks
+                .filter((t) => t.status === targetColumn && t.id !== sourceTaskId)
+                .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-            const newDestTasks = [...destTasks];
-            const movedItem = { ...draggedTask, status: targetColumn };
-            newDestTasks.splice(targetIndex, 0, movedItem);
+              const newDestTasks = [...destTasks];
+              const movedItem = { ...draggedTask, status: targetColumn };
+              newDestTasks.splice(targetIndex, 0, movedItem);
 
-            const newIds = newDestTasks.map((t) => t.id);
-            setTimeout(() => {
-              void onReorder(newIds, targetColumn);
-            }, 0);
+              const newIds = newDestTasks.map((t) => t.id);
+              setTimeout(() => {
+                void onReorder(newIds, targetColumn);
+              }, 0);
+            }
           }
         }}
       >
