@@ -51,8 +51,11 @@ export class TasksController {
 
   @ApiOperation({ summary: 'Lấy thống kê tổng quát công việc' })
   @Get('stats')
-  getStats(@CurrentUser() user: AuthenticatedUser) {
-    return this.tasksService.getStats(user.id);
+  getStats(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query?: FilterTasksDto,
+  ) {
+    return this.tasksService.getStats(user.id, query);
   }
 
   @ApiOperation({ summary: 'Lấy chi tiết công việc theo ID' })

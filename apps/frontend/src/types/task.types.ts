@@ -8,7 +8,7 @@ export type StatusFilter = 'ALL' | TaskStatus;
 
 export type PriorityFilter = 'ALL' | TaskPriority;
 
-export type TeamRole = 'OWNER' | 'ADMIN' | 'MEMBER';
+export type TeamRole = 'ADMIN' | 'MEMBER';
 
 export interface Category {
   id: number;
@@ -49,6 +49,7 @@ export interface Team {
 
 export interface Task {
   id: number;
+  userId?: number;
   title: string;
   description?: string;
   status: TaskStatus;

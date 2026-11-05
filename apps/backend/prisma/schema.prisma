@@ -20,7 +20,6 @@ enum TaskPriority {
 }
 
 enum TeamRole {
-  OWNER
   ADMIN
   MEMBER
 }
@@ -135,7 +134,6 @@ model Task {
   @@index([userId, status, position])
   @@index([teamId, status])
   @@index([assigneeId, status])
-  @@unique([userId, title])
   @@map("Task")
 }
 

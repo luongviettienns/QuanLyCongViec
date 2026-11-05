@@ -30,7 +30,7 @@ export class TeamsService {
         data: {
           teamId: team.id,
           userId,
-          role: TeamRole.OWNER,
+          role: TeamRole.ADMIN,
         },
       });
 
@@ -132,8 +132,8 @@ export class TeamsService {
       throw new NotFoundException('Không tìm thấy nhóm');
     }
 
-    if (caller.role !== TeamRole.OWNER && caller.role !== TeamRole.ADMIN) {
-      throw new ForbiddenException('Chỉ chủ nhóm hoặc quản trị viên mới có quyền cập nhật thông tin nhóm');
+    if (caller.role !== TeamRole.ADMIN) {
+      throw new ForbiddenException('Chỉ quản trị viên mới có quyền cập nhật thông tin nhóm');
     }
 
     return this.prisma.team.update({
@@ -180,7 +180,7 @@ export class TeamsService {
     }
 
     if (team.ownerId !== userId) {
-      throw new ForbiddenException('Chỉ chủ nhóm (OWNER) mới có quyền giải tán nhóm');
+      throw new ForbiddenException('Chỉ chủ nhóm mới có quyền giải tán nhóm');
     }
 
     await this.prisma.team.delete({
@@ -209,12 +209,12 @@ export class TeamsService {
       throw new NotFoundException('Không tìm thấy nhóm');
     }
 
-    if (caller.role !== TeamRole.OWNER && caller.role !== TeamRole.ADMIN) {
-      throw new ForbiddenException('Chỉ chủ nhóm hoặc quản trị viên mới có quyền thêm thành viên');
+    if (caller.role !== TeamRole.ADMIN) {
+      throw new ForbiddenException('Chỉ quản trị viên mới có quyền thêm thành viên');
     }
 
-    if (dto.role === TeamRole.OWNER) {
-      throw new BadRequestException('Không thể thêm thành viên với vai trò OWNER');
+    if (dto.role === TeamRole.ADMIN && team.ownerId !== userId) {
+      throw new ForbiddenException('Chỉ chủ nhóm mới có quyền bổ nhiệm Quản trị viên');
     }
 
     const targetEmail = dto.email.trim().toLowerCase();
@@ -274,8 +274,8 @@ export class TeamsService {
       throw new NotFoundException('Không tìm thấy nhóm');
     }
 
-    if (caller.role !== TeamRole.OWNER) {
-      throw new ForbiddenException('Chỉ chủ nhóm (OWNER) mới có quyền thay đổi vai trò của thành viên');
+    if (team.ownerId !== userId) {
+      throw new ForbiddenException('Chỉ chủ nhóm mới có quyền thay đổi vai trò của thành viên');
     }
 
     const targetMember = await this.prisma.teamMember.findUnique({
@@ -286,12 +286,12 @@ export class TeamsService {
       throw new NotFoundException('Không tìm thấy thành viên trong nhóm này');
     }
 
-    if (targetMember.userId === userId) {
-      throw new BadRequestException('Không thể tự thay đổi vai trò của chính mình');
+    if (targetMember.userId === team.ownerId) {
+      throw new BadRequestException('Không thể thay đổi vai trò của chủ nhóm');
     }
 
-    if (dto.role === TeamRole.OWNER) {
-      throw new BadRequestException('Không thể gán vai trò OWNER qua chức năng này');
+    if (targetMember.userId === userId) {
+      throw new BadRequestException('Không thể tự thay đổi vai trò của chính mình');
     }
 
     return this.prisma.teamMember.update({
@@ -326,8 +326,8 @@ export class TeamsService {
       throw new NotFoundException('Không tìm thấy nhóm');
     }
 
-    if (caller.role !== TeamRole.OWNER) {
-      throw new ForbiddenException('Chỉ chủ nhóm (OWNER) mới có quyền chuyển quyền sở hữu');
+    if (team.ownerId !== userId) {
+      throw new ForbiddenException('Chỉ chủ nhóm mới có quyền chuyển quyền sở hữu');
     }
 
     if (dto.newOwnerId === userId) {
@@ -352,16 +352,16 @@ export class TeamsService {
 
       await tx.teamMember.update({
         where: {
-          teamId_userId: { teamId, userId },
+          teamId_userId: { teamId, userId: dto.newOwnerId },
         },
         data: { role: TeamRole.ADMIN },
       });
 
       await tx.teamMember.update({
         where: {
-          teamId_userId: { teamId, userId: dto.newOwnerId },
+          teamId_userId: { teamId, userId },
         },
-        data: { role: TeamRole.OWNER },
+        data: { role: TeamRole.ADMIN },
       });
 
       return tx.team.findUnique({
@@ -402,8 +402,8 @@ export class TeamsService {
       throw new NotFoundException('Không tìm thấy thành viên trong nhóm này');
     }
 
-    if (targetMember.role === TeamRole.OWNER) {
-      throw new BadRequestException('Không thể xóa chủ nhóm khỏi nhóm');
+    if (targetMember.userId === team.ownerId) {
+      throw new BadRequestException('Chủ nhóm cần chuyển quyền sở hữu trước khi rời nhóm hoặc bị xóa');
     }
 
     const caller = await this.prisma.teamMember.findUnique({
@@ -419,10 +419,10 @@ export class TeamsService {
     const isSelfLeaving = targetMember.userId === userId;
 
     if (!isSelfLeaving) {
-      if (caller.role === TeamRole.MEMBER) {
+      if (caller.role !== TeamRole.ADMIN) {
         throw new ForbiddenException('Thành viên thường không có quyền xóa thành viên khác');
       }
-      if (caller.role === TeamRole.ADMIN && targetMember.role === TeamRole.ADMIN) {
+      if (targetMember.role === TeamRole.ADMIN && team.ownerId !== userId) {
         throw new ForbiddenException('Quản trị viên không thể xóa một quản trị viên khác');
       }
     }

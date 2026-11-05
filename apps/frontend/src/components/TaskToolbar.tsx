@@ -1,5 +1,14 @@
 import { useEffect, useRef } from 'react';
-import { Input, Select, Button, Space, Grid } from 'antd';
+import { Input, Select, Button, Space, Grid, Segmented, Tag } from 'antd';
+import {
+  SearchOutlined,
+  AppstoreOutlined,
+  UserOutlined,
+  CheckSquareOutlined,
+  TeamOutlined,
+  FilterOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons';
 import type { StatusFilter, PriorityFilter, Category, Team } from '../types/task.types';
 
 interface TaskToolbarProps {
@@ -42,6 +51,14 @@ export default function TaskToolbar({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.sm;
+
+  const activeFilterCount =
+    (searchText.trim() ? 1 : 0) +
+    (scopeFilter !== 'all' ? 1 : 0) +
+    (teamFilter !== 'ALL' ? 1 : 0) +
+    (statusFilter !== 'ALL' ? 1 : 0) +
+    (priorityFilter !== 'ALL' ? 1 : 0) +
+    (categoryFilter !== 'ALL' ? 1 : 0);
 
   function handleInputChange(val: string) {
     onSearchChange(val);
@@ -115,120 +132,161 @@ export default function TaskToolbar({
   return (
     <div
       style={{
-        display: 'flex',
-        gap: 12,
+        background: '#ffffff',
+        padding: '14px 16px',
+        borderRadius: 8,
+        border: '1px solid #f0f0f0',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
         marginBottom: 20,
-        flexWrap: 'wrap',
-        alignItems: 'center',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
       }}
     >
-      <Input.Search
-        placeholder="Tìm kiếm theo tiêu đề..."
-        value={searchText}
-        onChange={(e) => handleInputChange(e.target.value)}
-        onSearch={handleImmediateSearch}
-        allowClear
-        style={{ width: isMobile ? '100%' : 240 }}
-      />
-      <Select<'all' | 'created_by_me' | 'assigned_to_me'>
-        value={scopeFilter}
-        onChange={handleScopeChange}
+      <div
         style={{
-          flex: isMobile ? '1 1 calc(50% - 6px)' : undefined,
-          width: isMobile ? undefined : 160,
-          minWidth: isMobile ? 140 : undefined,
-        }}
-        options={[
-          { value: 'all', label: 'Tất cả phạm vi' },
-          { value: 'created_by_me', label: 'Tôi đã tạo' },
-          { value: 'assigned_to_me', label: 'Được giao cho tôi' },
-        ]}
-      />
-      {teams.length > 0 && (
-        <Select<number | 'ALL'>
-          value={teamFilter}
-          onChange={handleTeamChange}
-          style={{
-            flex: isMobile ? '1 1 calc(50% - 6px)' : undefined,
-            width: isMobile ? undefined : 160,
-            minWidth: isMobile ? 140 : undefined,
-          }}
-          options={[
-            { value: 'ALL', label: 'Tất cả nhóm' },
-            ...teams.map((t) => ({
-              value: t.id,
-              label: t.name,
-            })),
-          ]}
-        />
-      )}
-      <Select<StatusFilter>
-        value={statusFilter}
-        onChange={handleStatusChange}
-        style={{
-          flex: isMobile ? '1 1 calc(50% - 6px)' : undefined,
-          width: isMobile ? undefined : 150,
-          minWidth: isMobile ? 140 : undefined,
-        }}
-        options={[
-          { value: 'ALL', label: 'Tất cả trạng thái' },
-          { value: 'TODO', label: 'Cần làm (TODO)' },
-          { value: 'IN_PROGRESS', label: 'Đang làm (IN_PROGRESS)' },
-          { value: 'DONE', label: 'Hoàn thành (DONE)' },
-        ]}
-      />
-      <Select<PriorityFilter>
-        value={priorityFilter}
-        onChange={handlePriorityChange}
-        style={{
-          flex: isMobile ? '1 1 calc(50% - 6px)' : undefined,
-          width: isMobile ? undefined : 150,
-          minWidth: isMobile ? 140 : undefined,
-        }}
-        options={[
-          { value: 'ALL', label: 'Tất cả độ ưu tiên' },
-          { value: 'HIGH', label: 'Cao (HIGH)' },
-          { value: 'MEDIUM', label: 'Trung bình (MEDIUM)' },
-          { value: 'LOW', label: 'Thấp (LOW)' },
-        ]}
-      />
-      <Select<number | 'ALL'>
-        value={categoryFilter}
-        onChange={handleCategoryChange}
-        style={{
-          flex: isMobile ? '1 1 calc(50% - 6px)' : undefined,
-          width: isMobile ? undefined : 160,
-          minWidth: isMobile ? 140 : undefined,
-        }}
-        options={[
-          { value: 'ALL', label: 'Tất cả danh mục' },
-          ...categories.map((cat) => ({
-            value: cat.id,
-            label: (
-              <Space size={6} align="center">
-                <span
-                  style={{
-                    display: 'inline-block',
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    backgroundColor: cat.color,
-                  }}
-                />
-                <span>{cat.name}</span>
-              </Space>
-            ),
-          })),
-        ]}
-      />
-      <Button
-        onClick={handleResetClick}
-        style={{
-          width: isMobile ? '100%' : undefined,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 12,
         }}
       >
-        Đặt lại
-      </Button>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', flex: 1 }}>
+          <Input
+            prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+            placeholder="Tìm kiếm công việc..."
+            value={searchText}
+            onChange={(e) => handleInputChange(e.target.value)}
+            onPressEnter={() => handleImmediateSearch(searchText)}
+            allowClear
+            style={{ width: isMobile ? '100%' : 260 }}
+          />
+
+          <Segmented<'all' | 'created_by_me' | 'assigned_to_me'>
+            value={scopeFilter}
+            onChange={handleScopeChange}
+            style={{ overflowX: 'auto', maxWidth: '100%' }}
+            options={[
+              { value: 'all', label: 'Tất cả', icon: <AppstoreOutlined /> },
+              { value: 'created_by_me', label: 'Tôi tạo', icon: <UserOutlined /> },
+              { value: 'assigned_to_me', label: 'Giao cho tôi', icon: <CheckSquareOutlined /> },
+            ]}
+          />
+        </div>
+
+        {teams.length > 0 && (
+          <Select<number | 'ALL'>
+            value={teamFilter}
+            onChange={handleTeamChange}
+            style={{ width: isMobile ? '100%' : 180 }}
+            options={[
+              {
+                value: 'ALL',
+                label: (
+                  <Space size={6}>
+                    <TeamOutlined style={{ color: '#8c8c8c' }} />
+                    <span>Tất cả nhóm</span>
+                  </Space>
+                ),
+              },
+              ...teams.map((t) => ({
+                value: t.id,
+                label: (
+                  <Space size={6}>
+                    <TeamOutlined style={{ color: '#1677ff' }} />
+                    <span>{t.name}</span>
+                  </Space>
+                ),
+              })),
+            ]}
+          />
+        )}
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 10,
+          paddingTop: 8,
+          borderTop: '1px solid #f5f5f5',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+          <Space size={6} style={{ color: '#8c8c8c', fontSize: 13, marginRight: 4 }}>
+            <FilterOutlined />
+            <span>Bộ lọc:</span>
+          </Space>
+
+          <Select<StatusFilter>
+            value={statusFilter}
+            onChange={handleStatusChange}
+            size="small"
+            style={{ width: isMobile ? 'calc(50% - 5px)' : 155 }}
+            options={[
+              { value: 'ALL', label: 'Tất cả trạng thái' },
+              { value: 'TODO', label: <Tag color="orange" style={{ margin: 0 }}>Cần làm</Tag> },
+              { value: 'IN_PROGRESS', label: <Tag color="blue" style={{ margin: 0 }}>Đang làm</Tag> },
+              { value: 'DONE', label: <Tag color="green" style={{ margin: 0 }}>Hoàn thành</Tag> },
+            ]}
+          />
+
+          <Select<PriorityFilter>
+            value={priorityFilter}
+            onChange={handlePriorityChange}
+            size="small"
+            style={{ width: isMobile ? 'calc(50% - 5px)' : 145 }}
+            options={[
+              { value: 'ALL', label: 'Tất cả ưu tiên' },
+              { value: 'HIGH', label: <Tag color="red" style={{ margin: 0 }}>Ưu tiên cao</Tag> },
+              { value: 'MEDIUM', label: <Tag color="gold" style={{ margin: 0 }}>Trung bình</Tag> },
+              { value: 'LOW', label: <Tag color="cyan" style={{ margin: 0 }}>Ưu tiên thấp</Tag> },
+            ]}
+          />
+
+          <Select<number | 'ALL'>
+            value={categoryFilter}
+            onChange={handleCategoryChange}
+            size="small"
+            style={{ width: isMobile ? '100%' : 165 }}
+            options={[
+              { value: 'ALL', label: 'Tất cả danh mục' },
+              ...categories.map((cat) => ({
+                value: cat.id,
+                label: (
+                  <Space size={6} align="center">
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        backgroundColor: cat.color,
+                      }}
+                    />
+                    <span>{cat.name}</span>
+                  </Space>
+                ),
+              })),
+            ]}
+          />
+        </div>
+
+        <Button
+          size="small"
+          icon={<ReloadOutlined />}
+          onClick={handleResetClick}
+          disabled={activeFilterCount === 0}
+          type={activeFilterCount > 0 ? 'primary' : 'default'}
+          ghost={activeFilterCount > 0}
+          style={{ width: isMobile ? '100%' : undefined }}
+        >
+          {activeFilterCount > 0 ? `Đặt lại (${activeFilterCount})` : 'Đặt lại'}
+        </Button>
+      </div>
     </div>
   );
 }

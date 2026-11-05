@@ -10,6 +10,6 @@ export class AddMemberDto {
 
   @ApiPropertyOptional({ enum: TeamRole, default: TeamRole.MEMBER, description: 'Vai trò trong nhóm' })
   @IsOptional()
-  @IsEnum(TeamRole, { message: 'Vai trò phải là OWNER, ADMIN hoặc MEMBER' })
+  @IsEnum(TeamRole, { message: 'Vai trò phải là ADMIN hoặc MEMBER' })
   role?: TeamRole;
 }

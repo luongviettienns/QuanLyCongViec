@@ -212,8 +212,24 @@ export async function reorderTasks(taskIds: number[], status?: TaskStatus, teamI
   }
 }
 
-export async function getTaskStats(signal?: AbortSignal): Promise<TaskStats> {
-  const response = await fetch('/tasks/stats', {
+export async function getTaskStats(
+  paramsOrSignal?: { teamId?: number; scope?: string } | AbortSignal,
+  maybeSignal?: AbortSignal,
+): Promise<TaskStats> {
+  const isSignal = paramsOrSignal instanceof AbortSignal;
+  const params = isSignal ? undefined : paramsOrSignal;
+  const signal = isSignal ? paramsOrSignal : maybeSignal;
+
+  const searchParams = new URLSearchParams();
+  if (params?.teamId !== undefined) {
+    searchParams.append('teamId', String(params.teamId));
+  }
+  if (params?.scope) {
+    searchParams.append('scope', params.scope);
+  }
+  const queryString = searchParams.toString();
+  const url = queryString ? `/tasks/stats?${queryString}` : '/tasks/stats';
+  const response = await fetch(url, {
     headers: {
       ...getAuthHeaders(),
     },

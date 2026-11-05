@@ -15,7 +15,7 @@ import { ReturnTaskDto } from './dto/return-task.dto.js';
 import { ReorderTasksDto } from './dto/reorder-tasks.dto.js';
 import { FilterTasksDto } from './dto/filter-tasks.dto.js';
 import { TaskPolicyService, type TaskWithTeamAndMembers } from './task-policy.service.js';
-import { type Task, type Prisma } from '@prisma/client';
+import { type Task, TaskStatus, Prisma } from '@prisma/client';
 
 @Injectable()
 export class TasksService {
@@ -51,7 +51,7 @@ export class TasksService {
         where: { teamId_userId: { teamId: query.teamId, userId } },
       });
       if (!isMember) {
-        throw new ForbiddenException('Bạn không phải thành viên của nhóm này');
+        throw new NotFoundException('Không tìm thấy nhóm');
       }
       baseWhere = { teamId: query.teamId };
     } else if (query?.scope === 'assigned_to_me') {
@@ -208,7 +208,7 @@ export class TasksService {
         where: { teamId_userId: { teamId: data.teamId, userId } },
       });
       if (!member) {
-        throw new ForbiddenException('Bạn không phải thành viên của nhóm này');
+        throw new NotFoundException('Không tìm thấy nhóm');
       }
 
       if (data.assigneeId) {
@@ -380,7 +380,7 @@ export class TasksService {
   async updateStatus(id: number, data: UpdateTaskStatusDto, userId: number): Promise<Task> {
     const currentTask = await this.findOne(id, userId);
 
-    if (!this.policy.canChangeStatus(userId, currentTask)) {
+    if (!this.policy.canChangeStatus(userId, currentTask, data.status)) {
       throw new ForbiddenException('Bạn không có quyền thay đổi trạng thái công việc này');
     }
 
@@ -496,14 +496,29 @@ export class TasksService {
       (m) => m.userId === currentTask.userId,
     ) ?? false;
 
-    const targetAssigneeId = isCreatorMember ? currentTask.userId : null;
+    if (isCreatorMember) {
+      return this.prisma.task.update({
+        where: { id },
+        data: {
+          assignee: { connect: { id: currentTask.userId } },
+        },
+        include: {
+          category: true,
+          assignee: {
+            select: { id: true, name: true, email: true },
+          },
+          team: {
+            select: { id: true, name: true },
+          },
+        },
+      });
+    }
 
     return this.prisma.task.update({
       where: { id },
       data: {
-        assignee: targetAssigneeId
-          ? { connect: { id: targetAssigneeId } }
-          : { disconnect: true },
+        assignee: { disconnect: true },
+        status: TaskStatus.TODO,
       },
       include: {
         category: true,
@@ -557,7 +572,7 @@ export class TasksService {
       throw new ForbiddenException('Bạn không có quyền chỉnh sửa nội dung công việc này');
     }
 
-    if (hasStatus && !this.policy.canChangeStatus(userId, currentTask)) {
+    if (hasStatus && !this.policy.canChangeStatus(userId, currentTask, data.status)) {
       throw new ForbiddenException('Bạn không có quyền thay đổi trạng thái công việc này');
     }
 
@@ -572,7 +587,7 @@ export class TasksService {
         where: { teamId_userId: { teamId: effectiveTeamId, userId } },
       });
       if (!isMember) {
-        throw new ForbiddenException('Bạn không phải thành viên của nhóm này');
+        throw new NotFoundException('Không tìm thấy nhóm');
       }
 
       if (hasAssigneeId && data.assigneeId) {
@@ -637,7 +652,7 @@ export class TasksService {
             mode: 'insensitive',
           },
           NOT: {
-            id: id,
+            id,
           },
         },
       });
@@ -696,19 +711,23 @@ export class TasksService {
     if (isStatusChanged && data.status !== undefined) {
       const newStatus = data.status;
 
+      const posScope = currentTask.teamId
+        ? { teamId: currentTask.teamId, status: newStatus }
+        : { userId: currentTask.userId, teamId: null, status: newStatus };
+
       const newColCount = await this.prisma.task.count({
-        where: { userId: currentTask.userId, status: newStatus },
+        where: posScope,
       });
 
       updateData.status = newStatus;
       updateData.position = newColCount;
 
+      const oldPosScope = currentTask.teamId
+        ? { teamId: currentTask.teamId, status: currentTask.status, NOT: { id } }
+        : { userId: currentTask.userId, teamId: null, status: currentTask.status, NOT: { id } };
+
       const remainingOldTasks = await this.prisma.task.findMany({
-        where: {
-          userId: currentTask.userId,
-          status: currentTask.status,
-          NOT: { id: id },
-        },
+        where: oldPosScope,
         orderBy: [
           { position: 'asc' },
           { createdAt: 'desc' },
@@ -724,7 +743,7 @@ export class TasksService {
 
       const [updatedTask] = await this.prisma.$transaction([
         this.prisma.task.update({
-          where: { id: id },
+          where: { id },
           data: updateData,
           include: {
             category: true,
@@ -747,7 +766,7 @@ export class TasksService {
     }
 
     return this.prisma.task.update({
-      where: { id: id },
+      where: { id },
       data: updateData,
       include: {
         category: true,
@@ -824,6 +843,13 @@ export class TasksService {
           id: { in: dto.taskIds },
           teamId: dto.teamId,
         },
+        include: {
+          team: {
+            include: {
+              members: true,
+            },
+          },
+        },
       });
 
       if (tasksToUpdate.length !== dto.taskIds.length) {
@@ -833,7 +859,15 @@ export class TasksService {
       if (dto.status) {
         const targetStatus = dto.status;
 
-        const oldColumns = new Set<'TODO' | 'IN_PROGRESS' | 'DONE'>();
+        for (const t of tasksToUpdate) {
+          if (t.status !== targetStatus) {
+            if (!this.policy.canChangeStatus(userId, t as TaskWithTeamAndMembers, targetStatus)) {
+              throw new ForbiddenException(`Bạn không có quyền chuyển trạng thái công việc "${t.title}" sang ${targetStatus}`);
+            }
+          }
+        }
+
+        const oldColumns = new Set<TaskStatus>();
         for (const t of tasksToUpdate) {
           if (t.status !== targetStatus) {
             oldColumns.add(t.status);
@@ -924,7 +958,7 @@ export class TasksService {
       if (dto.status) {
         const targetStatus = dto.status;
 
-        const oldColumns = new Set<'TODO' | 'IN_PROGRESS' | 'DONE'>();
+        const oldColumns = new Set<TaskStatus>();
         for (const t of tasksToUpdate) {
           if (t.status !== targetStatus) {
             oldColumns.add(t.status);
@@ -1009,7 +1043,7 @@ export class TasksService {
     };
   }
 
-  async getStats(userId: number) {
+  async getStats(userId: number, query?: FilterTasksDto) {
     const vnDateFormatter = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Ho_Chi_Minh',
       year: 'numeric',
@@ -1024,6 +1058,24 @@ export class TasksService {
     const todayDate = new Date(Date.UTC(vnYear, vnMonth - 1, vnDay));
     const next7Days = new Date(todayDate);
     next7Days.setUTCDate(next7Days.getUTCDate() + 7);
+
+    let whereSql: Prisma.Sql;
+
+    if (query?.teamId) {
+      const isMember = await this.prisma.teamMember.findUnique({
+        where: { teamId_userId: { teamId: query.teamId, userId } },
+      });
+      if (!isMember) {
+        throw new NotFoundException('Không tìm thấy nhóm');
+      }
+      whereSql = Prisma.sql`"teamId" = ${query.teamId}`;
+    } else if (query?.scope === 'created_by_me') {
+      whereSql = Prisma.sql`"userId" = ${userId}`;
+    } else if (query?.scope === 'assigned_to_me') {
+      whereSql = Prisma.sql`"assigneeId" = ${userId}`;
+    } else {
+      whereSql = Prisma.sql`("userId" = ${userId} OR "assigneeId" = ${userId})`;
+    }
 
     const [statsResult, deadlinesResult] = await Promise.all([
       this.prisma.$queryRaw<
@@ -1050,7 +1102,7 @@ export class TasksService {
           COUNT(*) FILTER (WHERE "Priority" = 'MEDIUM')::bigint AS "priorityMedium",
           COUNT(*) FILTER (WHERE "Priority" = 'HIGH')::bigint AS "priorityHigh"
         FROM "Task"
-        WHERE "userId" = ${userId};
+        WHERE ${whereSql};
       `,
       this.prisma.$queryRaw<
         Array<{
@@ -1062,7 +1114,7 @@ export class TasksService {
           to_char("dueDate", 'YYYY-MM-DD') AS date,
           COUNT(*)::bigint AS count
         FROM "Task"
-        WHERE "userId" = ${userId}
+        WHERE ${whereSql}
           AND status != 'DONE'
           AND "dueDate" IS NOT NULL
           AND "dueDate" >= ${todayDate}

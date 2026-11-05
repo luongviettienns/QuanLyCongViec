@@ -40,6 +40,7 @@ import {
   removeTeamMember,
   transferOwnership,
 } from '../api/teams.api';
+import { useAuth } from '../hooks/useAuth';
 import type { Team, TeamMember, TeamRole, CreateTeamPayload, UpdateTeamPayload, AddMemberPayload } from '../types/task.types';
 
 const { Title, Text, Paragraph } = Typography;
@@ -49,6 +50,7 @@ interface TeamPageProps {
 }
 
 export default function TeamPage({ onTeamChanged }: TeamPageProps) {
+  const { user } = useAuth();
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
@@ -238,9 +240,8 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
     }
   }
 
-  const callerRole = selectedTeam?.currentUserRole;
-  const isOwner = callerRole === 'OWNER';
-  const isAdmin = callerRole === 'ADMIN';
+  const isOwner = selectedTeam?.ownerId === user?.id;
+  const isAdmin = selectedTeam?.currentUserRole === 'ADMIN' && !isOwner;
   const canManageMembers = isOwner || isAdmin;
 
   const memberColumns = [
@@ -249,7 +250,7 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       key: 'user',
       render: (_: unknown, record: TeamMember) => (
         <Space orientation="horizontal" size="middle">
-          <Avatar style={{ backgroundColor: record.role === 'OWNER' ? '#f5222d' : record.role === 'ADMIN' ? '#1890ff' : '#52c41a' }}>
+          <Avatar style={{ backgroundColor: record.userId === selectedTeam?.ownerId ? '#faad14' : record.role === 'ADMIN' ? '#1890ff' : '#52c41a' }}>
             {record.user?.name ? record.user.name.charAt(0).toUpperCase() : 'U'}
           </Avatar>
           <div>
@@ -265,10 +266,10 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       title: 'Vai trò',
       key: 'role',
       render: (_: unknown, record: TeamMember) => {
-        if (record.role === 'OWNER') {
+        if (record.userId === selectedTeam?.ownerId) {
           return (
             <Tag icon={<CrownOutlined />} color="gold">
-              Trưởng nhóm (OWNER)
+              Chủ nhóm
             </Tag>
           );
         }
@@ -300,7 +301,7 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       title: 'Thao tác',
       key: 'action',
       render: (_: unknown, record: TeamMember) => {
-        if (record.role === 'OWNER') {
+        if (record.userId === selectedTeam?.ownerId) {
           return <Text type="secondary">Chủ sở hữu</Text>;
         }
 
@@ -414,7 +415,10 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {teams.map((t) => {
                   const isSelected = t.id === selectedTeamId;
-                  const myRole = t.members?.find((m) => m.userId === t.ownerId)?.role || 'MEMBER';
+                  const isTeamOwner = t.ownerId === user?.id;
+                  const myMember = t.members?.find((m) => m.userId === user?.id);
+                  const myRoleLabel = isTeamOwner ? 'Chủ nhóm' : myMember?.role === 'ADMIN' ? 'Quản trị viên' : 'Thành viên';
+                  const myRoleColor = isTeamOwner ? 'gold' : myMember?.role === 'ADMIN' ? 'blue' : 'default';
                   return (
                     <div
                       key={t.id}
@@ -432,8 +436,8 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
                         <Text strong style={{ fontSize: 15, color: isSelected ? '#1677ff' : 'inherit' }}>
                           {t.name}
                         </Text>
-                        <Tag color={myRole === 'OWNER' ? 'gold' : myRole === 'ADMIN' ? 'blue' : 'default'}>
-                          {myRole}
+                        <Tag color={myRoleColor}>
+                          {myRoleLabel}
                         </Tag>
                       </div>
                       {t.description && (
@@ -515,7 +519,7 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
                           title="Rời khỏi nhóm?"
                           description="Bạn sẽ không còn quyền truy cập các công việc của nhóm này!"
                           onConfirm={() => {
-                            const selfMember = selectedTeam.members.find((m) => m.userId === selectedTeam.members[0]?.userId);
+                            const selfMember = selectedTeam.members.find((m) => m.userId === user?.id);
                             if (selfMember) {
                               void handleLeaveTeam(selfMember.id);
                             }
@@ -646,14 +650,18 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
               { type: 'email', message: 'Định dạng email không hợp lệ' },
             ]}
           >
-            <Input placeholder="Ví dụ: colleague@example.com" />
+            <Input placeholder="Ví dụ: memberbel@example.com" />
           </Form.Item>
           <Form.Item name="role" label="Vai trò" rules={[{ required: true }]}>
             <Select
-              options={[
-                { label: 'Thành viên (MEMBER)', value: 'MEMBER' },
-                { label: 'Quản trị viên (ADMIN)', value: 'ADMIN' },
-              ]}
+              options={
+                isOwner
+                  ? [
+                      { label: 'Thành viên (MEMBER)', value: 'MEMBER' },
+                      { label: 'Quản trị viên (ADMIN)', value: 'ADMIN' },
+                    ]
+                  : [{ label: 'Thành viên (MEMBER)', value: 'MEMBER' }]
+              }
             />
           </Form.Item>
         </Form>
