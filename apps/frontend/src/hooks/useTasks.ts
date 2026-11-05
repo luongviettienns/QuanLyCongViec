@@ -9,7 +9,8 @@ import {
 } from '../api/tasks.api';
 import { useAuth } from './useAuth';
 
-export function useTasks() {
+export function useTasks(options?: { enabled?: boolean }) {
+  const enabled = options?.enabled ?? true;
   const { user, loading: authLoading } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -108,7 +109,7 @@ export function useTasks() {
   }, [user]);
 
   useEffect(() => {
-    if (authLoading) {
+    if (!enabled || authLoading) {
       return;
     }
 
@@ -138,7 +139,7 @@ export function useTasks() {
         abortControllerRef.current.abort();
       }
     };
-  }, [user, authLoading, resetState, fetchCategories, fetchTasks]);
+  }, [enabled, user, authLoading, resetState, fetchCategories, fetchTasks]);
 
   function handleSearch(value: string) {
     if (!user) {
@@ -267,5 +268,6 @@ export function useTasks() {
     handleDelete,
     handleReorder,
     resetState,
+    fetchCategories,
   };
 }

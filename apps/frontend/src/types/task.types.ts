@@ -67,6 +67,17 @@ export interface UpdateCategoryPayload {
   color?: string;
 }
 
+export interface TaskPriorityStats {
+  low: number;
+  medium: number;
+  high: number;
+}
+
+export interface TaskDeadlinePoint {
+  date: string;
+  count: number;
+}
+
 export interface TaskStats {
   total: number;
   todo: number;
@@ -75,4 +86,6 @@ export interface TaskStats {
   overdue: number;
   dueSoon: number;
   completionRate: number;
+  byPriority: TaskPriorityStats;
+  upcomingDeadlines: TaskDeadlinePoint[];
 }
