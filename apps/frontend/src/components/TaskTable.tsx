@@ -1,5 +1,5 @@
 import { Table, Tag, Button, Popconfirm, Space, Grid, List, Card } from 'antd';
-import { EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { EditOutlined, DeleteOutlined, UserOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import type { Task, Category, TaskPriority } from '../types/task.types';
 
@@ -55,12 +55,33 @@ export default function TaskTable({
     {
       title: 'ID',
       dataIndex: 'id',
-      width: 70,
+      width: 65,
     },
     {
       title: 'Tiêu đề',
       dataIndex: 'title',
       render: (title: string) => <strong>{title}</strong>,
+    },
+    {
+      title: 'Nhóm / Thực hiện',
+      key: 'teamAssignee',
+      width: 170,
+      render: (_, record) => (
+        <Space direction="vertical" size={2}>
+          {record.team ? (
+            <Tag color="cyan" style={{ margin: 0, fontSize: 11 }}>
+              {record.team.name}
+            </Tag>
+          ) : (
+            <span style={{ color: '#aaa', fontSize: 12 }}>Cá nhân</span>
+          )}
+          {record.assignee ? (
+            <Tag icon={<UserOutlined />} color="purple" style={{ margin: 0, fontSize: 11 }}>
+              {record.assignee.name}
+            </Tag>
+          ) : null}
+        </Space>
+      ),
     },
     {
       title: 'Mô tả',
@@ -70,7 +91,7 @@ export default function TaskTable({
     {
       title: 'Trạng thái',
       dataIndex: 'status',
-      width: 150,
+      width: 130,
       render: (status: Task['status']) => {
         const color = status === 'DONE' ? 'green' : status === 'IN_PROGRESS' ? 'blue' : 'orange';
         return <Tag color={color}>{status}</Tag>;
@@ -79,7 +100,7 @@ export default function TaskTable({
     {
       title: 'Độ ưu tiên',
       dataIndex: 'priority',
-      width: 130,
+      width: 120,
       render: (priority?: Task['priority']) => {
         const val = priority || 'MEDIUM';
         const item = priorityConfig[val] || { color: 'default', label: val };
@@ -89,7 +110,7 @@ export default function TaskTable({
     {
       title: 'Danh mục',
       dataIndex: 'category',
-      width: 130,
+      width: 120,
       render: (cat?: Category | null) => (
         cat ? <Tag color={cat.color}>{cat.name}</Tag> : <span style={{ color: '#bbb' }}>-</span>
       ),
@@ -97,13 +118,13 @@ export default function TaskTable({
     {
       title: 'Bắt đầu',
       dataIndex: 'startDate',
-      width: 120,
+      width: 110,
       render: (date?: string | null) => (date ? formatDate(date) : <span style={{ color: '#bbb' }}>-</span>),
     },
     {
       title: 'Hạn chót',
       dataIndex: 'dueDate',
-      width: 160,
+      width: 150,
       render: (date?: string | null, record?: Task) => {
         if (!date) return <span style={{ color: '#bbb' }}>-</span>;
         const overdue = record ? checkIsOverdue(date, record.status) : false;
@@ -117,7 +138,7 @@ export default function TaskTable({
     {
       title: 'Hành động',
       key: 'action',
-      width: 180,
+      width: 150,
       render: (_, record) => (
         <Space size="middle">
           <Button type="link" onClick={() => onEdit(record)}>
@@ -178,10 +199,20 @@ export default function TaskTable({
                 </div>
               )}
 
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0', alignItems: 'center' }}>
                 <Tag color={pConfig.color} style={{ margin: 0 }}>
                   {pConfig.label}
                 </Tag>
+                {task.team && (
+                  <Tag color="cyan" style={{ margin: 0, fontSize: 11 }}>
+                    {task.team.name}
+                  </Tag>
+                )}
+                {task.assignee && (
+                  <Tag icon={<UserOutlined />} color="purple" style={{ margin: 0, fontSize: 11 }}>
+                    {task.assignee.name}
+                  </Tag>
+                )}
                 {task.category && (
                   <Tag color={task.category.color} style={{ margin: 0 }}>
                     {task.category.name}
@@ -220,18 +251,13 @@ export default function TaskTable({
                 </Button>
                 <Popconfirm
                   title="Xác nhận xoá"
-                  description={`Bạn có chắc muốn xoá "${task.title}"?`}
+                  description={`Bạn có chắc chắn muốn xoá công việc "${task.title}"?`}
                   onConfirm={() => onDelete(task.id)}
                   okText="Xoá"
                   cancelText="Huỷ"
                   okButtonProps={{ danger: true }}
                 >
-                  <Button
-                    size="small"
-                    type="text"
-                    danger
-                    icon={<DeleteOutlined />}
-                  >
+                  <Button size="small" type="text" danger icon={<DeleteOutlined />}>
                     Xoá
                   </Button>
                 </Popconfirm>
@@ -245,12 +271,12 @@ export default function TaskTable({
 
   return (
     <Table
-      rowKey="id"
       columns={columns}
       dataSource={tasks}
+      rowKey="id"
       loading={loading}
-      scroll={{ x: 800 }}
-      pagination={{ pageSize: 10, responsive: true, size: undefined }}
+      pagination={{ pageSize: 10, showSizeChanger: true }}
+      scroll={{ x: 1000 }}
     />
   );
 }

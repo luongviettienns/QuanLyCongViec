@@ -72,4 +72,20 @@ export class UpdateTaskDto {
   @IsOptional()
   @IsInt({ message: 'Mã danh mục phải là số nguyên' })
   categoryId?: number | null;
+
+  @ApiPropertyOptional({
+    description: 'Mã nhóm làm việc (ID hoặc null để chuyển thành task cá nhân)',
+    example: 1,
+  })
+  @IsOptional()
+  @IsInt({ message: 'Mã nhóm phải là số nguyên' })
+  teamId?: number | null;
+
+  @ApiPropertyOptional({
+    description: 'Mã người được phân công (ID hoặc null để hủy gán)',
+    example: 2,
+  })
+  @IsOptional()
+  @IsInt({ message: 'Mã người được phân công phải là số nguyên' })
+  assigneeId?: number | null;
 }

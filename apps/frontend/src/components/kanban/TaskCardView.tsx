@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { Card, Tag } from 'antd';
+import { UserOutlined, TeamOutlined } from '@ant-design/icons';
 import type { Task, TaskPriority } from '../../types/task.types';
 
 const priorityMap: Record<TaskPriority, { color: string; label: string }> = {
@@ -56,6 +57,11 @@ export const TaskCardView = memo(function TaskCardView({ task, isDragging }: Tas
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
         <div style={{ fontWeight: 600, color: '#333', flex: 1 }}>{task.title}</div>
         <div style={{ display: 'flex', gap: 4, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {task.team && (
+            <Tag icon={<TeamOutlined />} color="cyan" style={{ fontSize: 11, margin: 0 }}>
+              {task.team.name}
+            </Tag>
+          )}
           {task.category && (
             <Tag color={task.category.color} style={{ fontSize: 11, margin: 0 }}>
               {task.category.name}
@@ -82,24 +88,27 @@ export const TaskCardView = memo(function TaskCardView({ task, isDragging }: Tas
           {task.description}
         </div>
       )}
-      {(task.startDate || task.dueDate) && (
-        <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-          {task.startDate && (
-            <Tag style={{ fontSize: 11, margin: 0 }}>
-              Từ: {formatDate(task.startDate)}
-            </Tag>
-          )}
-          {task.dueDate && (
-            <Tag
-              color={checkIsOverdue(task.dueDate, task.status) ? 'error' : 'default'}
-              style={{ fontSize: 11, margin: 0 }}
-            >
-              Hạn: {formatDate(task.dueDate)}
-              {checkIsOverdue(task.dueDate, task.status) ? ' (Quá hạn)' : ''}
-            </Tag>
-          )}
-        </div>
-      )}
+      <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+        {task.assignee && (
+          <Tag icon={<UserOutlined />} color="purple" style={{ fontSize: 11, margin: 0 }}>
+            {task.assignee.name}
+          </Tag>
+        )}
+        {task.startDate && (
+          <Tag style={{ fontSize: 11, margin: 0 }}>
+            Từ: {formatDate(task.startDate)}
+          </Tag>
+        )}
+        {task.dueDate && (
+          <Tag
+            color={checkIsOverdue(task.dueDate, task.status) ? 'error' : 'default'}
+            style={{ fontSize: 11, margin: 0 }}
+          >
+            Hạn: {formatDate(task.dueDate)}
+            {checkIsOverdue(task.dueDate, task.status) ? ' (Quá hạn)' : ''}
+          </Tag>
+        )}
+      </div>
     </Card>
   );
 });

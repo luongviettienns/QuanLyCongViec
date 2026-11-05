@@ -75,4 +75,20 @@ export class CreateTaskDto {
   @IsOptional()
   @IsInt({ message: 'Mã danh mục phải là số nguyên' })
   categoryId?: number;
+
+  @ApiPropertyOptional({
+    description: 'Mã nhóm làm việc (ID, để trống nếu là công việc cá nhân)',
+    example: 1,
+  })
+  @IsOptional()
+  @IsInt({ message: 'Mã nhóm phải là số nguyên' })
+  teamId?: number;
+
+  @ApiPropertyOptional({
+    description: 'Mã người được phân công (ID thành viên)',
+    example: 2,
+  })
+  @IsOptional()
+  @IsInt({ message: 'Mã người được phân công phải là số nguyên' })
+  assigneeId?: number;
 }

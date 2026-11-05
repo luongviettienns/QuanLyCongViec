@@ -8,6 +8,7 @@ const TaskTable = lazy(() => import('./components/TaskTable'));
 const TaskFormModal = lazy(() => import('./components/TaskFormModal'));
 const CategoryManagerModal = lazy(() => import('./components/CategoryManagerModal'));
 const CategoryPage = lazy(() => import('./components/CategoryPage'));
+const TeamPage = lazy(() => import('./components/TeamPage'));
 const DashboardPage = lazy(() => import('./components/DashboardPage'));
 const AuthScreen = lazy(() => import('./components/AuthScreen'));
 import { AuthProvider } from './context/AuthContext';
@@ -16,26 +17,32 @@ import { useAuth } from './hooks/useAuth';
 import type { Task, TaskStatus } from './types/task.types';
 
 function TaskApp() {
-  const [currentNav, setCurrentNav] = useState<'dashboard' | 'tasks' | 'categories'>('dashboard');
+  const [currentNav, setCurrentNav] = useState<'dashboard' | 'tasks' | 'teams' | 'categories'>('dashboard');
   const {
     tasks,
     categories,
+    teams,
     loading,
     searchText,
     statusFilter,
     categoryFilter,
     priorityFilter,
+    teamFilter,
+    scopeFilter,
     isFiltering,
     setSearchText,
     handleSearch,
     handleStatusChange,
     handleCategoryChange,
     handlePriorityChange,
+    handleTeamChange,
+    handleScopeChange,
     handleReset,
     refetch,
     handleDelete,
     handleReorder,
     fetchCategories,
+    fetchTeams,
   } = useTasks({ enabled: currentNav === 'tasks' });
 
   const [modalState, setModalState] = useState<{ open: boolean; task: Task | null }>({
@@ -49,12 +56,18 @@ function TaskApp() {
     if (categories.length === 0) {
       void fetchCategories();
     }
+    if (teams.length === 0) {
+      void fetchTeams();
+    }
     setModalState({ open: true, task: null });
   }
 
   function handleOpenEdit(task: Task) {
     if (categories.length === 0) {
       void fetchCategories();
+    }
+    if (teams.length === 0) {
+      void fetchTeams();
     }
     setModalState({ open: true, task });
   }
@@ -98,12 +111,17 @@ function TaskApp() {
               statusFilter={statusFilter}
               categoryFilter={categoryFilter}
               priorityFilter={priorityFilter}
+              teamFilter={teamFilter}
+              scopeFilter={scopeFilter}
               categories={categories}
+              teams={teams}
               onSearchChange={setSearchText}
               onSearch={handleSearch}
               onStatusChange={handleStatusChange}
               onCategoryChange={handleCategoryChange}
               onPriorityChange={handlePriorityChange}
+              onTeamChange={handleTeamChange}
+              onScopeChange={handleScopeChange}
               onReset={handleReset}
             />
 
@@ -126,6 +144,8 @@ function TaskApp() {
               />
             )}
           </>
+        ) : currentNav === 'teams' ? (
+          <TeamPage onTeamChanged={() => void refetch()} />
         ) : (
           <CategoryPage onChanged={() => void refetch()} />
         )}
@@ -135,6 +155,7 @@ function TaskApp() {
             open={modalState.open}
             task={modalState.task}
             categories={categories}
+            teams={teams}
             onClose={handleCloseModal}
             onSuccess={refetch}
           />

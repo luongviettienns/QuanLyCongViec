@@ -3,17 +3,27 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service.js';
 import { CreateTaskDto } from './dto/create-task.dto.js';
 import { UpdateTaskDto } from './dto/update-task.dto.js';
+import { UpdateTaskContentDto } from './dto/update-task-content.dto.js';
+import { UpdateTaskStatusDto } from './dto/update-task-status.dto.js';
+import { UpdateTaskAssigneeDto } from './dto/update-task-assignee.dto.js';
+import { ReturnTaskDto } from './dto/return-task.dto.js';
+import { MoveTaskTeamDto } from './dto/move-task-team.dto.js';
 import { ReorderTasksDto } from './dto/reorder-tasks.dto.js';
 import { FilterTasksDto } from './dto/filter-tasks.dto.js';
-import type { Task, Prisma } from '@prisma/client';
+import { TaskPolicyService, type TaskWithTeamAndMembers } from './task-policy.service.js';
+import { type Task, TaskStatus, Prisma } from '@prisma/client';
 
 @Injectable()
 export class TasksService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly policy: TaskPolicyService,
+  ) {}
 
   private parseDateOnly(dateStr: string): Date {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
@@ -29,26 +39,63 @@ export class TasksService {
       date.getUTCMonth() !== month - 1 ||
       date.getUTCDate() !== day
     ) {
-      throw new BadRequestException('Ngày không hợp lệ');
+      throw new BadRequestException('Ngày không hợp lệ trong lịch');
     }
     return date;
   }
 
   async findAll(query?: FilterTasksDto, userId = 1): Promise<Task[]> {
+    let baseWhere: Prisma.TaskWhereInput = {};
+
+    if (query?.teamId) {
+      const isMember = await this.prisma.teamMember.findUnique({
+        where: { teamId_userId: { teamId: query.teamId, userId } },
+      });
+      if (!isMember) {
+        throw new NotFoundException('Không tìm thấy nhóm');
+      }
+      baseWhere = { teamId: query.teamId };
+    } else if (query?.scope === 'assigned_to_me') {
+      baseWhere = {
+        assigneeId: userId,
+        OR: [
+          { teamId: null },
+          { team: { members: { some: { userId } } } },
+        ],
+      };
+    } else if (query?.scope === 'created_by_me') {
+      baseWhere = {
+        userId,
+        OR: [
+          { teamId: null },
+          { team: { members: { some: { userId } } } },
+        ],
+      };
+    } else {
+      baseWhere = {
+        OR: [
+          { teamId: null, userId },
+          { teamId: null, assigneeId: userId },
+          { team: { members: { some: { userId } } } },
+        ],
+      };
+    }
+
     const where: Prisma.TaskWhereInput = {
-      userId,
+      ...baseWhere,
     };
 
-    if (query?.search) {
-      const keyword = query.search.trim();
-      if (keyword.length > 0) {
-        where.title = {
-          contains: keyword,
-          mode: 'insensitive',
-        };
-      }
+    if (query?.assigneeId) {
+      where.assigneeId = query.assigneeId;
     }
- 
+
+    if (query?.search && query.search.trim().length > 0) {
+      where.title = {
+        contains: query.search.trim(),
+        mode: 'insensitive',
+      };
+    }
+
     if (query?.status) {
       where.status = query.status;
     }
@@ -65,6 +112,12 @@ export class TasksService {
       where,
       include: {
         category: true,
+        assignee: {
+          select: { id: true, name: true, email: true },
+        },
+        team: {
+          select: { id: true, name: true },
+        },
       },
       orderBy: [
         { status: 'asc' },
@@ -74,19 +127,27 @@ export class TasksService {
     });
   }
 
-  async findOne(id: number, userId = 1): Promise<Task> {
+  async findOne(id: number, userId = 1): Promise<TaskWithTeamAndMembers> {
     if (isNaN(id) || id <= 0) {
       throw new BadRequestException('Mã công việc (ID) phải là số nguyên dương hợp lệ');
     }
 
-    const task = await this.prisma.task.findFirst({
-      where: { id: id, userId },
+    const task = await this.prisma.task.findUnique({
+      where: { id },
       include: {
         category: true,
+        assignee: {
+          select: { id: true, name: true, email: true },
+        },
+        team: {
+          include: {
+            members: true,
+          },
+        },
       },
     });
 
-    if (!task) {
+    if (!task || !this.policy.canViewTask(userId, task)) {
       throw new NotFoundException(`Không tìm thấy công việc với mã #${id}`);
     }
 
@@ -100,9 +161,13 @@ export class TasksService {
       throw new BadRequestException('Tiêu đề công việc phải có ít nhất 3 ký tự (không tính khoảng trắng thừa)');
     }
 
+    const titleScopeWhere = data.teamId
+      ? { teamId: data.teamId }
+      : { userId, teamId: null };
+
     const existingTask = await this.prisma.task.findFirst({
       where: {
-        userId,
+        ...titleScopeWhere,
         title: {
           equals: cleanTitle,
           mode: 'insensitive',
@@ -151,11 +216,37 @@ export class TasksService {
       }
     }
 
+    if (data.teamId) {
+      const member = await this.prisma.teamMember.findUnique({
+        where: { teamId_userId: { teamId: data.teamId, userId } },
+      });
+      if (!member) {
+        throw new NotFoundException('Không tìm thấy nhóm');
+      }
+
+      if (data.assigneeId) {
+        const assigneeMember = await this.prisma.teamMember.findUnique({
+          where: { teamId_userId: { teamId: data.teamId, userId: data.assigneeId } },
+        });
+        if (!assigneeMember) {
+          throw new BadRequestException('Người được phân công không thuộc nhóm này');
+        }
+      }
+    } else {
+      if (data.assigneeId && data.assigneeId !== userId) {
+        throw new BadRequestException('Công việc cá nhân chỉ có thể phân công cho chính bạn');
+      }
+    }
+
+    const positionScopeWhere = data.teamId
+      ? { teamId: data.teamId, status: initialStatus }
+      : { userId, teamId: null, status: initialStatus };
+
     const currentCount = await this.prisma.task.count({
-      where: { userId, status: initialStatus },
+      where: positionScopeWhere,
     });
 
-    const newTask = await this.prisma.task.create({
+    return this.prisma.task.create({
       data: {
         userId,
         title: cleanTitle,
@@ -163,43 +254,43 @@ export class TasksService {
         status: initialStatus,
         priority: initialPriority,
         categoryId: data.categoryId ? data.categoryId : null,
+        teamId: data.teamId ? data.teamId : null,
+        assigneeId: data.assigneeId ? data.assigneeId : null,
         position: currentCount,
         startDate: parsedStartDate,
         dueDate: parsedDueDate,
       },
       include: {
         category: true,
+        assignee: {
+          select: { id: true, name: true, email: true },
+        },
+        team: {
+          select: { id: true, name: true },
+        },
       },
     });
-
-    return newTask;
   }
 
-  async update(id: number, data: UpdateTaskDto, userId = 1): Promise<Task> {
+  async updateContent(id: number, data: UpdateTaskContentDto, userId: number): Promise<Task> {
     const currentTask = await this.findOne(id, userId);
+
+    if (!this.policy.canEditContent(userId, currentTask)) {
+      throw new ForbiddenException('Bạn không có quyền chỉnh sửa nội dung công việc này');
+    }
 
     const hasTitle = data.title !== undefined;
     const hasDescription = data.description !== undefined;
-    const hasStatus = data.status !== undefined;
+    const hasPriority = data.priority !== undefined;
     const hasStartDate = data.startDate !== undefined;
     const hasDueDate = data.dueDate !== undefined;
-    const hasPriority = data.priority !== undefined;
     const hasCategory = data.categoryId !== undefined;
 
-    if (!hasTitle && !hasDescription && !hasStatus && !hasStartDate && !hasDueDate && !hasPriority && !hasCategory) {
+    if (!hasTitle && !hasDescription && !hasPriority && !hasStartDate && !hasDueDate && !hasCategory) {
       throw new BadRequestException('Vui lòng cung cấp ít nhất một thông tin cần cập nhật');
     }
 
-    const updateData: {
-      title?: string;
-      description?: string | null;
-      status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
-      position?: number;
-      startDate?: Date | null;
-      dueDate?: Date | null;
-      priority?: 'LOW' | 'MEDIUM' | 'HIGH';
-      categoryId?: number | null;
-    } = {};
+    const updateData: Prisma.TaskUpdateInput = {};
 
     let parsedStartDate: Date | null = null;
     if (hasStartDate) {
@@ -230,20 +321,23 @@ export class TasksService {
 
     if (hasTitle && data.title !== undefined) {
       const cleanTitle = data.title.trim();
-
       if (cleanTitle.length < 3) {
         throw new BadRequestException('Tiêu đề công việc mới phải có ít nhất 3 ký tự');
       }
 
+      const duplicateScopeWhere = currentTask.teamId
+        ? { teamId: currentTask.teamId }
+        : { userId: currentTask.userId, teamId: null };
+
       const duplicateTask = await this.prisma.task.findFirst({
         where: {
-          userId: currentTask.userId,
+          ...duplicateScopeWhere,
           title: {
             equals: cleanTitle,
             mode: 'insensitive',
           },
           NOT: {
-            id: id,
+            id,
           },
         },
       });
@@ -256,8 +350,8 @@ export class TasksService {
     }
 
     if (hasDescription && data.description !== undefined) {
-      const trimmedDesc = data.description.trim();
-      updateData.description = trimmedDesc.length > 0 ? trimmedDesc : null;
+      const trimmedDesc = data.description?.trim();
+      updateData.description = trimmedDesc && trimmedDesc.length > 0 ? trimmedDesc : null;
     }
 
     if (hasPriority && data.priority !== undefined) {
@@ -275,30 +369,405 @@ export class TasksService {
         if (!category) {
           throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
         }
-        updateData.categoryId = data.categoryId;
+        updateData.category = { connect: { id: data.categoryId } };
       } else {
-        updateData.categoryId = null;
+        updateData.category = { disconnect: true };
       }
     }
 
-    const isStatusChanged = hasStatus && data.status !== undefined && data.status !== currentTask.status;
+    return this.prisma.task.update({
+      where: { id },
+      data: updateData,
+      include: {
+        category: true,
+        assignee: {
+          select: { id: true, name: true, email: true },
+        },
+        team: {
+          select: { id: true, name: true },
+        },
+      },
+    });
+  }
 
-    if (isStatusChanged && data.status !== undefined) {
-      const newStatus = data.status;
+  async updateStatus(id: number, data: UpdateTaskStatusDto, userId: number): Promise<Task> {
+    const currentTask = await this.findOne(id, userId);
 
-      const newColCount = await this.prisma.task.count({
-        where: { userId: currentTask.userId, status: newStatus },
+    if (!this.policy.canChangeStatus(userId, currentTask, data.status)) {
+      throw new ForbiddenException('Bạn không có quyền thay đổi trạng thái công việc này');
+    }
+
+    if (currentTask.status === data.status) {
+      return currentTask;
+    }
+
+    const posScope = currentTask.teamId
+      ? { teamId: currentTask.teamId, status: data.status }
+      : { userId: currentTask.userId, teamId: null, status: data.status };
+
+    const newPosition = await this.prisma.task.count({
+      where: posScope,
+    });
+
+    const oldPosScope = currentTask.teamId
+      ? { teamId: currentTask.teamId, status: currentTask.status, NOT: { id } }
+      : { userId: currentTask.userId, teamId: null, status: currentTask.status, NOT: { id } };
+
+    const remainingOldTasks = await this.prisma.task.findMany({
+      where: oldPosScope,
+      orderBy: [{ position: 'asc' }, { createdAt: 'desc' }],
+    });
+
+    const reindexOldColOps = remainingOldTasks.map((t, index) =>
+      this.prisma.task.update({
+        where: { id: t.id },
+        data: { position: index },
+      }),
+    );
+
+    const [updatedTask] = await this.prisma.$transaction([
+      this.prisma.task.update({
+        where: { id },
+        data: {
+          status: data.status,
+          position: newPosition,
+        },
+        include: {
+          category: true,
+          assignee: {
+            select: { id: true, name: true, email: true },
+          },
+          team: {
+            select: { id: true, name: true },
+          },
+        },
+      }),
+      ...reindexOldColOps,
+    ]);
+
+    return updatedTask;
+  }
+
+  async updateAssignee(id: number, data: UpdateTaskAssigneeDto, userId: number): Promise<Task> {
+    const currentTask = await this.findOne(id, userId);
+
+    if (!this.policy.canChangeAssignee(userId, currentTask)) {
+      throw new ForbiddenException('Bạn không có quyền phân công công việc này');
+    }
+
+    if (data.assigneeId !== undefined && data.assigneeId !== null) {
+      if (currentTask.teamId) {
+        const isMember = await this.prisma.teamMember.findUnique({
+          where: {
+            teamId_userId: {
+              teamId: currentTask.teamId,
+              userId: data.assigneeId,
+            },
+          },
+        });
+        if (!isMember) {
+          throw new BadRequestException('Người được phân công không thuộc nhóm này');
+        }
+      } else {
+        if (data.assigneeId !== currentTask.userId) {
+          throw new BadRequestException('Công việc cá nhân chỉ có thể phân công cho chính bạn');
+        }
+      }
+    }
+
+    return this.prisma.task.update({
+      where: { id },
+      data: {
+        assignee: data.assigneeId
+          ? { connect: { id: data.assigneeId } }
+          : { disconnect: true },
+      },
+      include: {
+        category: true,
+        assignee: {
+          select: { id: true, name: true, email: true },
+        },
+        team: {
+          select: { id: true, name: true },
+        },
+      },
+    });
+  }
+
+  async returnTask(id: number, data: ReturnTaskDto, userId: number): Promise<Task> {
+    const currentTask = await this.findOne(id, userId);
+
+    if (currentTask.teamId === null) {
+      throw new BadRequestException('Công việc cá nhân không thể thực hiện thao tác trả về');
+    }
+
+    if (!this.policy.canReturnTask(userId, currentTask)) {
+      throw new ForbiddenException('Chỉ người đang được phân công mới có quyền trả lại công việc');
+    }
+
+    const isCreatorMember = currentTask.team?.members.some(
+      (m) => m.userId === currentTask.userId,
+    ) ?? false;
+
+    if (isCreatorMember) {
+      return this.prisma.task.update({
+        where: { id },
+        data: {
+          assignee: { connect: { id: currentTask.userId } },
+        },
+        include: {
+          category: true,
+          assignee: {
+            select: { id: true, name: true, email: true },
+          },
+          team: {
+            select: { id: true, name: true },
+          },
+        },
+      });
+    }
+
+    return this.prisma.task.update({
+      where: { id },
+      data: {
+        assignee: { disconnect: true },
+        status: TaskStatus.TODO,
+      },
+      include: {
+        category: true,
+        assignee: {
+          select: { id: true, name: true, email: true },
+        },
+        team: {
+          select: { id: true, name: true },
+        },
+      },
+    });
+  }
+
+  async moveTeam(id: number, dto: MoveTaskTeamDto, userId: number): Promise<Task> {
+    return this.update(
+      id,
+      {
+        teamId: dto.teamId,
+        assigneeId: dto.assigneeId,
+      },
+      userId,
+    );
+  }
+
+  async update(id: number, data: UpdateTaskDto, userId = 1): Promise<Task> {
+    const currentTask = await this.findOne(id, userId);
+
+    const hasTitle = data.title !== undefined;
+    const hasDescription = data.description !== undefined;
+    const hasStatus = data.status !== undefined;
+    const hasStartDate = data.startDate !== undefined;
+    const hasDueDate = data.dueDate !== undefined;
+    const hasPriority = data.priority !== undefined;
+    const hasCategory = data.categoryId !== undefined;
+    const hasTeamId = data.teamId !== undefined;
+    const hasAssigneeId = data.assigneeId !== undefined;
+
+    if (
+      !hasTitle &&
+      !hasDescription &&
+      !hasStatus &&
+      !hasStartDate &&
+      !hasDueDate &&
+      !hasPriority &&
+      !hasCategory &&
+      !hasTeamId &&
+      !hasAssigneeId
+    ) {
+      throw new BadRequestException('Vui lòng cung cấp ít nhất một thông tin cần cập nhật');
+    }
+
+    const hasContentChange =
+      hasTitle ||
+      hasDescription ||
+      hasPriority ||
+      hasStartDate ||
+      hasDueDate ||
+      hasCategory ||
+      hasTeamId;
+
+    if (hasContentChange && !this.policy.canEditContent(userId, currentTask)) {
+      throw new ForbiddenException('Bạn không có quyền chỉnh sửa nội dung công việc này');
+    }
+
+    if (hasStatus && !this.policy.canChangeStatus(userId, currentTask, data.status)) {
+      throw new ForbiddenException('Bạn không có quyền thay đổi trạng thái công việc này');
+    }
+
+    if (hasAssigneeId && !this.policy.canChangeAssignee(userId, currentTask)) {
+      throw new ForbiddenException('Bạn không có quyền phân công công việc này');
+    }
+
+    const effectiveTeamId = hasTeamId ? (data.teamId ?? null) : currentTask.teamId;
+    const isTeamChanged = effectiveTeamId !== currentTask.teamId;
+    let effectiveAssigneeId = hasAssigneeId ? (data.assigneeId ?? null) : currentTask.assigneeId;
+
+    if (effectiveTeamId !== null) {
+      const isCallerMember = await this.prisma.teamMember.findUnique({
+        where: { teamId_userId: { teamId: effectiveTeamId, userId } },
+      });
+      if (!isCallerMember) {
+        throw new NotFoundException('Không tìm thấy nhóm');
+      }
+
+      if (hasAssigneeId) {
+        if (effectiveAssigneeId) {
+          const isAssigneeMember = await this.prisma.teamMember.findUnique({
+            where: { teamId_userId: { teamId: effectiveTeamId, userId: effectiveAssigneeId } },
+          });
+          if (!isAssigneeMember) {
+            throw new BadRequestException('Người được phân công không thuộc nhóm này');
+          }
+        }
+      } else if (isTeamChanged && effectiveAssigneeId) {
+        const isAssigneeMember = await this.prisma.teamMember.findUnique({
+          where: { teamId_userId: { teamId: effectiveTeamId, userId: effectiveAssigneeId } },
+        });
+        if (!isAssigneeMember) {
+          effectiveAssigneeId = null;
+        }
+      }
+    } else {
+      if (hasAssigneeId) {
+        if (effectiveAssigneeId && effectiveAssigneeId !== currentTask.userId) {
+          throw new BadRequestException('Công việc cá nhân chỉ có thể phân công cho chính bạn');
+        }
+      } else if (isTeamChanged && effectiveAssigneeId !== currentTask.userId) {
+        effectiveAssigneeId = null;
+      }
+    }
+
+    const updateData: Prisma.TaskUpdateInput = {};
+
+    let parsedStartDate: Date | null = null;
+    if (hasStartDate) {
+      if (data.startDate === null || data.startDate === '') {
+        updateData.startDate = null;
+      } else if (data.startDate) {
+        parsedStartDate = this.parseDateOnly(data.startDate);
+        updateData.startDate = parsedStartDate;
+      }
+    }
+
+    let parsedDueDate: Date | null = null;
+    if (hasDueDate) {
+      if (data.dueDate === null || data.dueDate === '') {
+        updateData.dueDate = null;
+      } else if (data.dueDate) {
+        parsedDueDate = this.parseDateOnly(data.dueDate);
+        updateData.dueDate = parsedDueDate;
+      }
+    }
+
+    const effectiveStartDate = hasStartDate ? parsedStartDate : currentTask.startDate;
+    const effectiveDueDate = hasDueDate ? parsedDueDate : currentTask.dueDate;
+
+    if (effectiveStartDate && effectiveDueDate && effectiveStartDate > effectiveDueDate) {
+      throw new BadRequestException('Ngày bắt đầu không được lớn hơn hạn chót (deadline)');
+    }
+
+    const checkTitle = hasTitle && data.title !== undefined ? data.title.trim() : currentTask.title;
+
+    if (isTeamChanged || (hasTitle && data.title !== undefined)) {
+      if (hasTitle && data.title !== undefined && checkTitle.length < 3) {
+        throw new BadRequestException('Tiêu đề công việc mới phải có ít nhất 3 ký tự');
+      }
+
+      const duplicateScopeWhere = effectiveTeamId
+        ? { teamId: effectiveTeamId }
+        : { userId: currentTask.userId, teamId: null };
+
+      const duplicateTask = await this.prisma.task.findFirst({
+        where: {
+          ...duplicateScopeWhere,
+          title: {
+            equals: checkTitle,
+            mode: 'insensitive',
+          },
+          NOT: {
+            id,
+          },
+        },
       });
 
-      updateData.status = newStatus;
-      updateData.position = newColCount;
+      if (duplicateTask) {
+        throw new ConflictException(`Tiêu đề '${checkTitle}' đã được sử dụng bởi một công việc khác`);
+      }
+
+      if (hasTitle && data.title !== undefined) {
+        updateData.title = checkTitle;
+      }
+    }
+
+    if (hasDescription && data.description !== undefined) {
+      const trimmedDesc = data.description?.trim();
+      updateData.description = trimmedDesc && trimmedDesc.length > 0 ? trimmedDesc : null;
+    }
+
+    if (hasPriority && data.priority !== undefined) {
+      updateData.priority = data.priority;
+    }
+
+    if (hasCategory) {
+      if (data.categoryId) {
+        const category = await this.prisma.category.findFirst({
+          where: {
+            id: data.categoryId,
+            userId: currentTask.userId,
+          },
+        });
+        if (!category) {
+          throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
+        }
+        updateData.category = { connect: { id: data.categoryId } };
+      } else {
+        updateData.category = { disconnect: true };
+      }
+    }
+
+    if (hasTeamId) {
+      if (effectiveTeamId) {
+        updateData.team = { connect: { id: effectiveTeamId } };
+      } else {
+        updateData.team = { disconnect: true };
+      }
+    }
+
+    if (hasAssigneeId || (isTeamChanged && effectiveAssigneeId !== currentTask.assigneeId)) {
+      if (effectiveAssigneeId) {
+        updateData.assignee = { connect: { id: effectiveAssigneeId } };
+      } else {
+        updateData.assignee = { disconnect: true };
+      }
+    }
+
+    const effectiveStatus = hasStatus && data.status !== undefined ? data.status : currentTask.status;
+    const isScopeOrStatusChanged = isTeamChanged || (hasStatus && data.status !== undefined && data.status !== currentTask.status);
+
+    if (isScopeOrStatusChanged) {
+      const destScope = effectiveTeamId
+        ? { teamId: effectiveTeamId, status: effectiveStatus }
+        : { userId: currentTask.userId, teamId: null, status: effectiveStatus };
+
+      const newPosition = await this.prisma.task.count({
+        where: destScope,
+      });
+
+      updateData.status = effectiveStatus;
+      updateData.position = newPosition;
+
+      const sourceScope = currentTask.teamId
+        ? { teamId: currentTask.teamId, status: currentTask.status, NOT: { id } }
+        : { userId: currentTask.userId, teamId: null, status: currentTask.status, NOT: { id } };
 
       const remainingOldTasks = await this.prisma.task.findMany({
-        where: {
-          userId: currentTask.userId,
-          status: currentTask.status,
-          NOT: { id: id },
-        },
+        where: sourceScope,
         orderBy: [
           { position: 'asc' },
           { createdAt: 'desc' },
@@ -314,10 +783,16 @@ export class TasksService {
 
       const [updatedTask] = await this.prisma.$transaction([
         this.prisma.task.update({
-          where: { id: id },
+          where: { id },
           data: updateData,
           include: {
             category: true,
+            assignee: {
+              select: { id: true, name: true, email: true },
+            },
+            team: {
+              select: { id: true, name: true },
+            },
           },
         }),
         ...reindexOldColOps,
@@ -330,26 +805,34 @@ export class TasksService {
       updateData.status = data.status;
     }
 
-    const updatedTask = await this.prisma.task.update({
-      where: { id: id },
+    return this.prisma.task.update({
+      where: { id },
       data: updateData,
       include: {
         category: true,
+        assignee: {
+          select: { id: true, name: true, email: true },
+        },
+        team: {
+          select: { id: true, name: true },
+        },
       },
     });
-
-    return updatedTask;
   }
 
   async remove(id: number, userId = 1): Promise<{ success: boolean; message: string; deletedTask: Task }> {
     const taskToDelete = await this.findOne(id, userId);
 
+    if (!this.policy.canDeleteTask(userId, taskToDelete)) {
+      throw new ForbiddenException('Bạn không có quyền xóa công việc này');
+    }
+
+    const remainingTasksScope = taskToDelete.teamId
+      ? { teamId: taskToDelete.teamId, status: taskToDelete.status, NOT: { id } }
+      : { userId: taskToDelete.userId, teamId: null, status: taskToDelete.status, NOT: { id } };
+
     const remainingTasks = await this.prisma.task.findMany({
-      where: {
-        userId: taskToDelete.userId,
-        status: taskToDelete.status,
-        NOT: { id: id },
-      },
+      where: remainingTasksScope,
       orderBy: [
         { position: 'asc' },
         { createdAt: 'desc' },
@@ -365,7 +848,7 @@ export class TasksService {
 
     const [deletedTask] = await this.prisma.$transaction([
       this.prisma.task.delete({
-        where: { id: id },
+        where: { id },
       }),
       ...reindexOps,
     ]);
@@ -373,7 +856,7 @@ export class TasksService {
     return {
       success: true,
       message: `Đã xoá thành công công việc #${id} - "${taskToDelete.title}"`,
-      deletedTask: deletedTask,
+      deletedTask,
     };
   }
 
@@ -387,33 +870,78 @@ export class TasksService {
       throw new BadRequestException('Danh sách ID công việc có phần tử trùng lặp');
     }
 
-    const tasksToUpdate = await this.prisma.task.findMany({
-      where: {
-        id: { in: dto.taskIds },
-        userId,
-      },
-    });
-
-    if (tasksToUpdate.length !== dto.taskIds.length) {
-      throw new NotFoundException('Một hoặc nhiều công việc trong danh sách không tồn tại hoặc không thuộc quyền quản lý của bạn');
-    }
-
-    if (dto.status) {
-      const targetStatus = dto.status;
-
-      const oldColumns = new Set<'TODO' | 'IN_PROGRESS' | 'DONE'>();
-      for (const t of tasksToUpdate) {
-        if (t.status !== targetStatus) {
-          oldColumns.add(t.status);
-        }
+    if (dto.teamId) {
+      const isMember = await this.prisma.teamMember.findUnique({
+        where: { teamId_userId: { teamId: dto.teamId, userId } },
+      });
+      if (!isMember) {
+        throw new NotFoundException('Không tìm thấy nhóm');
       }
 
-      const oldColReindexOps = [];
-      for (const oldCol of oldColumns) {
-        const remainingInOldCol = await this.prisma.task.findMany({
+      const tasksToUpdate = await this.prisma.task.findMany({
+        where: {
+          id: { in: dto.taskIds },
+          teamId: dto.teamId,
+        },
+        include: {
+          team: {
+            include: {
+              members: true,
+            },
+          },
+        },
+      });
+
+      if (tasksToUpdate.length !== dto.taskIds.length) {
+        throw new BadRequestException('Một hoặc nhiều công việc trong danh sách không thuộc nhóm này');
+      }
+
+      if (dto.status) {
+        const targetStatus = dto.status;
+
+        for (const t of tasksToUpdate) {
+          if (t.status !== targetStatus) {
+            if (!this.policy.canChangeStatus(userId, t as TaskWithTeamAndMembers, targetStatus)) {
+              throw new ForbiddenException(`Bạn không có quyền chuyển trạng thái công việc "${t.title}" sang ${targetStatus}`);
+            }
+          }
+        }
+
+        const oldColumns = new Set<TaskStatus>();
+        for (const t of tasksToUpdate) {
+          if (t.status !== targetStatus) {
+            oldColumns.add(t.status);
+          }
+        }
+
+        const oldColReindexOps = [];
+        for (const oldCol of oldColumns) {
+          const remainingInOldCol = await this.prisma.task.findMany({
+            where: {
+              teamId: dto.teamId,
+              status: oldCol,
+              NOT: { id: { in: dto.taskIds } },
+            },
+            orderBy: [
+              { position: 'asc' },
+              { createdAt: 'desc' },
+            ],
+          });
+
+          for (let i = 0; i < remainingInOldCol.length; i++) {
+            oldColReindexOps.push(
+              this.prisma.task.update({
+                where: { id: remainingInOldCol[i].id },
+                data: { position: i },
+              }),
+            );
+          }
+        }
+
+        const unmentionedInTarget = await this.prisma.task.findMany({
           where: {
-            userId,
-            status: oldCol,
+            teamId: dto.teamId,
+            status: targetStatus,
             NOT: { id: { in: dto.taskIds } },
           },
           orderBy: [
@@ -422,59 +950,131 @@ export class TasksService {
           ],
         });
 
-        for (let i = 0; i < remainingInOldCol.length; i++) {
-          oldColReindexOps.push(
-            this.prisma.task.update({
-              where: { id: remainingInOldCol[i].id },
-              data: { position: i },
-            }),
-          );
-        }
-      }
+        const unmentionedOps = unmentionedInTarget.map((t, idx) =>
+          this.prisma.task.update({
+            where: { id: t.id },
+            data: { position: dto.taskIds.length + idx },
+          }),
+        );
 
-      const unmentionedInTarget = await this.prisma.task.findMany({
+        const targetOps = dto.taskIds.map((taskId, newPosition) =>
+          this.prisma.task.update({
+            where: { id: taskId },
+            data: {
+              position: newPosition,
+              status: targetStatus,
+            },
+          }),
+        );
+
+        await this.prisma.$transaction([
+          ...oldColReindexOps,
+          ...targetOps,
+          ...unmentionedOps,
+        ]);
+      } else {
+        const targetOps = dto.taskIds.map((taskId, newPosition) =>
+          this.prisma.task.update({
+            where: { id: taskId },
+            data: { position: newPosition },
+          }),
+        );
+
+        await this.prisma.$transaction(targetOps);
+      }
+    } else {
+      const tasksToUpdate = await this.prisma.task.findMany({
         where: {
+          id: { in: dto.taskIds },
           userId,
-          status: targetStatus,
-          NOT: { id: { in: dto.taskIds } },
+          teamId: null,
         },
-        orderBy: [
-          { position: 'asc' },
-          { createdAt: 'desc' },
-        ],
       });
 
-      const unmentionedOps = unmentionedInTarget.map((t, idx) =>
-        this.prisma.task.update({
-          where: { id: t.id },
-          data: { position: dto.taskIds.length + idx },
-        }),
-      );
+      if (tasksToUpdate.length !== dto.taskIds.length) {
+        throw new NotFoundException('Một hoặc nhiều công việc trong danh sách không tồn tại hoặc không thuộc quyền quản lý của bạn');
+      }
 
-      const targetOps = dto.taskIds.map((taskId, newPosition) =>
-        this.prisma.task.update({
-          where: { id: taskId },
-          data: {
-            position: newPosition,
+      if (dto.status) {
+        const targetStatus = dto.status;
+
+        const oldColumns = new Set<TaskStatus>();
+        for (const t of tasksToUpdate) {
+          if (t.status !== targetStatus) {
+            oldColumns.add(t.status);
+          }
+        }
+
+        const oldColReindexOps = [];
+        for (const oldCol of oldColumns) {
+          const remainingInOldCol = await this.prisma.task.findMany({
+            where: {
+              userId,
+              teamId: null,
+              status: oldCol,
+              NOT: { id: { in: dto.taskIds } },
+            },
+            orderBy: [
+              { position: 'asc' },
+              { createdAt: 'desc' },
+            ],
+          });
+
+          for (let i = 0; i < remainingInOldCol.length; i++) {
+            oldColReindexOps.push(
+              this.prisma.task.update({
+                where: { id: remainingInOldCol[i].id },
+                data: { position: i },
+              }),
+            );
+          }
+        }
+
+        const unmentionedInTarget = await this.prisma.task.findMany({
+          where: {
+            userId,
+            teamId: null,
             status: targetStatus,
+            NOT: { id: { in: dto.taskIds } },
           },
-        }),
-      );
+          orderBy: [
+            { position: 'asc' },
+            { createdAt: 'desc' },
+          ],
+        });
 
-      await this.prisma.$transaction([
-        ...oldColReindexOps,
-        ...targetOps,
-        ...unmentionedOps,
-      ]);
-    } else {
-      const targetOps = dto.taskIds.map((taskId, newPosition) =>
-        this.prisma.task.update({
-          where: { id: taskId },
-          data: { position: newPosition },
-        }),
-      );
+        const unmentionedOps = unmentionedInTarget.map((t, idx) =>
+          this.prisma.task.update({
+            where: { id: t.id },
+            data: { position: dto.taskIds.length + idx },
+          }),
+        );
 
-      await this.prisma.$transaction(targetOps);
+        const targetOps = dto.taskIds.map((taskId, newPosition) =>
+          this.prisma.task.update({
+            where: { id: taskId },
+            data: {
+              position: newPosition,
+              status: targetStatus,
+            },
+          }),
+        );
+
+        await this.prisma.$transaction([
+          ...oldColReindexOps,
+          ...targetOps,
+          ...unmentionedOps,
+        ]);
+      } else {
+        const targetOps = dto.taskIds.map((taskId, newPosition) =>
+          this.prisma.task.update({
+            where: { id: taskId },
+            data: { position: newPosition },
+          }),
+        );
+
+        await this.prisma.$transaction(targetOps);
+      }
     }
 
     return {
@@ -482,7 +1082,8 @@ export class TasksService {
       message: 'Cập nhật thứ tự công việc vào database thành công',
     };
   }
-  async getStats(userId: number) {
+
+  async getStats(userId: number, query?: FilterTasksDto) {
     const vnDateFormatter = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Ho_Chi_Minh',
       year: 'numeric',
@@ -497,6 +1098,42 @@ export class TasksService {
     const todayDate = new Date(Date.UTC(vnYear, vnMonth - 1, vnDay));
     const next7Days = new Date(todayDate);
     next7Days.setUTCDate(next7Days.getUTCDate() + 7);
+
+    let whereSql: Prisma.Sql;
+
+    if (query?.teamId) {
+      const isMember = await this.prisma.teamMember.findUnique({
+        where: { teamId_userId: { teamId: query.teamId, userId } },
+      });
+      if (!isMember) {
+        throw new NotFoundException('Không tìm thấy nhóm');
+      }
+      whereSql = Prisma.sql`"teamId" = ${query.teamId}`;
+    } else if (query?.scope === 'created_by_me') {
+      whereSql = Prisma.sql`
+        "userId" = ${userId}
+        AND (
+          "teamId" IS NULL
+          OR "teamId" IN (SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId})
+        )
+      `;
+    } else if (query?.scope === 'assigned_to_me') {
+      whereSql = Prisma.sql`
+        "assigneeId" = ${userId}
+        AND (
+          "teamId" IS NULL
+          OR "teamId" IN (SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId})
+        )
+      `;
+    } else {
+      whereSql = Prisma.sql`
+        ("userId" = ${userId} OR "assigneeId" = ${userId})
+        AND (
+          "teamId" IS NULL
+          OR "teamId" IN (SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId})
+        )
+      `;
+    }
 
     const [statsResult, deadlinesResult] = await Promise.all([
       this.prisma.$queryRaw<
@@ -523,7 +1160,7 @@ export class TasksService {
           COUNT(*) FILTER (WHERE "Priority" = 'MEDIUM')::bigint AS "priorityMedium",
           COUNT(*) FILTER (WHERE "Priority" = 'HIGH')::bigint AS "priorityHigh"
         FROM "Task"
-        WHERE "userId" = ${userId};
+        WHERE ${whereSql};
       `,
       this.prisma.$queryRaw<
         Array<{
@@ -535,7 +1172,7 @@ export class TasksService {
           to_char("dueDate", 'YYYY-MM-DD') AS date,
           COUNT(*)::bigint AS count
         FROM "Task"
-        WHERE "userId" = ${userId}
+        WHERE ${whereSql}
           AND status != 'DONE'
           AND "dueDate" IS NOT NULL
           AND "dueDate" >= ${todayDate}

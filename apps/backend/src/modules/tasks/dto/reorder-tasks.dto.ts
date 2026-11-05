@@ -28,5 +28,13 @@ export class ReorderTasksDto {
     message: 'Trạng thái phải là TODO, IN_PROGRESS hoặc DONE',
   })
   status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
+
+  @ApiPropertyOptional({
+    description: 'Mã nhóm làm việc (nếu sắp xếp trên bảng nhóm)',
+    example: 1,
+  })
+  @IsOptional()
+  @IsInt({ message: 'Mã nhóm phải là số nguyên' })
+  teamId?: number;
 } 
 

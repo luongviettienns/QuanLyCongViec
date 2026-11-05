@@ -21,6 +21,7 @@ import {
   LogoutOutlined,
   LoginOutlined,
   TagsOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../hooks/useAuth';
 
@@ -34,8 +35,8 @@ interface AppLayoutProps {
   onOpenCategories?: () => void;
   onOpenAuth?: () => void;
   loading?: boolean;
-  currentNav?: 'dashboard' | 'tasks' | 'categories';
-  onNavChange?: (key: 'dashboard' | 'tasks' | 'categories') => void;
+  currentNav?: 'dashboard' | 'tasks' | 'teams' | 'categories';
+  onNavChange?: (key: 'dashboard' | 'tasks' | 'teams' | 'categories') => void;
 }
 
 export default function AppLayout({
@@ -63,6 +64,11 @@ export default function AppLayout({
       key: 'tasks',
       icon: <CheckSquareOutlined />,
       label: 'Công việc',
+    },
+    {
+      key: 'teams',
+      icon: <TeamOutlined />,
+      label: 'Nhóm làm việc',
     },
     {
       key: 'categories',
@@ -143,7 +149,7 @@ export default function AppLayout({
             if (isMobile) {
               setDrawerOpen(false);
             }
-            if (key === 'dashboard' || key === 'tasks' || key === 'categories') {
+            if (key === 'dashboard' || key === 'tasks' || key === 'teams' || key === 'categories') {
               onNavChange?.(key);
             }
           }}
@@ -236,7 +242,13 @@ export default function AppLayout({
             />
             {screens.sm && (
               <span style={{ fontWeight: 600, fontSize: 16, color: '#1f1f1f' }}>
-                {currentNav === 'categories' ? 'Quản lý danh mục' : 'Không gian làm việc'}
+                {currentNav === 'categories'
+                  ? 'Quản lý danh mục'
+                  : currentNav === 'teams'
+                    ? 'Nhóm làm việc'
+                    : currentNav === 'dashboard'
+                      ? 'Tổng quan hệ thống'
+                      : 'Không gian làm việc'}
               </span>
             )}
           </Space>
