@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { Spin } from 'antd';
 import AppLayout from './components/AppLayout';
-import KanbanBoard from './components/KanbanBoard';
 import TaskToolbar from './components/TaskToolbar';
-import TaskTable from './components/TaskTable';
-import TaskFormModal from './components/TaskFormModal';
-import CategoryManagerModal from './components/CategoryManagerModal';
-import CategoryPage from './components/CategoryPage';
-import DashboardPage from './components/DashboardPage';
+
+const KanbanBoard = lazy(() => import('./components/KanbanBoard'));
+const TaskTable = lazy(() => import('./components/TaskTable'));
+const TaskFormModal = lazy(() => import('./components/TaskFormModal'));
+const CategoryManagerModal = lazy(() => import('./components/CategoryManagerModal'));
+const CategoryPage = lazy(() => import('./components/CategoryPage'));
+const DashboardPage = lazy(() => import('./components/DashboardPage'));
 import AuthScreen from './components/AuthScreen';
 import { AuthProvider } from './context/AuthContext';
 import { useTasks } from './hooks/useTasks';
@@ -71,7 +72,14 @@ function TaskApp() {
       currentNav={currentNav}
       onNavChange={setCurrentNav}
     >
-      {currentNav === 'dashboard' ? (
+      <Suspense
+        fallback={
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
+            <Spin size="large" />
+          </div>
+        }
+      >
+        {currentNav === 'dashboard' ? (
         <DashboardPage
           onNavigateToTasks={handleNavigateFromDashboard}
           onOpenCreateTask={handleOpenCreate}
@@ -120,6 +128,7 @@ function TaskApp() {
         onClose={handleCloseModal}
         onSuccess={refetch}
       />
+      </Suspense>
     </AppLayout>
   );
 }

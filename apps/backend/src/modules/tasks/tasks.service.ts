@@ -488,35 +488,34 @@ export class TasksService {
     const next7Days = new Date(todayDate);
     next7Days.setUTCDate(next7Days.getUTCDate() + 7);
 
-    const [total, todo, inProgress, done, overdue, dueSoon] = await Promise.all([
-      this.prisma.task.count({
-        where: { userId },
-      }),
-      this.prisma.task.count({
-        where: { userId, status: 'TODO' },
-      }),
-      this.prisma.task.count({
-        where: { userId, status: 'IN_PROGRESS' },
-      }),
-      this.prisma.task.count({
-        where: { userId, status: 'DONE' },
-      }),
-      this.prisma.task.count({
-        where: {
-          userId,
-          status: { not: 'DONE' },
-          dueDate: { lt: todayDate },
-        },
-      }),
-      this.prisma.task.count({
-        where: {
-          userId,
-          status: { not: 'DONE' },
-          dueDate: { gte: todayDate, lte: next7Days },
-        },
-      }),
-    ]);
+    const rawResult = await this.prisma.$queryRaw<
+      Array<{
+        total: bigint | number;
+        todo: bigint | number;
+        inProgress: bigint | number;
+        done: bigint | number;
+        overdue: bigint | number;
+        dueSoon: bigint | number;
+      }>
+    >`
+      SELECT
+        COUNT(*)::bigint AS total,
+        COUNT(*) FILTER (WHERE status = 'TODO')::bigint AS todo,
+        COUNT(*) FILTER (WHERE status = 'IN_PROGRESS')::bigint AS "inProgress",
+        COUNT(*) FILTER (WHERE status = 'DONE')::bigint AS done,
+        COUNT(*) FILTER (WHERE status != 'DONE' AND "dueDate" IS NOT NULL AND "dueDate" < ${todayDate})::bigint AS overdue,
+        COUNT(*) FILTER (WHERE status != 'DONE' AND "dueDate" IS NOT NULL AND "dueDate" >= ${todayDate} AND "dueDate" <= ${next7Days})::bigint AS "dueSoon"
+      FROM "Task"
+      WHERE "userId" = ${userId};
+    `;
 
+    const stats = rawResult[0];
+    const total = Number(stats?.total ?? 0);
+    const todo = Number(stats?.todo ?? 0);
+    const inProgress = Number(stats?.inProgress ?? 0);
+    const done = Number(stats?.done ?? 0);
+    const overdue = Number(stats?.overdue ?? 0);
+    const dueSoon = Number(stats?.dueSoon ?? 0);
     const completionRate = total > 0 ? Math.round((done / total) * 100) : 0;
 
     return {

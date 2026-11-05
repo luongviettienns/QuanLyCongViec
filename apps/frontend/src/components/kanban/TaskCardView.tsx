@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Card, Tag } from 'antd';
 import type { Task, TaskPriority } from '../../types/task.types';
 
@@ -39,7 +40,7 @@ interface TaskCardViewProps {
   isDragging?: boolean;
 }
 
-export function TaskCardView({ task, isDragging }: TaskCardViewProps) {
+export const TaskCardView = memo(function TaskCardView({ task, isDragging }: TaskCardViewProps) {
   return (
     <Card
       size="small"
@@ -101,4 +102,4 @@ export function TaskCardView({ task, isDragging }: TaskCardViewProps) {
       )}
     </Card>
   );
-}
+});
