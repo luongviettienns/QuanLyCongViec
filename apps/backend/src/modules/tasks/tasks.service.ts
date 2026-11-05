@@ -15,6 +15,25 @@ import type { Task, Prisma } from '@prisma/client';
 export class TasksService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private parseDateOnly(dateStr: string): Date {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
+    if (!match) {
+      throw new BadRequestException('Định dạng ngày phải là YYYY-MM-DD');
+    }
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    const day = parseInt(match[3], 10);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month - 1 ||
+      date.getUTCDate() !== day
+    ) {
+      throw new BadRequestException('Ngày không hợp lệ');
+    }
+    return date;
+  }
+
   async findAll(query?: FilterTasksDto, userId = 1): Promise<Task[]> {
     const where: Prisma.TaskWhereInput = {
       userId,
@@ -105,18 +124,12 @@ export class TasksService {
 
     let parsedStartDate: Date | null = null;
     if (data.startDate) {
-      parsedStartDate = new Date(data.startDate);
-      if (isNaN(parsedStartDate.getTime())) {
-        throw new BadRequestException('Ngày bắt đầu không hợp lệ');
-      }
+      parsedStartDate = this.parseDateOnly(data.startDate);
     }
 
     let parsedDueDate: Date | null = null;
     if (data.dueDate) {
-      parsedDueDate = new Date(data.dueDate);
-      if (isNaN(parsedDueDate.getTime())) {
-        throw new BadRequestException('Hạn chót không hợp lệ');
-      }
+      parsedDueDate = this.parseDateOnly(data.dueDate);
     }
 
     if (parsedStartDate && parsedDueDate && parsedStartDate > parsedDueDate) {
@@ -193,10 +206,7 @@ export class TasksService {
       if (data.startDate === null || data.startDate === '') {
         updateData.startDate = null;
       } else if (data.startDate) {
-        parsedStartDate = new Date(data.startDate);
-        if (isNaN(parsedStartDate.getTime())) {
-          throw new BadRequestException('Ngày bắt đầu không hợp lệ');
-        }
+        parsedStartDate = this.parseDateOnly(data.startDate);
         updateData.startDate = parsedStartDate;
       }
     }
@@ -206,10 +216,7 @@ export class TasksService {
       if (data.dueDate === null || data.dueDate === '') {
         updateData.dueDate = null;
       } else if (data.dueDate) {
-        parsedDueDate = new Date(data.dueDate);
-        if (isNaN(parsedDueDate.getTime())) {
-          throw new BadRequestException('Hạn chót không hợp lệ');
-        }
+        parsedDueDate = this.parseDateOnly(data.dueDate);
         updateData.dueDate = parsedDueDate;
       }
     }
@@ -473,6 +480,62 @@ export class TasksService {
     return {
       success: true,
       message: 'Cập nhật thứ tự công việc vào database thành công',
+    };
+  }
+  async getStats(userId: number) {
+    const vnDateFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const [vnYear, vnMonth, vnDay] = vnDateFormatter
+      .format(new Date())
+      .split('-')
+      .map((part) => parseInt(part, 10));
+
+    const todayDate = new Date(Date.UTC(vnYear, vnMonth - 1, vnDay));
+    const next7Days = new Date(todayDate);
+    next7Days.setUTCDate(next7Days.getUTCDate() + 7);
+
+    const rawResult = await this.prisma.$queryRaw<
+      Array<{
+        total: bigint | number;
+        todo: bigint | number;
+        inProgress: bigint | number;
+        done: bigint | number;
+        overdue: bigint | number;
+        dueSoon: bigint | number;
+      }>
+    >`
+      SELECT
+        COUNT(*)::bigint AS total,
+        COUNT(*) FILTER (WHERE status = 'TODO')::bigint AS todo,
+        COUNT(*) FILTER (WHERE status = 'IN_PROGRESS')::bigint AS "inProgress",
+        COUNT(*) FILTER (WHERE status = 'DONE')::bigint AS done,
+        COUNT(*) FILTER (WHERE status != 'DONE' AND "dueDate" IS NOT NULL AND "dueDate" < ${todayDate})::bigint AS overdue,
+        COUNT(*) FILTER (WHERE status != 'DONE' AND "dueDate" IS NOT NULL AND "dueDate" >= ${todayDate} AND "dueDate" < ${next7Days})::bigint AS "dueSoon"
+      FROM "Task"
+      WHERE "userId" = ${userId};
+    `;
+
+    const stats = rawResult[0];
+    const total = Number(stats?.total ?? 0);
+    const todo = Number(stats?.todo ?? 0);
+    const inProgress = Number(stats?.inProgress ?? 0);
+    const done = Number(stats?.done ?? 0);
+    const overdue = Number(stats?.overdue ?? 0);
+    const dueSoon = Number(stats?.dueSoon ?? 0);
+    const completionRate = total > 0 ? Math.round((done / total) * 100) : 0;
+
+    return {
+      total,
+      todo,
+      inProgress,
+      done,
+      overdue,
+      dueSoon,
+      completionRate,
     };
   }
 }

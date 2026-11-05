@@ -1,17 +1,19 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { Spin } from 'antd';
 import AppLayout from './components/AppLayout';
-import KanbanBoard from './components/KanbanBoard';
 import TaskToolbar from './components/TaskToolbar';
-import TaskTable from './components/TaskTable';
-import TaskFormModal from './components/TaskFormModal';
-import CategoryManagerModal from './components/CategoryManagerModal';
-import CategoryPage from './components/CategoryPage';
+
+const KanbanBoard = lazy(() => import('./components/KanbanBoard'));
+const TaskTable = lazy(() => import('./components/TaskTable'));
+const TaskFormModal = lazy(() => import('./components/TaskFormModal'));
+const CategoryManagerModal = lazy(() => import('./components/CategoryManagerModal'));
+const CategoryPage = lazy(() => import('./components/CategoryPage'));
+const DashboardPage = lazy(() => import('./components/DashboardPage'));
 import AuthScreen from './components/AuthScreen';
 import { AuthProvider } from './context/AuthContext';
 import { useTasks } from './hooks/useTasks';
 import { useAuth } from './hooks/useAuth';
-import type { Task } from './types/task.types';
+import type { Task, TaskStatus } from './types/task.types';
 
 function TaskApp() {
   const {
@@ -34,7 +36,7 @@ function TaskApp() {
     handleReorder,
   } = useTasks();
 
-  const [currentNav, setCurrentNav] = useState<'tasks' | 'categories'>('tasks');
+  const [currentNav, setCurrentNav] = useState<'dashboard' | 'tasks' | 'categories'>('dashboard');
   const [modalState, setModalState] = useState<{ open: boolean; task: Task | null }>({
     open: false,
     task: null,
@@ -54,6 +56,13 @@ function TaskApp() {
     setModalState({ open: false, task: null });
   }
 
+  function handleNavigateFromDashboard(status?: TaskStatus) {
+    if (status) {
+      handleStatusChange(status);
+    }
+    setCurrentNav('tasks');
+  }
+
   return (
     <AppLayout
       onReload={() => void refetch()}
@@ -63,7 +72,19 @@ function TaskApp() {
       currentNav={currentNav}
       onNavChange={setCurrentNav}
     >
-      {currentNav === 'tasks' ? (
+      <Suspense
+        fallback={
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
+            <Spin size="large" />
+          </div>
+        }
+      >
+        {currentNav === 'dashboard' ? (
+        <DashboardPage
+          onNavigateToTasks={handleNavigateFromDashboard}
+          onOpenCreateTask={handleOpenCreate}
+        />
+      ) : currentNav === 'tasks' ? (
         <>
           <TaskToolbar
             searchText={searchText}
@@ -90,13 +111,6 @@ function TaskApp() {
             onDelete={(id) => void handleDelete(id)}
           />
 
-          <TaskFormModal
-            open={modalState.open}
-            task={modalState.task}
-            categories={categories}
-            onClose={handleCloseModal}
-            onSuccess={refetch}
-          />
 
           <CategoryManagerModal
             open={categoryModalOpen}
@@ -107,6 +121,14 @@ function TaskApp() {
       ) : (
         <CategoryPage onChanged={() => void refetch()} />
       )}
+      <TaskFormModal
+        open={modalState.open}
+        task={modalState.task}
+        categories={categories}
+        onClose={handleCloseModal}
+        onSuccess={refetch}
+      />
+      </Suspense>
     </AppLayout>
   );
 }

@@ -61,8 +61,8 @@ model Task {
   priority    TaskPriority @default(MEDIUM) @map("Priority")
   position    Int          @default(0)
 
-  startDate   DateTime?
-  dueDate     DateTime?
+  startDate   DateTime?    @db.Date
+  dueDate     DateTime?    @db.Date
 
   categoryId  Int?
   category    Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)

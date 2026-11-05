@@ -392,4 +392,88 @@ describe('Authentication and Data Isolation (e2e)', () => {
       expect(res.body.every((t: { priority: string }) => t.priority === 'HIGH')).toBe(true);
     });
   });
+
+  describe('Task Statistics (GET /tasks/stats)', () => {
+    it('rejects unauthenticated request to /tasks/stats with 401', async () => {
+      await request(app.getHttpServer())
+        .get('/tasks/stats')
+        .expect(401);
+    });
+
+    it('returns aggregated statistics and isolates data per user', async () => {
+      const resA = await request(app.getHttpServer())
+        .get('/tasks/stats')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+
+      expect(resA.body).toHaveProperty('total');
+      expect(resA.body).toHaveProperty('todo');
+      expect(resA.body).toHaveProperty('inProgress');
+      expect(resA.body).toHaveProperty('done');
+      expect(resA.body).toHaveProperty('overdue');
+      expect(resA.body).toHaveProperty('dueSoon');
+      expect(resA.body).toHaveProperty('completionRate');
+      expect(typeof resA.body.total).toBe('number');
+      expect(typeof resA.body.completionRate).toBe('number');
+
+      const resB = await request(app.getHttpServer())
+        .get('/tasks/stats')
+        .set('Authorization', `Bearer ${tokenB}`)
+        .expect(200);
+
+      expect(resB.body).toHaveProperty('total');
+      expect(typeof resB.body.total).toBe('number');
+    });
+  });
+
+  describe('Task Date Management (YYYY-MM-DD)', () => {
+    it('creates a task with valid YYYY-MM-DD startDate and dueDate', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({
+          title: `Date Task ${Date.now()}`,
+          startDate: '2026-11-10',
+          dueDate: '2026-11-20',
+        })
+        .expect(201);
+
+      expect(res.body.startDate).toMatch(/^2026-11-10/);
+      expect(res.body.dueDate).toMatch(/^2026-11-20/);
+    });
+
+    it('rejects task creation with non YYYY-MM-DD date format', async () => {
+      await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({
+          title: `Invalid Format Date ${Date.now()}`,
+          startDate: '10/11/2026',
+        })
+        .expect(400);
+    });
+
+    it('rejects task creation with invalid calendar date', async () => {
+      await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({
+          title: `Invalid Calendar Date ${Date.now()}`,
+          startDate: '2026-02-31',
+        })
+        .expect(400);
+    });
+
+    it('rejects task creation when startDate > dueDate', async () => {
+      await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({
+          title: `Inverted Date Task ${Date.now()}`,
+          startDate: '2026-11-25',
+          dueDate: '2026-11-20',
+        })
+        .expect(400);
+    });
+  });
 });

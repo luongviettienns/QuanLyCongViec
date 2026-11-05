@@ -66,3 +66,13 @@ export interface UpdateCategoryPayload {
   name?: string;
   color?: string;
 }
+
+export interface TaskStats {
+  total: number;
+  todo: number;
+  inProgress: number;
+  done: number;
+  overdue: number;
+  dueSoon: number;
+  completionRate: number;
+}
