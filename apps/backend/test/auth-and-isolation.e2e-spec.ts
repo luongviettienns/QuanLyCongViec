@@ -425,4 +425,55 @@ describe('Authentication and Data Isolation (e2e)', () => {
       expect(typeof resB.body.total).toBe('number');
     });
   });
+
+  describe('Task Date Management (YYYY-MM-DD)', () => {
+    it('creates a task with valid YYYY-MM-DD startDate and dueDate', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({
+          title: `Date Task ${Date.now()}`,
+          startDate: '2026-11-10',
+          dueDate: '2026-11-20',
+        })
+        .expect(201);
+
+      expect(res.body.startDate).toMatch(/^2026-11-10/);
+      expect(res.body.dueDate).toMatch(/^2026-11-20/);
+    });
+
+    it('rejects task creation with non YYYY-MM-DD date format', async () => {
+      await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({
+          title: `Invalid Format Date ${Date.now()}`,
+          startDate: '10/11/2026',
+        })
+        .expect(400);
+    });
+
+    it('rejects task creation with invalid calendar date', async () => {
+      await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({
+          title: `Invalid Calendar Date ${Date.now()}`,
+          startDate: '2026-02-31',
+        })
+        .expect(400);
+    });
+
+    it('rejects task creation when startDate > dueDate', async () => {
+      await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({
+          title: `Inverted Date Task ${Date.now()}`,
+          startDate: '2026-11-25',
+          dueDate: '2026-11-20',
+        })
+        .expect(400);
+    });
+  });
 });

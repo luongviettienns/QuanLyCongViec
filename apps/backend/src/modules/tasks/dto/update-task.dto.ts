@@ -4,7 +4,7 @@ import {
   IsIn,
   MinLength,
   MaxLength,
-  IsISO8601,
+  Matches,
   IsInt,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
@@ -40,19 +40,19 @@ export class UpdateTaskDto {
   status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
 
   @ApiPropertyOptional({
-    description: 'Ngày bắt đầu công việc mới (định dạng ISO8601)',
-    example: '2026-11-03T00:00:00.000Z',
+    description: 'Ngày bắt đầu công việc mới (định dạng YYYY-MM-DD)',
+    example: '2026-11-03',
   })
   @IsOptional()
-  @IsISO8601({}, { message: 'Ngày bắt đầu phải là định dạng ngày hợp lệ (ISO8601)' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày bắt đầu phải có định dạng YYYY-MM-DD' })
   startDate?: string;
 
   @ApiPropertyOptional({
-    description: 'Hạn chót công việc mới (định dạng ISO8601)',
-    example: '2026-11-10T23:59:59.000Z',
+    description: 'Hạn chót công việc mới (định dạng YYYY-MM-DD)',
+    example: '2026-11-10',
   })
   @IsOptional()
-  @IsISO8601({}, { message: 'Hạn chót phải là định dạng ngày hợp lệ (ISO8601)' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Hạn chót phải có định dạng YYYY-MM-DD' })
   dueDate?: string;
 
   @ApiPropertyOptional({

@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Table, Tag, Button, Popconfirm, Space, Grid, List, Card } from 'antd';
 import { EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
@@ -19,12 +18,29 @@ const priorityConfig: Record<TaskPriority, { color: string; label: string }> = {
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '';
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
+  if (match) {
+    return match[3] + '/' + match[2] + '/' + match[1];
+  }
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return '';
   const day = String(d.getDate()).padStart(2, '0');
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const year = d.getFullYear();
-  return `${day}/${month}/${year}`;
+  return day + '/' + month + '/' + year;
+}
+
+function checkIsOverdue(dueDateStr?: string | null, status?: Task['status']) {
+  if (!dueDateStr || status === 'DONE') return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(dueDateStr);
+  if (match) {
+    const today = new Date();
+    const todayStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+    return (match[1] + '-' + match[2] + '-' + match[3]) < todayStr;
+  }
+  const due = new Date(dueDateStr);
+  if (isNaN(due.getTime())) return false;
+  return due.getTime() < Date.now();
 }
 
 export default function TaskTable({
@@ -34,7 +50,6 @@ export default function TaskTable({
   onDelete,
 }: TaskTableProps) {
   const screens = Grid.useBreakpoint();
-  const [now] = useState(() => Date.now());
 
   const columns: TableProps<Task>['columns'] = [
     {
@@ -91,7 +106,7 @@ export default function TaskTable({
       width: 160,
       render: (date?: string | null, record?: Task) => {
         if (!date) return <span style={{ color: '#bbb' }}>-</span>;
-        const overdue = record && record.status !== 'DONE' && new Date(date).getTime() < now;
+        const overdue = record ? checkIsOverdue(date, record.status) : false;
         return (
           <span style={{ color: overdue ? '#ff4d4f' : 'inherit', fontWeight: overdue ? 600 : 400 }}>
             {formatDate(date)} {overdue ? '(Quá hạn)' : ''}
@@ -136,7 +151,7 @@ export default function TaskTable({
           const statusColor = task.status === 'DONE' ? 'green' : task.status === 'IN_PROGRESS' ? 'blue' : 'orange';
           const priority = task.priority || 'MEDIUM';
           const pConfig = priorityConfig[priority] || { color: 'default', label: priority };
-          const isOverdue = task.status !== 'DONE' && task.dueDate && new Date(task.dueDate).getTime() < now;
+          const isOverdue = checkIsOverdue(task.dueDate, task.status);
 
           return (
             <Card

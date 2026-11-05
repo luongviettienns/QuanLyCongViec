@@ -42,8 +42,8 @@ export default function TaskFormModal({
         status: values.status,
         priority: values.priority || 'MEDIUM',
         categoryId: values.categoryId ?? null,
-        startDate: values.startDate ? values.startDate.toISOString() : null,
-        dueDate: values.dueDate ? values.dueDate.toISOString() : null,
+        startDate: values.startDate ? values.startDate.format('YYYY-MM-DD') : null,
+        dueDate: values.dueDate ? values.dueDate.format('YYYY-MM-DD') : null,
       };
 
       if (task) {

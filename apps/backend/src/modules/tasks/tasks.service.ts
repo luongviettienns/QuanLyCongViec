@@ -15,6 +15,25 @@ import type { Task, Prisma } from '@prisma/client';
 export class TasksService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private parseDateOnly(dateStr: string): Date {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
+    if (!match) {
+      throw new BadRequestException('Định dạng ngày phải là YYYY-MM-DD');
+    }
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    const day = parseInt(match[3], 10);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month - 1 ||
+      date.getUTCDate() !== day
+    ) {
+      throw new BadRequestException('Ngày không hợp lệ');
+    }
+    return date;
+  }
+
   async findAll(query?: FilterTasksDto, userId = 1): Promise<Task[]> {
     const where: Prisma.TaskWhereInput = {
       userId,
@@ -105,18 +124,12 @@ export class TasksService {
 
     let parsedStartDate: Date | null = null;
     if (data.startDate) {
-      parsedStartDate = new Date(data.startDate);
-      if (isNaN(parsedStartDate.getTime())) {
-        throw new BadRequestException('Ngày bắt đầu không hợp lệ');
-      }
+      parsedStartDate = this.parseDateOnly(data.startDate);
     }
 
     let parsedDueDate: Date | null = null;
     if (data.dueDate) {
-      parsedDueDate = new Date(data.dueDate);
-      if (isNaN(parsedDueDate.getTime())) {
-        throw new BadRequestException('Hạn chót không hợp lệ');
-      }
+      parsedDueDate = this.parseDateOnly(data.dueDate);
     }
 
     if (parsedStartDate && parsedDueDate && parsedStartDate > parsedDueDate) {
@@ -193,10 +206,7 @@ export class TasksService {
       if (data.startDate === null || data.startDate === '') {
         updateData.startDate = null;
       } else if (data.startDate) {
-        parsedStartDate = new Date(data.startDate);
-        if (isNaN(parsedStartDate.getTime())) {
-          throw new BadRequestException('Ngày bắt đầu không hợp lệ');
-        }
+        parsedStartDate = this.parseDateOnly(data.startDate);
         updateData.startDate = parsedStartDate;
       }
     }
@@ -206,10 +216,7 @@ export class TasksService {
       if (data.dueDate === null || data.dueDate === '') {
         updateData.dueDate = null;
       } else if (data.dueDate) {
-        parsedDueDate = new Date(data.dueDate);
-        if (isNaN(parsedDueDate.getTime())) {
-          throw new BadRequestException('Hạn chót không hợp lệ');
-        }
+        parsedDueDate = this.parseDateOnly(data.dueDate);
         updateData.dueDate = parsedDueDate;
       }
     }
@@ -476,9 +483,10 @@ export class TasksService {
     };
   }
   async getStats(userId = 1) {
-    const now = new Date();
-    const next7Days = new Date(now);
-    next7Days.setDate(next7Days.getDate() + 7);
+    const today = new Date();
+    const todayDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+    const next7Days = new Date(todayDate);
+    next7Days.setUTCDate(next7Days.getUTCDate() + 7);
 
     const [total, todo, inProgress, done, overdue, dueSoon] = await Promise.all([
       this.prisma.task.count({
@@ -497,14 +505,14 @@ export class TasksService {
         where: {
           userId,
           status: { not: 'DONE' },
-          dueDate: { lt: now },
+          dueDate: { lt: todayDate },
         },
       }),
       this.prisma.task.count({
         where: {
           userId,
           status: { not: 'DONE' },
-          dueDate: { gte: now, lte: next7Days },
+          dueDate: { gte: todayDate, lte: next7Days },
         },
       }),
     ]);
