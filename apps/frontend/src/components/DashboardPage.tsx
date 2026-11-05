@@ -323,15 +323,40 @@ export default function DashboardPage({
       )}
 
       {loading && !stats ? (
-        <Row gutter={[16, 16]}>
-          {[1, 2, 3, 4, 5, 6].map((key) => (
-            <Col xs={24} sm={12} lg={8} xl={4} key={key}>
-              <Card>
-                <Skeleton active paragraph={{ rows: 2 }} />
-              </Card>
-            </Col>
-          ))}
-        </Row>
+        <>
+          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+            {[1, 2, 3, 4, 5, 6].map((key) => (
+              <Col xs={24} sm={12} lg={8} xl={4} key={key}>
+                <Card style={{ borderRadius: 8, height: '100%' }}>
+                  <Skeleton active paragraph={{ rows: 2 }} />
+                </Card>
+              </Col>
+            ))}
+          </Row>
+
+          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+            {[1, 2, 3].map((key) => (
+              <Col xs={24} lg={8} key={key}>
+                <Card style={{ borderRadius: 8, height: '100%' }}>
+                  <Skeleton.Input active size="small" style={{ width: 140, marginBottom: 16 }} />
+                  <div style={{ height: 260, minHeight: 260, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Skeleton.Node active style={{ width: '100%', height: 220 }} />
+                  </div>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+
+          <Row gutter={[16, 16]}>
+            {[1, 2].map((key) => (
+              <Col xs={24} lg={12} key={key}>
+                <Card style={{ borderRadius: 8, height: '100%' }}>
+                  <Skeleton active paragraph={{ rows: 5 }} />
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        </>
       ) : (
         <>
           <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
@@ -487,13 +512,13 @@ export default function DashboardPage({
                 }
                 style={{ borderRadius: 8, height: '100%' }}
               >
-                {safeStats.total === 0 ? (
-                  <Empty description="Chưa có dữ liệu" style={{ margin: '40px 0' }} />
-                ) : (
-                  <div style={{ height: 260, position: 'relative' }}>
+                <div style={{ height: 260, minHeight: 260, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {safeStats.total === 0 ? (
+                    <Empty description="Chưa có dữ liệu" />
+                  ) : (
                     <Doughnut data={statusChartData} options={doughnutChartOptions} />
-                  </div>
-                )}
+                  )}
+                </div>
               </Card>
             </Col>
 
@@ -507,13 +532,15 @@ export default function DashboardPage({
                 }
                 style={{ borderRadius: 8, height: '100%' }}
               >
-                {safeStats.total === 0 ? (
-                  <Empty description="Chưa có dữ liệu" style={{ margin: '40px 0' }} />
-                ) : (
-                  <div style={{ height: 260 }}>
-                    <Bar data={priorityChartData} options={barChartOptions} />
-                  </div>
-                )}
+                <div style={{ height: 260, minHeight: 260, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {safeStats.total === 0 ? (
+                    <Empty description="Chưa có dữ liệu" />
+                  ) : (
+                    <div style={{ width: '100%', height: '100%' }}>
+                      <Bar data={priorityChartData} options={barChartOptions} />
+                    </div>
+                  )}
+                </div>
               </Card>
             </Col>
 
@@ -527,13 +554,15 @@ export default function DashboardPage({
                 }
                 style={{ borderRadius: 8, height: '100%' }}
               >
-                {safeStats.upcomingDeadlines.every((p) => p.count === 0) ? (
-                  <Empty description="Không có deadline trong 7 ngày tới" style={{ margin: '40px 0' }} />
-                ) : (
-                  <div style={{ height: 260 }}>
-                    <Bar data={deadlineChartData} options={barChartOptions} />
-                  </div>
-                )}
+                <div style={{ height: 260, minHeight: 260, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {safeStats.upcomingDeadlines.every((p) => p.count === 0) ? (
+                    <Empty description="Không có deadline trong 7 ngày tới" />
+                  ) : (
+                    <div style={{ width: '100%', height: '100%' }}>
+                      <Bar data={deadlineChartData} options={barChartOptions} />
+                    </div>
+                  )}
+                </div>
               </Card>
             </Col>
           </Row>

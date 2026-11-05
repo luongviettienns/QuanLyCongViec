@@ -9,13 +9,14 @@ const TaskFormModal = lazy(() => import('./components/TaskFormModal'));
 const CategoryManagerModal = lazy(() => import('./components/CategoryManagerModal'));
 const CategoryPage = lazy(() => import('./components/CategoryPage'));
 const DashboardPage = lazy(() => import('./components/DashboardPage'));
-import AuthScreen from './components/AuthScreen';
+const AuthScreen = lazy(() => import('./components/AuthScreen'));
 import { AuthProvider } from './context/AuthContext';
 import { useTasks } from './hooks/useTasks';
 import { useAuth } from './hooks/useAuth';
 import type { Task, TaskStatus } from './types/task.types';
 
 function TaskApp() {
+  const [currentNav, setCurrentNav] = useState<'dashboard' | 'tasks' | 'categories'>('dashboard');
   const {
     tasks,
     categories,
@@ -34,9 +35,9 @@ function TaskApp() {
     refetch,
     handleDelete,
     handleReorder,
-  } = useTasks();
+    fetchCategories,
+  } = useTasks({ enabled: currentNav === 'tasks' });
 
-  const [currentNav, setCurrentNav] = useState<'dashboard' | 'tasks' | 'categories'>('dashboard');
   const [modalState, setModalState] = useState<{ open: boolean; task: Task | null }>({
     open: false,
     task: null,
@@ -45,10 +46,16 @@ function TaskApp() {
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
 
   function handleOpenCreate() {
+    if (categories.length === 0) {
+      void fetchCategories();
+    }
     setModalState({ open: true, task: null });
   }
 
   function handleOpenEdit(task: Task) {
+    if (categories.length === 0) {
+      void fetchCategories();
+    }
     setModalState({ open: true, task });
   }
 
@@ -80,54 +87,58 @@ function TaskApp() {
         }
       >
         {currentNav === 'dashboard' ? (
-        <DashboardPage
-          onNavigateToTasks={handleNavigateFromDashboard}
-          onOpenCreateTask={handleOpenCreate}
-        />
-      ) : currentNav === 'tasks' ? (
-        <>
-          <TaskToolbar
-            searchText={searchText}
-            statusFilter={statusFilter}
-            categoryFilter={categoryFilter}
-            priorityFilter={priorityFilter}
+          <DashboardPage
+            onNavigateToTasks={handleNavigateFromDashboard}
+            onOpenCreateTask={handleOpenCreate}
+          />
+        ) : currentNav === 'tasks' ? (
+          <>
+            <TaskToolbar
+              searchText={searchText}
+              statusFilter={statusFilter}
+              categoryFilter={categoryFilter}
+              priorityFilter={priorityFilter}
+              categories={categories}
+              onSearchChange={setSearchText}
+              onSearch={handleSearch}
+              onStatusChange={handleStatusChange}
+              onCategoryChange={handleCategoryChange}
+              onPriorityChange={handlePriorityChange}
+              onReset={handleReset}
+            />
+
+            <div style={{ marginBottom: 30 }}>
+              <KanbanBoard tasks={tasks} onReorder={handleReorder} isFiltering={isFiltering} />
+            </div>
+
+            <TaskTable
+              tasks={tasks}
+              loading={loading}
+              onEdit={handleOpenEdit}
+              onDelete={(id) => void handleDelete(id)}
+            />
+
+            {categoryModalOpen && (
+              <CategoryManagerModal
+                open={categoryModalOpen}
+                onClose={() => setCategoryModalOpen(false)}
+                onChanged={() => void refetch()}
+              />
+            )}
+          </>
+        ) : (
+          <CategoryPage onChanged={() => void refetch()} />
+        )}
+
+        {modalState.open && (
+          <TaskFormModal
+            open={modalState.open}
+            task={modalState.task}
             categories={categories}
-            onSearchChange={setSearchText}
-            onSearch={handleSearch}
-            onStatusChange={handleStatusChange}
-            onCategoryChange={handleCategoryChange}
-            onPriorityChange={handlePriorityChange}
-            onReset={handleReset}
+            onClose={handleCloseModal}
+            onSuccess={refetch}
           />
-
-          <div style={{ marginBottom: 30 }}>
-            <KanbanBoard tasks={tasks} onReorder={handleReorder} isFiltering={isFiltering} />
-          </div>
-
-          <TaskTable
-            tasks={tasks}
-            loading={loading}
-            onEdit={handleOpenEdit}
-            onDelete={(id) => void handleDelete(id)}
-          />
-
-
-          <CategoryManagerModal
-            open={categoryModalOpen}
-            onClose={() => setCategoryModalOpen(false)}
-            onChanged={() => void refetch()}
-          />
-        </>
-      ) : (
-        <CategoryPage onChanged={() => void refetch()} />
-      )}
-      <TaskFormModal
-        open={modalState.open}
-        task={modalState.task}
-        categories={categories}
-        onClose={handleCloseModal}
-        onSuccess={refetch}
-      />
+        )}
       </Suspense>
     </AppLayout>
   );
@@ -153,7 +164,25 @@ function MainApp() {
   }
 
   if (!user) {
-    return <AuthScreen />;
+    return (
+      <Suspense
+        fallback={
+          <div
+            style={{
+              minHeight: '100vh',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: '#f5f7fa',
+            }}
+          >
+            <Spin size="large" />
+          </div>
+        }
+      >
+        <AuthScreen />
+      </Suspense>
+    );
   }
 
   return <TaskApp />;
