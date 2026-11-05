@@ -413,6 +413,13 @@ describe('Authentication and Data Isolation (e2e)', () => {
       expect(resA.body).toHaveProperty('overdue');
       expect(resA.body).toHaveProperty('dueSoon');
       expect(resA.body).toHaveProperty('completionRate');
+      expect(resA.body).toHaveProperty('byPriority');
+      expect(resA.body.byPriority).toHaveProperty('low');
+      expect(resA.body.byPriority).toHaveProperty('medium');
+      expect(resA.body.byPriority).toHaveProperty('high');
+      expect(resA.body).toHaveProperty('upcomingDeadlines');
+      expect(Array.isArray(resA.body.upcomingDeadlines)).toBe(true);
+      expect(resA.body.upcomingDeadlines.length).toBe(7);
       expect(typeof resA.body.total).toBe('number');
       expect(typeof resA.body.completionRate).toBe('number');
 

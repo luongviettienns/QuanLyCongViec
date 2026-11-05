@@ -11,6 +11,7 @@ import {
   Alert,
   Skeleton,
   Tag,
+  Empty,
 } from 'antd';
 import {
   CheckSquareOutlined,
@@ -22,9 +23,35 @@ import {
   ReloadOutlined,
   PlusOutlined,
   ArrowRightOutlined,
+  PieChartOutlined,
+  BarChartOutlined,
 } from '@ant-design/icons';
+import {
+  Chart as ChartJS,
+  ArcElement,
+  Tooltip,
+  Legend,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+} from 'chart.js';
+import { Doughnut, Bar } from 'react-chartjs-2';
 import { getTaskStats } from '../api/tasks.api';
-import type { TaskStats, TaskStatus } from '../types/task.types';
+import type {
+  TaskStats,
+  TaskStatus,
+  TaskPriorityStats,
+  TaskDeadlinePoint,
+} from '../types/task.types';
+
+ChartJS.register(
+  ArcElement,
+  Tooltip,
+  Legend,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+);
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -49,6 +76,20 @@ function sanitizeStats(raw: Partial<TaskStats> | null | undefined): TaskStats {
   const dueSoon = sanitizeNumber(raw?.dueSoon);
   const completionRate = total > 0 ? Math.min(100, Math.max(0, Math.round((done / total) * 100))) : 0;
 
+  const rawPriority = raw?.byPriority;
+  const byPriority: TaskPriorityStats = {
+    low: sanitizeNumber(rawPriority?.low),
+    medium: sanitizeNumber(rawPriority?.medium),
+    high: sanitizeNumber(rawPriority?.high),
+  };
+
+  const upcomingDeadlines: TaskDeadlinePoint[] = Array.isArray(raw?.upcomingDeadlines)
+    ? raw.upcomingDeadlines.map((p) => ({
+        date: typeof p?.date === 'string' ? p.date : '',
+        count: sanitizeNumber(p?.count),
+      }))
+    : [];
+
   return {
     total,
     todo,
@@ -57,6 +98,8 @@ function sanitizeStats(raw: Partial<TaskStats> | null | undefined): TaskStats {
     overdue,
     dueSoon,
     completionRate,
+    byPriority,
+    upcomingDeadlines,
   };
 }
 
@@ -126,6 +169,97 @@ export default function DashboardPage({
     if (rate >= 70) return 'Tiến độ rất tốt! Hãy tiếp tục duy trì nhịp độ làm việc.';
     if (rate >= 40) return 'Đang tiến triển ổn định. Hãy ưu tiên các đầu việc quan trọng.';
     return 'Tiến độ còn chậm. Hãy tập trung giải quyết các công việc đang tồn đọng.';
+  };
+
+  const statusChartData = {
+    labels: ['Cần làm', 'Đang thực hiện', 'Đã hoàn thành'],
+    datasets: [
+      {
+        data: [safeStats.todo, safeStats.inProgress, safeStats.done],
+        backgroundColor: ['#faad14', '#1677ff', '#52c41a'],
+        borderWidth: 2,
+        borderColor: '#ffffff',
+      },
+    ],
+  };
+
+  const priorityChartData = {
+    labels: ['Thấp', 'Trung bình', 'Cao'],
+    datasets: [
+      {
+        label: 'Số lượng công việc',
+        data: [
+          safeStats.byPriority.low,
+          safeStats.byPriority.medium,
+          safeStats.byPriority.high,
+        ],
+        backgroundColor: ['#1890ff', '#fa8c16', '#ff4d4f'],
+        borderRadius: 6,
+      },
+    ],
+  };
+
+  const deadlineChartData = {
+    labels: safeStats.upcomingDeadlines.map((p) => {
+      const parts = p.date.split('-');
+      return parts.length === 3 ? `${parts[2]}/${parts[1]}` : p.date;
+    }),
+    datasets: [
+      {
+        label: 'Công việc đến hạn',
+        data: safeStats.upcomingDeadlines.map((p) => p.count),
+        backgroundColor: 'rgba(250, 140, 22, 0.85)',
+        hoverBackgroundColor: '#fa8c16',
+        borderRadius: 6,
+      },
+    ],
+  };
+
+  const barChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: false,
+      },
+      tooltip: {
+        padding: 8,
+      },
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        ticks: {
+          precision: 0,
+        },
+        grid: {
+          color: '#f0f0f0',
+        },
+      },
+      x: {
+        grid: {
+          display: false,
+        },
+      },
+    },
+  };
+
+  const doughnutChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: '65%',
+    plugins: {
+      legend: {
+        position: 'bottom' as const,
+        labels: {
+          boxWidth: 12,
+          padding: 14,
+        },
+      },
+      tooltip: {
+        padding: 8,
+      },
+    },
   };
 
   return (
@@ -342,6 +476,68 @@ export default function DashboardPage({
             </Col>
           </Row>
 
+          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+            <Col xs={24} lg={8}>
+              <Card
+                title={
+                  <Space>
+                    <PieChartOutlined style={{ color: '#1677ff' }} />
+                    <span>Trạng thái công việc</span>
+                  </Space>
+                }
+                style={{ borderRadius: 8, height: '100%' }}
+              >
+                {safeStats.total === 0 ? (
+                  <Empty description="Chưa có dữ liệu" style={{ margin: '40px 0' }} />
+                ) : (
+                  <div style={{ height: 260, position: 'relative' }}>
+                    <Doughnut data={statusChartData} options={doughnutChartOptions} />
+                  </div>
+                )}
+              </Card>
+            </Col>
+
+            <Col xs={24} lg={8}>
+              <Card
+                title={
+                  <Space>
+                    <BarChartOutlined style={{ color: '#fa8c16' }} />
+                    <span>Mức độ ưu tiên</span>
+                  </Space>
+                }
+                style={{ borderRadius: 8, height: '100%' }}
+              >
+                {safeStats.total === 0 ? (
+                  <Empty description="Chưa có dữ liệu" style={{ margin: '40px 0' }} />
+                ) : (
+                  <div style={{ height: 260 }}>
+                    <Bar data={priorityChartData} options={barChartOptions} />
+                  </div>
+                )}
+              </Card>
+            </Col>
+
+            <Col xs={24} lg={8}>
+              <Card
+                title={
+                  <Space>
+                    <CalendarOutlined style={{ color: '#fa8c16' }} />
+                    <span>Deadline 7 ngày tới</span>
+                  </Space>
+                }
+                style={{ borderRadius: 8, height: '100%' }}
+              >
+                {safeStats.upcomingDeadlines.every((p) => p.count === 0) ? (
+                  <Empty description="Không có deadline trong 7 ngày tới" style={{ margin: '40px 0' }} />
+                ) : (
+                  <div style={{ height: 260 }}>
+                    <Bar data={deadlineChartData} options={barChartOptions} />
+                  </div>
+                )}
+              </Card>
+            </Col>
+          </Row>
+
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
               <Card
@@ -378,7 +574,7 @@ export default function DashboardPage({
 
             <Col xs={24} lg={12}>
               <Card
-                title="Phân bố trạng thái công việc"
+                title="Phân bố chi tiết trạng thái"
                 style={{ borderRadius: 8, height: '100%' }}
                 extra={
                   <Button
