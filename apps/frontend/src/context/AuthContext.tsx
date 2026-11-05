@@ -50,9 +50,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const maxDelay = 2147483647;
+    const delay = Math.min(Math.max(remaining, 0), maxDelay);
+
     const timer = setTimeout(() => {
-      notifyUnauthorized();
-    }, Math.max(remaining, 0));
+      checkExpiration();
+    }, delay);
 
     const interval = setInterval(checkExpiration, 30000);
 

@@ -3,7 +3,7 @@ import type {
   CreateCategoryPayload,
   UpdateCategoryPayload,
 } from '../types/task.types';
-import { getAuthHeaders, notifyUnauthorized } from './auth.api';
+import { getAuthHeaders, notifyUnauthorized, UnauthorizedError } from './auth.api';
 
 async function parseError(response: Response, defaultMessage: string): Promise<Error> {
   try {
@@ -23,7 +23,7 @@ async function parseError(response: Response, defaultMessage: string): Promise<E
 async function handleApiResponse<T>(response: Response, defaultMessage: string): Promise<T> {
   if (response.status === 401) {
     notifyUnauthorized();
-    throw new Error('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại');
+    throw new UnauthorizedError('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại');
   }
 
   if (!response.ok) {

@@ -79,6 +79,7 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
         setSelectedTeam(null);
       }
     } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'UnauthorizedError') return;
       message.error(err instanceof Error ? err.message : 'Không thể tải danh sách nhóm');
     } finally {
       setLoading(false);
@@ -90,6 +91,7 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       const data = await getTeamById(id);
       setSelectedTeam(data);
     } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'UnauthorizedError') return;
       message.error(err instanceof Error ? err.message : 'Không thể tải chi tiết nhóm');
     } finally {
       setDetailLoading(false);

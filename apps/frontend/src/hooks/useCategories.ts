@@ -12,6 +12,7 @@ import {
   deleteCategory,
 } from '../api/categories.api';
 import { useAuth } from './useAuth';
+import { UnauthorizedError } from '../api/auth.api';
 
 export function useCategories() {
   const { user } = useAuth();
@@ -41,6 +42,9 @@ export function useCategories() {
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+      if (error instanceof UnauthorizedError || (error instanceof Error && error.name === 'UnauthorizedError')) {
         return;
       }
       message.error(
@@ -92,6 +96,9 @@ export function useCategories() {
       message.success(`Đã thêm danh mục "${newCategory.name}"`);
       return true;
     } catch (error) {
+      if (error instanceof UnauthorizedError || (error instanceof Error && error.name === 'UnauthorizedError')) {
+        return false;
+      }
       message.error(
         error instanceof Error ? error.message : 'Không thể tạo danh mục',
       );
@@ -114,6 +121,9 @@ export function useCategories() {
       message.success(`Đã cập nhật danh mục "${updated.name}"`);
       return true;
     } catch (error) {
+      if (error instanceof UnauthorizedError || (error instanceof Error && error.name === 'UnauthorizedError')) {
+        return false;
+      }
       message.error(
         error instanceof Error ? error.message : 'Không thể cập nhật danh mục',
       );
@@ -131,6 +141,9 @@ export function useCategories() {
       message.success(res.message || 'Đã xoá danh mục thành công');
       return true;
     } catch (error) {
+      if (error instanceof UnauthorizedError || (error instanceof Error && error.name === 'UnauthorizedError')) {
+        return false;
+      }
       message.error(
         error instanceof Error ? error.message : 'Không thể xoá danh mục',
       );

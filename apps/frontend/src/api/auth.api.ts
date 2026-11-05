@@ -1,5 +1,12 @@
 import type { AuthResponse, LoginPayload, RegisterPayload, User } from '../types/auth.types';
 
+export class UnauthorizedError extends Error {
+  constructor(message = 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại') {
+    super(message);
+    this.name = 'UnauthorizedError';
+  }
+}
+
 const TOKEN_KEY = 'taskflow_auth_token';
 
 type UnauthorizedListener = () => void;
@@ -12,10 +19,22 @@ export function subscribeUnauthorized(listener: UnauthorizedListener): () => voi
   };
 }
 
+let isNotifyingUnauthorized = false;
+
 export function notifyUnauthorized(): void {
   removeAuthToken();
-  for (const listener of unauthorizedListeners) {
-    listener();
+  if (isNotifyingUnauthorized) {
+    return;
+  }
+  isNotifyingUnauthorized = true;
+  try {
+    for (const listener of unauthorizedListeners) {
+      listener();
+    }
+  } finally {
+    setTimeout(() => {
+      isNotifyingUnauthorized = false;
+    }, 1000);
   }
 }
 
@@ -42,8 +61,9 @@ export function getTokenRemainingTime(): number | null {
       return null;
     }
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const payload = JSON.parse(window.atob(base64));
-    if (typeof payload.exp !== 'number') {
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    const payload = JSON.parse(window.atob(padded));
+    if (typeof payload.exp !== 'number' || Number.isNaN(payload.exp)) {
       return null;
     }
     return payload.exp * 1000 - Date.now();
@@ -128,7 +148,7 @@ export async function getProfile(signal?: AbortSignal): Promise<User> {
 
   if (response.status === 401) {
     notifyUnauthorized();
-    throw new Error('Phiên đăng nhập đã hết hạn');
+    throw new UnauthorizedError('Phiên đăng nhập đã hết hạn');
   }
 
   if (!response.ok) {

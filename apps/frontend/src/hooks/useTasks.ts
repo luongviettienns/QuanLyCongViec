@@ -9,6 +9,7 @@ import {
 } from '../api/tasks.api';
 import { getTeams } from '../api/teams.api';
 import { useAuth } from './useAuth';
+import { UnauthorizedError } from '../api/auth.api';
 
 export function useTasks(options?: { enabled?: boolean }) {
   const enabled = options?.enabled ?? true;
@@ -90,6 +91,9 @@ export function useTasks(options?: { enabled?: boolean }) {
         if (error instanceof DOMException && error.name === 'AbortError') {
           return;
         }
+        if (error instanceof UnauthorizedError || (error instanceof Error && error.name === 'UnauthorizedError')) {
+          return;
+        }
         message.error(
           error instanceof Error ? error.message : 'Lỗi khi tải dữ liệu',
         );
@@ -115,6 +119,9 @@ export function useTasks(options?: { enabled?: boolean }) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         return;
       }
+      if (error instanceof UnauthorizedError || (error instanceof Error && error.name === 'UnauthorizedError')) {
+        return;
+      }
       message.error(
         error instanceof Error ? error.message : 'Lỗi khi tải danh mục',
       );
@@ -131,7 +138,7 @@ export function useTasks(options?: { enabled?: boolean }) {
       const data = await getTeams();
       setTeams(data);
     } catch {
-      // ignore
+      return;
     }
   }, [user]);
 
@@ -178,54 +185,53 @@ export function useTasks(options?: { enabled?: boolean }) {
     void fetchTasks(value, statusFilter, categoryFilter, priorityFilter, teamFilter, scopeFilter);
   }
 
-  function handleStatusChange(value: StatusFilter) {
+  function handleStatusChange(status: StatusFilter) {
     if (!user) {
       return;
     }
-    setStatusFilter(value);
+    setStatusFilter(status);
     setLoading(true);
-    void fetchTasks(searchText, value, categoryFilter, priorityFilter, teamFilter, scopeFilter);
+    void fetchTasks(searchText, status, categoryFilter, priorityFilter, teamFilter, scopeFilter);
   }
 
-  function handleCategoryChange(value: number | 'ALL') {
+  function handleCategoryChange(catId: number | 'ALL') {
     if (!user) {
       return;
     }
-    setCategoryFilter(value);
+    setCategoryFilter(catId);
     setLoading(true);
-    void fetchTasks(searchText, statusFilter, value, priorityFilter, teamFilter, scopeFilter);
+    void fetchTasks(searchText, statusFilter, catId, priorityFilter, teamFilter, scopeFilter);
   }
 
-  function handlePriorityChange(value: PriorityFilter) {
+  function handlePriorityChange(priority: PriorityFilter) {
     if (!user) {
       return;
     }
-    setPriorityFilter(value);
+    setPriorityFilter(priority);
     setLoading(true);
-    void fetchTasks(searchText, statusFilter, categoryFilter, value, teamFilter, scopeFilter);
+    void fetchTasks(searchText, statusFilter, categoryFilter, priority, teamFilter, scopeFilter);
   }
 
-  function handleTeamChange(value: number | 'ALL') {
+  function handleTeamChange(tId: number | 'ALL') {
     if (!user) {
       return;
     }
-    setTeamFilter(value);
+    setTeamFilter(tId);
     setLoading(true);
-    void fetchTasks(searchText, statusFilter, categoryFilter, priorityFilter, value, scopeFilter);
+    void fetchTasks(searchText, statusFilter, categoryFilter, priorityFilter, tId, scopeFilter);
   }
 
-  function handleScopeChange(value: 'all' | 'created_by_me' | 'assigned_to_me') {
+  function handleScopeChange(scope: 'all' | 'created_by_me' | 'assigned_to_me') {
     if (!user) {
       return;
     }
-    setScopeFilter(value);
+    setScopeFilter(scope);
     setLoading(true);
-    void fetchTasks(searchText, statusFilter, categoryFilter, priorityFilter, teamFilter, value);
+    void fetchTasks(searchText, statusFilter, categoryFilter, priorityFilter, teamFilter, scope);
   }
 
   function handleReset() {
     if (!user) {
-      resetState();
       return;
     }
     setSearchText('');
@@ -261,6 +267,9 @@ export function useTasks(options?: { enabled?: boolean }) {
       setLoading(true);
       await fetchTasks(searchText, statusFilter, categoryFilter, priorityFilter, teamFilter, scopeFilter);
     } catch (error) {
+      if (error instanceof UnauthorizedError || (error instanceof Error && error.name === 'UnauthorizedError')) {
+        return;
+      }
       message.error(
         error instanceof Error ? error.message : 'Xoá công việc thất bại',
       );
@@ -292,6 +301,9 @@ export function useTasks(options?: { enabled?: boolean }) {
       await reorderTasks(taskIds, status, teamFilter !== 'ALL' ? teamFilter : undefined);
     } catch (error) {
       setTasks(previousTasks);
+      if (error instanceof UnauthorizedError || (error instanceof Error && error.name === 'UnauthorizedError')) {
+        return;
+      }
       message.error(
         error instanceof Error ? error.message : 'Không thể lưu vị trí công việc',
       );

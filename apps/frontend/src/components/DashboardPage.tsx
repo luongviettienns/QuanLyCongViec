@@ -126,7 +126,7 @@ export default function DashboardPage({
         }),
       );
     } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (err instanceof Error && (err.name === 'AbortError' || err.name === 'UnauthorizedError')) {
         return;
       }
       setError(err instanceof Error ? err.message : 'Không thể tải số liệu thống kê');
