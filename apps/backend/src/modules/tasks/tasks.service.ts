@@ -482,9 +482,19 @@ export class TasksService {
       message: 'Cập nhật thứ tự công việc vào database thành công',
     };
   }
-  async getStats(userId = 1) {
-    const today = new Date();
-    const todayDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  async getStats(userId: number) {
+    const vnDateFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const [vnYear, vnMonth, vnDay] = vnDateFormatter
+      .format(new Date())
+      .split('-')
+      .map((part) => parseInt(part, 10));
+
+    const todayDate = new Date(Date.UTC(vnYear, vnMonth - 1, vnDay));
     const next7Days = new Date(todayDate);
     next7Days.setUTCDate(next7Days.getUTCDate() + 7);
 
@@ -504,7 +514,7 @@ export class TasksService {
         COUNT(*) FILTER (WHERE status = 'IN_PROGRESS')::bigint AS "inProgress",
         COUNT(*) FILTER (WHERE status = 'DONE')::bigint AS done,
         COUNT(*) FILTER (WHERE status != 'DONE' AND "dueDate" IS NOT NULL AND "dueDate" < ${todayDate})::bigint AS overdue,
-        COUNT(*) FILTER (WHERE status != 'DONE' AND "dueDate" IS NOT NULL AND "dueDate" >= ${todayDate} AND "dueDate" <= ${next7Days})::bigint AS "dueSoon"
+        COUNT(*) FILTER (WHERE status != 'DONE' AND "dueDate" IS NOT NULL AND "dueDate" >= ${todayDate} AND "dueDate" < ${next7Days})::bigint AS "dueSoon"
       FROM "Task"
       WHERE "userId" = ${userId};
     `;
