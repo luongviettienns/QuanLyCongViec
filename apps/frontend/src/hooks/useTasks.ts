@@ -276,22 +276,34 @@ export function useTasks(options?: { enabled?: boolean }) {
     }
   }
 
-  async function handleStatusMove(taskId: number, newStatus: TaskStatus) {
+  async function handleStatusMove(taskId: number, newStatus: TaskStatus, newPosition?: number) {
     if (!user) {
       return;
     }
     const targetTask = tasks.find((t) => t.id === taskId);
-    if (!targetTask || targetTask.status === newStatus) {
+    if (!targetTask) {
       return;
     }
     const previousTasks = [...tasks];
 
-    setTasks((prev) =>
-      prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)),
-    );
+    setTasks((prev) => {
+      const remaining = prev.filter((t) => t.id !== taskId);
+      const updatedItem = { ...targetTask, status: newStatus, position: newPosition ?? 0 };
+      const destTasks = remaining
+        .filter((t) => t.status === newStatus)
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+      const targetIdx =
+        newPosition !== undefined && newPosition >= 0 && newPosition <= destTasks.length
+          ? newPosition
+          : destTasks.length;
+      destTasks.splice(targetIdx, 0, updatedItem);
+      const reindexedDest = destTasks.map((t, idx) => ({ ...t, position: idx }));
+      const otherTasks = remaining.filter((t) => t.status !== newStatus);
+      return [...otherTasks, ...reindexedDest];
+    });
 
     try {
-      const updated = await updateTaskStatus(taskId, newStatus);
+      const updated = await updateTaskStatus(taskId, newStatus, newPosition);
       setTasks((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, ...updated } : t)),
       );

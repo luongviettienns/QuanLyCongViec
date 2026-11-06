@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../../../database/prisma.service.js';
 import { ReorderTasksDto } from '../dto/reorder-tasks.dto.js';
 import { TaskPolicyService, type TaskWithTeamAndMembers } from '../policies/task-policy.service.js';
+import { TaskWorkflowPolicy } from '../policies/task-workflow-policy.service.js';
 import { TaskStatus } from '@prisma/client';
 
 @Injectable()
@@ -14,9 +15,10 @@ export class TaskReorderService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly policy: TaskPolicyService,
+    private readonly workflowPolicy: TaskWorkflowPolicy,
   ) {}
 
-  async reorder(dto: ReorderTasksDto, userId = 1): Promise<{ success: boolean; message: string }> {
+  async reorder(dto: ReorderTasksDto, userId: number): Promise<{ success: boolean; message: string }> {
     if (!dto.taskIds || dto.taskIds.length === 0) {
       throw new BadRequestException('Danh sách ID công việc không được để trống');
     }
@@ -27,10 +29,11 @@ export class TaskReorderService {
     }
 
     if (dto.teamId) {
-      const isMember = await this.prisma.teamMember.findUnique({
-        where: { teamId_userId: { teamId: dto.teamId, userId } },
+      const team = await this.prisma.team.findUnique({
+        where: { id: dto.teamId },
+        include: { members: true },
       });
-      if (!isMember) {
+      if (!this.policy.isTeamMember(userId, team)) {
         throw new NotFoundException('Không tìm thấy nhóm');
       }
 
@@ -56,8 +59,11 @@ export class TaskReorderService {
         const targetStatus = dto.status;
 
         for (const t of tasksToUpdate) {
+          if (!this.policy.canReorder(userId, t as TaskWithTeamAndMembers, targetStatus)) {
+            throw new ForbiddenException(`Bạn không có quyền chuyển trạng thái công việc "${t.title}" sang ${targetStatus}`);
+          }
           if (t.status !== targetStatus) {
-            if (!this.policy.canChangeStatus(userId, t as TaskWithTeamAndMembers, targetStatus)) {
+            if (!this.workflowPolicy.canTransition(userId, t as TaskWithTeamAndMembers, targetStatus)) {
               throw new ForbiddenException(`Bạn không có quyền chuyển trạng thái công việc "${t.title}" sang ${targetStatus}`);
             }
           }
@@ -129,6 +135,18 @@ export class TaskReorderService {
           ...unmentionedOps,
         ]);
       } else {
+        const firstStatus = tasksToUpdate[0].status;
+        const allSameStatus = tasksToUpdate.every((t) => t.status === firstStatus);
+        if (!allSameStatus) {
+          throw new BadRequestException('Tất cả công việc sắp xếp phải thuộc cùng một trạng thái');
+        }
+
+        for (const t of tasksToUpdate) {
+          if (!this.policy.canReorder(userId, t as TaskWithTeamAndMembers, firstStatus)) {
+            throw new ForbiddenException(`Bạn không có quyền sắp xếp công việc "${t.title}"`);
+          }
+        }
+
         const targetOps = dto.taskIds.map((taskId, newPosition) =>
           this.prisma.task.update({
             where: { id: taskId },
@@ -222,6 +240,12 @@ export class TaskReorderService {
           ...unmentionedOps,
         ]);
       } else {
+        const firstStatus = tasksToUpdate[0].status;
+        const allSameStatus = tasksToUpdate.every((t) => t.status === firstStatus);
+        if (!allSameStatus) {
+          throw new BadRequestException('Tất cả công việc sắp xếp phải thuộc cùng một trạng thái');
+        }
+
         const targetOps = dto.taskIds.map((taskId, newPosition) =>
           this.prisma.task.update({
             where: { id: taskId },

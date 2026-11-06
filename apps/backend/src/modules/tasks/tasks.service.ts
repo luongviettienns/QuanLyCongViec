@@ -26,11 +26,11 @@ export class TasksService {
     private readonly taskStatsService: TaskStatsService,
   ) {}
 
-  findAll(query?: FilterTasksDto, userId = 1): Promise<Task[]> {
+  findAll(query: FilterTasksDto | undefined, userId: number): Promise<Task[]> {
     return this.taskQueryService.findAll(query, userId);
   }
 
-  findOne(id: number, userId = 1): Promise<TaskWithTeamAndMembers> {
+  findOne(id: number, userId: number): Promise<TaskWithTeamAndMembers> {
     return this.taskQueryService.findOne(id, userId);
   }
 
@@ -38,7 +38,7 @@ export class TasksService {
     return this.taskCrudService.create(data, userId);
   }
 
-  update(id: number, data: UpdateTaskDto, userId = 1): Promise<Task> {
+  update(id: number, data: UpdateTaskDto, userId: number): Promise<Task> {
     return this.taskCrudService.update(id, data, userId);
   }
 
@@ -46,7 +46,7 @@ export class TasksService {
     return this.taskCrudService.updateContent(id, data, userId);
   }
 
-  remove(id: number, userId = 1): Promise<{ success: boolean; message: string; deletedTask: Task }> {
+  remove(id: number, userId: number): Promise<{ success: boolean; message: string; deletedTask: Task }> {
     return this.taskCrudService.remove(id, userId);
   }
 
@@ -66,7 +66,7 @@ export class TasksService {
     return this.taskWorkflowService.moveTeam(id, dto, userId);
   }
 
-  reorder(dto: ReorderTasksDto, userId = 1): Promise<{ success: boolean; message: string }> {
+  reorder(dto: ReorderTasksDto, userId: number): Promise<{ success: boolean; message: string }> {
     return this.taskReorderService.reorder(dto, userId);
   }
 

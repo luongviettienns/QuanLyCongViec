@@ -103,18 +103,26 @@ export class TaskCrudService {
     }
 
     if (data.teamId) {
-      const member = await this.prisma.teamMember.findUnique({
-        where: { teamId_userId: { teamId: data.teamId, userId } },
-      });
-      if (!member) {
+      const isMember = this.policy.isTeamMember(
+        userId,
+        await this.prisma.team.findUnique({
+          where: { id: data.teamId },
+          include: { members: true },
+        }),
+      );
+      if (!isMember) {
         throw new NotFoundException('Không tìm thấy nhóm');
       }
 
       if (data.assigneeId) {
-        const assigneeMember = await this.prisma.teamMember.findUnique({
-          where: { teamId_userId: { teamId: data.teamId, userId: data.assigneeId } },
-        });
-        if (!assigneeMember) {
+        const isAssigneeMember = this.policy.isTeamMember(
+          data.assigneeId,
+          await this.prisma.team.findUnique({
+            where: { id: data.teamId },
+            include: { members: true },
+          }),
+        );
+        if (!isAssigneeMember) {
           throw new BadRequestException('Người được phân công không thuộc nhóm này');
         }
       }
@@ -276,7 +284,7 @@ export class TaskCrudService {
     });
   }
 
-  async update(id: number, data: UpdateTaskDto, userId = 1): Promise<Task> {
+  async update(id: number, data: UpdateTaskDto, userId: number): Promise<Task> {
     const currentTask = await this.queryService.findOne(id, userId);
 
     const hasTitle = data.title !== undefined;
@@ -329,26 +337,24 @@ export class TaskCrudService {
     let effectiveAssigneeId = hasAssigneeId ? (data.assigneeId ?? null) : currentTask.assigneeId;
 
     if (effectiveTeamId !== null) {
-      const isCallerMember = await this.prisma.teamMember.findUnique({
-        where: { teamId_userId: { teamId: effectiveTeamId, userId } },
+      const targetTeam = await this.prisma.team.findUnique({
+        where: { id: effectiveTeamId },
+        include: { members: true },
       });
+      const isCallerMember = this.policy.isTeamMember(userId, targetTeam);
       if (!isCallerMember) {
         throw new NotFoundException('Không tìm thấy nhóm');
       }
 
       if (hasAssigneeId) {
         if (effectiveAssigneeId) {
-          const isAssigneeMember = await this.prisma.teamMember.findUnique({
-            where: { teamId_userId: { teamId: effectiveTeamId, userId: effectiveAssigneeId } },
-          });
+          const isAssigneeMember = this.policy.isTeamMember(effectiveAssigneeId, targetTeam);
           if (!isAssigneeMember) {
             throw new BadRequestException('Người được phân công không thuộc nhóm này');
           }
         }
       } else if (isTeamChanged && effectiveAssigneeId) {
-        const isAssigneeMember = await this.prisma.teamMember.findUnique({
-          where: { teamId_userId: { teamId: effectiveTeamId, userId: effectiveAssigneeId } },
-        });
+        const isAssigneeMember = this.policy.isTeamMember(effectiveAssigneeId, targetTeam);
         if (!isAssigneeMember) {
           effectiveAssigneeId = null;
         }
@@ -540,7 +546,7 @@ export class TaskCrudService {
     });
   }
 
-  async remove(id: number, userId = 1): Promise<{ success: boolean; message: string; deletedTask: Task }> {
+  async remove(id: number, userId: number): Promise<{ success: boolean; message: string; deletedTask: Task }> {
     const taskToDelete = await this.queryService.findOne(id, userId);
 
     if (!this.policy.canDeleteTask(userId, taskToDelete)) {

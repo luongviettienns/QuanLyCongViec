@@ -15,7 +15,7 @@ export class TaskQueryService {
     private readonly policy: TaskPolicyService,
   ) {}
 
-  async findAll(query?: FilterTasksDto, userId = 1): Promise<Task[]> {
+  async findAll(query: FilterTasksDto | undefined, userId: number): Promise<Task[]> {
     let baseWhere: Prisma.TaskWhereInput = {};
 
     if (query?.teamId) {
@@ -98,7 +98,7 @@ export class TaskQueryService {
     });
   }
 
-  async findOne(id: number, userId = 1): Promise<TaskWithTeamAndMembers> {
+  async findOne(id: number, userId: number): Promise<TaskWithTeamAndMembers> {
     if (isNaN(id) || id <= 0) {
       throw new BadRequestException('Mã công việc (ID) phải là số nguyên dương hợp lệ');
     }

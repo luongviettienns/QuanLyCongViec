@@ -7,6 +7,7 @@ import { TaskWorkflowService } from './services/task-workflow.service.js';
 import { TaskReorderService } from './services/task-reorder.service.js';
 import { TaskStatsService } from './services/task-stats.service.js';
 import { TaskPolicyService } from './policies/task-policy.service.js';
+import { TaskWorkflowPolicy } from './policies/task-workflow-policy.service.js';
 import { PrismaService } from '../../database/prisma.service.js';
 
 @Module({
@@ -19,6 +20,7 @@ import { PrismaService } from '../../database/prisma.service.js';
     TaskReorderService,
     TaskStatsService,
     TaskPolicyService,
+    TaskWorkflowPolicy,
     PrismaService,
   ],
   exports: [
@@ -29,6 +31,7 @@ import { PrismaService } from '../../database/prisma.service.js';
     TaskReorderService,
     TaskStatsService,
     TaskPolicyService,
+    TaskWorkflowPolicy,
   ],
 })
 export class TaskModule {}

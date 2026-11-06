@@ -9,7 +9,7 @@ import { TaskCardView } from './kanban/TaskCardView';
 interface Props {
   tasks: Task[];
   onReorder: (taskIds: number[], status?: TaskStatus) => Promise<void>;
-  onStatusChange?: (taskId: number, newStatus: TaskStatus) => Promise<void>;
+  onStatusChange?: (taskId: number, newStatus: TaskStatus, newPosition?: number) => Promise<void>;
   isFiltering?: boolean;
 }
 
@@ -154,7 +154,7 @@ export default function KanbanBoard({ tasks, onReorder, onStatusChange, isFilter
           } else {
             if (onStatusChange) {
               setTimeout(() => {
-                void onStatusChange(sourceTaskId, targetColumn);
+                void onStatusChange(sourceTaskId, targetColumn, targetIndex);
               }, 0);
             } else {
               const destTasks = tasks

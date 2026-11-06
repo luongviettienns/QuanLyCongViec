@@ -9,6 +9,7 @@ import { UpdateTaskAssigneeDto } from '../dto/update-task-assignee.dto.js';
 import { ReturnTaskDto } from '../dto/return-task.dto.js';
 import { MoveTaskTeamDto } from '../dto/move-task-team.dto.js';
 import { TaskPolicyService } from '../policies/task-policy.service.js';
+import { TaskWorkflowPolicy } from '../policies/task-workflow-policy.service.js';
 import { TaskQueryService } from './task-query.service.js';
 import { TaskCrudService } from './task-crud.service.js';
 import { type Task, TaskStatus } from '@prisma/client';
@@ -18,6 +19,7 @@ export class TaskWorkflowService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly policy: TaskPolicyService,
+    private readonly workflowPolicy: TaskWorkflowPolicy,
     private readonly queryService: TaskQueryService,
     private readonly crudService: TaskCrudService,
   ) {}
@@ -25,21 +27,84 @@ export class TaskWorkflowService {
   async updateStatus(id: number, data: UpdateTaskStatusDto, userId: number): Promise<Task> {
     const currentTask = await this.queryService.findOne(id, userId);
 
-    if (!this.policy.canChangeStatus(userId, currentTask, data.status)) {
+    if (!this.workflowPolicy.canTransition(userId, currentTask, data.status)) {
       throw new ForbiddenException('Bạn không có quyền thay đổi trạng thái công việc này');
     }
 
     if (currentTask.status === data.status) {
-      return currentTask;
+      if (data.position === undefined) {
+        return currentTask;
+      }
+
+      const sameColScope = currentTask.teamId
+        ? { teamId: currentTask.teamId, status: currentTask.status }
+        : { userId: currentTask.userId, teamId: null, status: currentTask.status };
+
+      const colTasks = await this.prisma.task.findMany({
+        where: sameColScope,
+        orderBy: [{ position: 'asc' }, { createdAt: 'desc' }],
+      });
+
+      const filtered = colTasks.filter((t) => t.id !== id);
+      const targetIdx = data.position >= 0 && data.position <= filtered.length ? data.position : filtered.length;
+      filtered.splice(targetIdx, 0, currentTask);
+
+      const ops = filtered.map((t, idx) =>
+        this.prisma.task.update({
+          where: { id: t.id },
+          data: { position: idx },
+          ...(t.id === id
+            ? {
+                include: {
+                  category: true,
+                  assignee: { select: { id: true, name: true, email: true } },
+                  team: { select: { id: true, name: true } },
+                },
+              }
+            : {}),
+        }),
+      );
+
+      const results = await this.prisma.$transaction(ops);
+      return (results[targetIdx] as Task) || currentTask;
     }
 
-    const posScope = currentTask.teamId
-      ? { teamId: currentTask.teamId, status: data.status }
-      : { userId: currentTask.userId, teamId: null, status: data.status };
+    const destScope = currentTask.teamId
+      ? { teamId: currentTask.teamId, status: data.status, NOT: { id } }
+      : { userId: currentTask.userId, teamId: null, status: data.status, NOT: { id } };
 
-    const newPosition = await this.prisma.task.count({
-      where: posScope,
+    const destTasks = await this.prisma.task.findMany({
+      where: destScope,
+      orderBy: [{ position: 'asc' }, { createdAt: 'desc' }],
     });
+
+    const targetIdx =
+      data.position !== undefined && data.position >= 0 && data.position <= destTasks.length
+        ? data.position
+        : destTasks.length;
+
+    const newDestTasks = [...destTasks];
+    newDestTasks.splice(targetIdx, 0, currentTask);
+
+    const destOps = newDestTasks.map((t, idx) =>
+      t.id === id
+        ? this.prisma.task.update({
+            where: { id },
+            data: {
+              status: data.status,
+              position: idx,
+            },
+            include: {
+              category: true,
+              assignee: { select: { id: true, name: true, email: true } },
+              team: { select: { id: true, name: true } },
+            },
+          })
+        : this.prisma.task.update({
+            where: { id: t.id },
+            data: { position: idx },
+          }),
+    );
 
     const oldPosScope = currentTask.teamId
       ? { teamId: currentTask.teamId, status: currentTask.status, NOT: { id } }
@@ -57,27 +122,8 @@ export class TaskWorkflowService {
       }),
     );
 
-    const [updatedTask] = await this.prisma.$transaction([
-      this.prisma.task.update({
-        where: { id },
-        data: {
-          status: data.status,
-          position: newPosition,
-        },
-        include: {
-          category: true,
-          assignee: {
-            select: { id: true, name: true, email: true },
-          },
-          team: {
-            select: { id: true, name: true },
-          },
-        },
-      }),
-      ...reindexOldColOps,
-    ]);
-
-    return updatedTask;
+    const results = await this.prisma.$transaction([...reindexOldColOps, ...destOps]);
+    return results[reindexOldColOps.length + targetIdx] as Task;
   }
 
   async updateAssignee(id: number, data: UpdateTaskAssigneeDto, userId: number): Promise<Task> {
@@ -89,14 +135,7 @@ export class TaskWorkflowService {
 
     if (data.assigneeId !== undefined && data.assigneeId !== null) {
       if (currentTask.teamId) {
-        const isMember = await this.prisma.teamMember.findUnique({
-          where: {
-            teamId_userId: {
-              teamId: currentTask.teamId,
-              userId: data.assigneeId,
-            },
-          },
-        });
+        const isMember = this.policy.isTeamMember(data.assigneeId, currentTask.team);
         if (!isMember) {
           throw new BadRequestException('Người được phân công không thuộc nhóm này');
         }
@@ -133,19 +172,59 @@ export class TaskWorkflowService {
       throw new BadRequestException('Công việc cá nhân không thể thực hiện thao tác trả về');
     }
 
+    if (currentTask.status === TaskStatus.DONE) {
+      throw new BadRequestException('Không thể trả lại công việc đã hoàn thành');
+    }
+
     if (!this.policy.canReturnTask(userId, currentTask)) {
       throw new ForbiddenException('Chỉ người đang được phân công mới có quyền trả lại công việc');
     }
 
-    const isCreatorMember = currentTask.team?.members.some(
-      (m) => m.userId === currentTask.userId,
-    ) ?? false;
+    const isCreatorMember = this.policy.isTeamMember(currentTask.userId, currentTask.team);
+    const newAssigneeId = isCreatorMember ? currentTask.userId : null;
 
-    if (isCreatorMember) {
-      return this.prisma.task.update({
+    const todoScope = { teamId: currentTask.teamId, status: TaskStatus.TODO, NOT: { id } };
+    const newPositionInTodo = await this.prisma.task.count({ where: todoScope });
+
+    const oldPosScope = { teamId: currentTask.teamId, status: currentTask.status, NOT: { id } };
+    const remainingOldTasks = await this.prisma.task.findMany({
+      where: oldPosScope,
+      orderBy: [{ position: 'asc' }, { createdAt: 'desc' }],
+    });
+
+    const reindexOldOps = remainingOldTasks.map((t, idx) =>
+      this.prisma.task.update({
+        where: { id: t.id },
+        data: { position: idx },
+      }),
+    );
+
+    const returningUser = await this.prisma.user.findUnique({ where: { id: userId } });
+    const returnerName = returningUser?.name || 'Assignee';
+    const cleanReason = data.reason?.trim() ? data.reason.trim() : 'Không có lý do cụ thể';
+    const returnNote = `\n\n[Trả lại bởi ${returnerName} vào ${new Date().toISOString().slice(0, 10)}]: ${cleanReason}`;
+    const newDescription = currentTask.description ? `${currentTask.description}${returnNote}` : returnNote.trim();
+
+    const notifyUserId = isCreatorMember ? currentTask.userId : (currentTask.team?.ownerId ?? currentTask.userId);
+    const notificationOp = this.prisma.notification.create({
+      data: {
+        userId: notifyUserId,
+        type: 'TASK_STATUS_CHANGED',
+        title: `Công việc #${currentTask.id} được trả lại`,
+        content: `${returnerName} đã trả lại công việc "${currentTask.title}". Lý do: ${cleanReason}`,
+        taskId: currentTask.id,
+        teamId: currentTask.teamId,
+      },
+    });
+
+    const [updatedTask] = await this.prisma.$transaction([
+      this.prisma.task.update({
         where: { id },
         data: {
-          assignee: { connect: { id: currentTask.userId } },
+          assignee: newAssigneeId ? { connect: { id: newAssigneeId } } : { disconnect: true },
+          status: TaskStatus.TODO,
+          position: newPositionInTodo,
+          description: newDescription,
         },
         include: {
           category: true,
@@ -156,25 +235,12 @@ export class TaskWorkflowService {
             select: { id: true, name: true },
           },
         },
-      });
-    }
+      }),
+      ...reindexOldOps,
+      notificationOp,
+    ]);
 
-    return this.prisma.task.update({
-      where: { id },
-      data: {
-        assignee: { disconnect: true },
-        status: TaskStatus.TODO,
-      },
-      include: {
-        category: true,
-        assignee: {
-          select: { id: true, name: true, email: true },
-        },
-        team: {
-          select: { id: true, name: true },
-        },
-      },
-    });
+    return updatedTask;
   }
 
   async moveTeam(id: number, dto: MoveTaskTeamDto, userId: number): Promise<Task> {

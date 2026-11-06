@@ -11,23 +11,38 @@ export type TaskWithTeamAndMembers = Task & {
 
 @Injectable()
 export class TaskPolicyService {
+  isOwner(userId: number, team?: { ownerId: number } | null): boolean {
+    return team?.ownerId === userId;
+  }
+
+  isAdmin(userId: number, team?: { members?: TeamMember[] } | null): boolean {
+    return team?.members?.some((m) => m.userId === userId && m.role === TeamRole.ADMIN) ?? false;
+  }
+
+  isAdminOrOwner(userId: number, team?: { ownerId: number; members?: TeamMember[] } | null): boolean {
+    return this.isOwner(userId, team) || this.isAdmin(userId, team);
+  }
+
+  isTeamMember(userId: number, team?: { ownerId: number; members?: TeamMember[] } | null): boolean {
+    return this.isOwner(userId, team) || (team?.members?.some((m) => m.userId === userId) ?? false);
+  }
+
   canViewTask(userId: number, task: TaskWithTeamAndMembers): boolean {
     if (task.teamId === null || !task.team) {
-      return task.userId === userId;
+      return task.userId === userId || task.assigneeId === userId;
     }
-    return task.team.members.some((m) => m.userId === userId);
+    return this.isTeamMember(userId, task.team);
   }
 
   canEditContent(userId: number, task: TaskWithTeamAndMembers): boolean {
     if (task.teamId === null || !task.team) {
       return task.userId === userId;
     }
-    const member = task.team.members.find((m) => m.userId === userId);
-    if (!member) {
-      return false;
-    }
-    if (member.role === TeamRole.ADMIN) {
+    if (this.isAdminOrOwner(userId, task.team)) {
       return true;
+    }
+    if (!this.isTeamMember(userId, task.team)) {
+      return false;
     }
     return task.userId === userId;
   }
@@ -40,11 +55,10 @@ export class TaskPolicyService {
     if (task.teamId === null || !task.team) {
       return task.userId === userId;
     }
-    const member = task.team.members.find((m) => m.userId === userId);
-    if (!member) {
+    if (!this.isTeamMember(userId, task.team)) {
       return false;
     }
-    if (member.role === TeamRole.ADMIN) {
+    if (this.isAdminOrOwner(userId, task.team)) {
       return true;
     }
     if (task.userId === userId) {
@@ -53,6 +67,9 @@ export class TaskPolicyService {
     if (task.assigneeId === userId) {
       if (newStatus !== undefined) {
         if (task.status === TaskStatus.DONE && newStatus !== TaskStatus.DONE) {
+          return false;
+        }
+        if (task.status === TaskStatus.IN_PROGRESS && newStatus === TaskStatus.TODO) {
           return false;
         }
         return true;
@@ -66,12 +83,11 @@ export class TaskPolicyService {
     if (task.teamId === null || !task.team) {
       return task.userId === userId;
     }
-    const member = task.team.members.find((m) => m.userId === userId);
-    if (!member) {
-      return false;
-    }
-    if (member.role === TeamRole.ADMIN) {
+    if (this.isAdminOrOwner(userId, task.team)) {
       return true;
+    }
+    if (!this.isTeamMember(userId, task.team)) {
+      return false;
     }
     return task.userId === userId;
   }
@@ -80,25 +96,27 @@ export class TaskPolicyService {
     if (task.teamId === null || !task.team) {
       return false;
     }
+    if (task.status === TaskStatus.DONE) {
+      return false;
+    }
     if (task.assigneeId !== userId) {
       return false;
     }
     if (task.userId === userId) {
       return false;
     }
-    return task.team.members.some((m) => m.userId === userId);
+    return this.isTeamMember(userId, task.team);
   }
 
   canDeleteTask(userId: number, task: TaskWithTeamAndMembers): boolean {
     if (task.teamId === null || !task.team) {
       return task.userId === userId;
     }
-    const member = task.team.members.find((m) => m.userId === userId);
-    if (!member) {
-      return false;
-    }
-    if (member.role === TeamRole.ADMIN) {
+    if (this.isAdminOrOwner(userId, task.team)) {
       return true;
+    }
+    if (!this.isTeamMember(userId, task.team)) {
+      return false;
     }
     return task.userId === userId;
   }
@@ -111,8 +129,7 @@ export class TaskPolicyService {
     if (task.teamId === null || !task.team) {
       return task.userId === userId;
     }
-    const member = task.team.members.find((m) => m.userId === userId);
-    if (!member) {
+    if (!this.isTeamMember(userId, task.team)) {
       return false;
     }
     if (!targetStatus || targetStatus === task.status) {
