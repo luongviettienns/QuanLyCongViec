@@ -34,7 +34,7 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
             title={<Text strong>Tổng công việc</Text>}
             value={stats.total}
             prefix={<CheckSquareOutlined style={{ color: '#1677ff', marginRight: 6 }} />}
-            valueStyle={{ color: '#1677ff', fontWeight: 600 }}
+            styles={{ content: { color: '#1677ff', fontWeight: 600 } }}
           />
           <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text type="secondary" style={{ fontSize: 12 }}>Tất cả các mục</Text>
@@ -57,7 +57,7 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
             title={<Text strong>Cần làm</Text>}
             value={stats.todo}
             prefix={<ClockCircleOutlined style={{ color: '#faad14', marginRight: 6 }} />}
-            valueStyle={{ color: '#faad14', fontWeight: 600 }}
+            styles={{ content: { color: '#faad14', fontWeight: 600 } }}
           />
           <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text type="secondary" style={{ fontSize: 12 }}>Chờ xử lý</Text>
@@ -80,7 +80,7 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
             title={<Text strong>Đang thực hiện</Text>}
             value={stats.inProgress}
             prefix={<SyncOutlined style={{ color: '#13c2c2', marginRight: 6 }} />}
-            valueStyle={{ color: '#13c2c2', fontWeight: 600 }}
+            styles={{ content: { color: '#13c2c2', fontWeight: 600 } }}
           />
           <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text type="secondary" style={{ fontSize: 12 }}>Đang tiến hành</Text>
@@ -103,7 +103,7 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
             title={<Text strong>Đã hoàn thành</Text>}
             value={stats.done}
             prefix={<CheckCircleOutlined style={{ color: '#52c41a', marginRight: 6 }} />}
-            valueStyle={{ color: '#52c41a', fontWeight: 600 }}
+            styles={{ content: { color: '#52c41a', fontWeight: 600 } }}
           />
           <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text type="secondary" style={{ fontSize: 12 }}>Đã kết thúc</Text>
@@ -127,7 +127,7 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
             title={<Text strong style={{ color: stats.overdue > 0 ? '#cf1322' : 'inherit' }}>Quá hạn</Text>}
             value={stats.overdue}
             prefix={<ExclamationCircleOutlined style={{ color: '#ff4d4f', marginRight: 6 }} />}
-            valueStyle={{ color: stats.overdue > 0 ? '#ff4d4f' : '#8c8c8c', fontWeight: 600 }}
+            styles={{ content: { color: stats.overdue > 0 ? '#ff4d4f' : '#8c8c8c', fontWeight: 600 } }}
           />
           <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text type="secondary" style={{ fontSize: 12 }}>Cần xử lý gấp</Text>
@@ -151,7 +151,7 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
             title={<Text strong style={{ color: stats.dueSoon > 0 ? '#d46b08' : 'inherit' }}>Sắp đến hạn</Text>}
             value={stats.dueSoon}
             prefix={<CalendarOutlined style={{ color: '#fa8c16', marginRight: 6 }} />}
-            valueStyle={{ color: stats.dueSoon > 0 ? '#fa8c16' : '#8c8c8c', fontWeight: 600 }}
+            styles={{ content: { color: stats.dueSoon > 0 ? '#fa8c16' : '#8c8c8c', fontWeight: 600 } }}
           />
           <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text type="secondary" style={{ fontSize: 12 }}>Trong 7 ngày tới</Text>

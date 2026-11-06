@@ -342,7 +342,7 @@ export default function CategoryPage({ onChanged }: CategoryPageProps) {
         cancelText="Huỷ"
         onOk={() => editForm.submit()}
         confirmLoading={loading}
-        destroyOnClose
+        destroyOnHidden
         width={screens.sm ? 440 : '90%'}
       >
         <Form

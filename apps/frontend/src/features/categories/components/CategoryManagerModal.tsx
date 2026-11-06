@@ -173,7 +173,7 @@ export default function CategoryManagerModal({
         }
         footer={null}
         width={screens.sm ? 600 : '95%'}
-        destroyOnClose
+        destroyOnHidden
       >
         <Card
           size="small"
@@ -253,7 +253,7 @@ export default function CategoryManagerModal({
         cancelText="Huỷ"
         onOk={() => editForm.submit()}
         confirmLoading={loading}
-        destroyOnClose
+        destroyOnHidden
         width={screens.sm ? 420 : '90%'}
       >
         <Form

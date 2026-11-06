@@ -197,7 +197,7 @@ export default function AppLayout({
           placement="left"
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
-          width={260}
+          size={260}
           styles={{ body: { padding: 0 } }}
         >
           {sidebarContent}

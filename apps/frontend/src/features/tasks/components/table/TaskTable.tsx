@@ -36,7 +36,7 @@ export default function TaskTable({
       key: 'teamAssignee',
       width: 170,
       render: (_, record) => (
-        <Space direction="vertical" size={2}>
+        <Space orientation="vertical" size={2}>
           {record.team ? (
             <Tag color="cyan" style={{ margin: 0, fontSize: 11 }}>
               {record.team.name}

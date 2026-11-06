@@ -48,7 +48,7 @@ export function TeamModals({
         confirmLoading={actionSubmitting}
         okText="Tạo nhóm"
         cancelText="Hủy"
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={createForm} layout="vertical" onFinish={(values) => void onCreateTeam(values)}>
           <Form.Item
@@ -76,7 +76,7 @@ export function TeamModals({
         confirmLoading={actionSubmitting}
         okText="Lưu thay đổi"
         cancelText="Hủy"
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={editForm} layout="vertical" onFinish={(values) => void onEditTeam(values)}>
           <Form.Item
@@ -104,7 +104,7 @@ export function TeamModals({
         confirmLoading={actionSubmitting}
         okText="Thêm thành viên"
         cancelText="Hủy"
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           form={addMemberForm}

@@ -55,7 +55,7 @@ export default function AuthScreen() {
         }}
       >
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <Space direction="vertical" align="center" size={8}>
+          <Space orientation="vertical" align="center" size={8}>
             <div
               style={{
                 width: 48,
