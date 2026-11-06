@@ -21,9 +21,22 @@ export function subscribeUnauthorized(listener: UnauthorizedListener): () => voi
 }
 
 let isNotifyingUnauthorized = false;
+let isManualLogout = false;
+
+export function markManualLogout(): void {
+  isManualLogout = true;
+}
+
+export function resetManualLogout(): void {
+  isManualLogout = false;
+}
 
 export function notifyUnauthorized(): void {
+  const hadToken = Boolean(getAuthToken());
   removeAuthToken();
+  if (isManualLogout || !hadToken) {
+    return;
+  }
   if (isNotifyingUnauthorized) {
     return;
   }
@@ -44,6 +57,7 @@ export function getAuthToken(): string | null {
 }
 
 export function setAuthToken(token: string): void {
+  resetManualLogout();
   localStorage.setItem(TOKEN_KEY, token);
 }
 

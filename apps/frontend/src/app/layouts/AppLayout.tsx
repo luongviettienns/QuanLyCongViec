@@ -98,7 +98,6 @@ export default function AppLayout({
       label: 'Đăng xuất',
       onClick: () => {
         logout();
-        onReload();
       },
     },
   ];

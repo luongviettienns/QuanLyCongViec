@@ -10,6 +10,7 @@ import {
   subscribeUnauthorized,
   getTokenRemainingTime,
   notifyUnauthorized,
+  markManualLogout,
 } from '../api/auth.api';
 import { AuthContext } from './auth-context.base';
 
@@ -96,8 +97,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   function logout() {
+    markManualLogout();
     removeAuthToken();
     setUser(null);
+    void message.destroy('session-expired');
+    message.success('Đăng xuất thành công');
   }
 
   return (
