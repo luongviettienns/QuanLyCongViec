@@ -476,6 +476,14 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
         .patch(`/tasks/${teamTaskId}/status`)
         .set('Authorization', `Bearer ${tokenMember}`)
         .send({
+          status: 'IN_PROGRESS',
+        })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .patch(`/tasks/${teamTaskId}/status`)
+        .set('Authorization', `Bearer ${tokenMember}`)
+        .send({
           status: 'DONE',
         })
         .expect(200);
@@ -604,6 +612,14 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
     });
 
     it('forbids assignee from dragging their DONE task back to TODO across columns', async () => {
+      await request(app.getHttpServer())
+        .patch(`/tasks/${t2Id}/status`)
+        .set('Authorization', `Bearer ${tokenMember}`)
+        .send({
+          status: 'IN_PROGRESS',
+        })
+        .expect(200);
+
       await request(app.getHttpServer())
         .patch(`/tasks/${t2Id}/status`)
         .set('Authorization', `Bearer ${tokenMember}`)
