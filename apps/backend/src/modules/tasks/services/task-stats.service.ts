@@ -95,8 +95,8 @@ export class TaskStatsService {
           COUNT(*) FILTER (WHERE status = 'TODO')::bigint AS todo,
           COUNT(*) FILTER (WHERE status = 'IN_PROGRESS')::bigint AS "inProgress",
           COUNT(*) FILTER (WHERE status = 'DONE')::bigint AS done,
-          COUNT(*) FILTER (WHERE status != 'DONE' AND "dueDate" IS NOT NULL AND "dueDate" < ${todayDate})::bigint AS overdue,
-          COUNT(*) FILTER (WHERE status != 'DONE' AND "dueDate" IS NOT NULL AND "dueDate" >= ${todayDate} AND "dueDate" < ${next7Days})::bigint AS "dueSoon",
+          COUNT(*) FILTER (WHERE status != 'DONE' AND "dueDate" IS NOT NULL AND "dueDate" < ${todayDate}::date)::bigint AS overdue,
+          COUNT(*) FILTER (WHERE status != 'DONE' AND "dueDate" IS NOT NULL AND "dueDate" >= ${todayDate}::date AND "dueDate" < ${next7Days}::date)::bigint AS "dueSoon",
           COUNT(*) FILTER (WHERE "Priority" = 'LOW')::bigint AS "priorityLow",
           COUNT(*) FILTER (WHERE "Priority" = 'MEDIUM')::bigint AS "priorityMedium",
           COUNT(*) FILTER (WHERE "Priority" = 'HIGH')::bigint AS "priorityHigh"
@@ -116,8 +116,8 @@ export class TaskStatsService {
         WHERE ${whereSql}
           AND status != 'DONE'
           AND "dueDate" IS NOT NULL
-          AND "dueDate" >= ${todayDate}
-          AND "dueDate" < ${next7Days}
+          AND "dueDate" >= ${todayDate}::date
+          AND "dueDate" < ${next7Days}::date
         GROUP BY "dueDate"
         ORDER BY "dueDate" ASC;
       `,
