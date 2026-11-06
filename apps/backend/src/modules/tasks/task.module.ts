@@ -8,9 +8,10 @@ import { TaskReorderService } from './services/task-reorder.service.js';
 import { TaskStatsService } from './services/task-stats.service.js';
 import { TaskPolicyService } from './policies/task-policy.service.js';
 import { TaskWorkflowPolicy } from './policies/task-workflow-policy.service.js';
-import { PrismaService } from '../../database/prisma.service.js';
+import { AuthModule } from '../auth/auth.module.js';
 
 @Module({
+  imports: [AuthModule],
   controllers: [TasksController],
   providers: [
     TasksService,
@@ -21,15 +22,9 @@ import { PrismaService } from '../../database/prisma.service.js';
     TaskStatsService,
     TaskPolicyService,
     TaskWorkflowPolicy,
-    PrismaService,
   ],
   exports: [
     TasksService,
-    TaskQueryService,
-    TaskCrudService,
-    TaskWorkflowService,
-    TaskReorderService,
-    TaskStatsService,
     TaskPolicyService,
     TaskWorkflowPolicy,
   ],

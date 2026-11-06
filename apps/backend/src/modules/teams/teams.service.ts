@@ -58,9 +58,14 @@ export class TeamsService {
   async findAllForUser(userId: number) {
     return this.prisma.team.findMany({
       where: {
-        members: {
-          some: { userId },
-        },
+        OR: [
+          { ownerId: userId },
+          {
+            members: {
+              some: { userId },
+            },
+          },
+        ],
       },
       include: {
         owner: {
@@ -110,29 +115,39 @@ export class TeamsService {
       throw new NotFoundException('Không tìm thấy nhóm');
     }
 
+    const isOwner = team.ownerId === userId;
     const callerMember = team.members.find((m) => m.userId === userId);
-    if (!callerMember) {
+    if (!isOwner && !callerMember) {
       throw new NotFoundException('Không tìm thấy nhóm');
     }
 
     return {
       ...team,
-      currentUserRole: callerMember.role,
+      currentUserRole: isOwner ? TeamRole.ADMIN : callerMember!.role,
     };
   }
 
   async update(userId: number, teamId: number, dto: UpdateTeamDto) {
+    const team = await this.prisma.team.findUnique({
+      where: { id: teamId },
+    });
+
+    if (!team) {
+      throw new NotFoundException('Không tìm thấy nhóm');
+    }
+
     const caller = await this.prisma.teamMember.findUnique({
       where: {
         teamId_userId: { teamId, userId },
       },
     });
 
-    if (!caller) {
+    const isOwner = team.ownerId === userId;
+    if (!isOwner && !caller) {
       throw new NotFoundException('Không tìm thấy nhóm');
     }
 
-    if (caller.role !== TeamRole.ADMIN) {
+    if (!isOwner && caller?.role !== TeamRole.ADMIN) {
       throw new ForbiddenException('Chỉ quản trị viên mới có quyền cập nhật thông tin nhóm');
     }
 
@@ -175,11 +190,12 @@ export class TeamsService {
       },
     });
 
-    if (!caller) {
+    const isOwner = team.ownerId === userId;
+    if (!isOwner && !caller) {
       throw new NotFoundException('Không tìm thấy nhóm');
     }
 
-    if (team.ownerId !== userId) {
+    if (!isOwner) {
       throw new ForbiddenException('Chỉ chủ nhóm mới có quyền giải tán nhóm');
     }
 
@@ -205,15 +221,16 @@ export class TeamsService {
       },
     });
 
-    if (!caller) {
+    const isOwner = team.ownerId === userId;
+    if (!isOwner && !caller) {
       throw new NotFoundException('Không tìm thấy nhóm');
     }
 
-    if (caller.role !== TeamRole.ADMIN) {
+    if (!isOwner && caller?.role !== TeamRole.ADMIN) {
       throw new ForbiddenException('Chỉ quản trị viên mới có quyền thêm thành viên');
     }
 
-    if (dto.role === TeamRole.ADMIN && team.ownerId !== userId) {
+    if (dto.role === TeamRole.ADMIN && !isOwner) {
       throw new ForbiddenException('Chỉ chủ nhóm mới có quyền bổ nhiệm Quản trị viên');
     }
 
@@ -232,7 +249,7 @@ export class TeamsService {
       },
     });
 
-    if (existingMember) {
+    if (existingMember || team.ownerId === targetUser.id) {
       throw new BadRequestException('Người dùng này đã là thành viên trong nhóm');
     }
 
@@ -270,11 +287,12 @@ export class TeamsService {
       },
     });
 
-    if (!caller) {
+    const isOwner = team.ownerId === userId;
+    if (!isOwner && !caller) {
       throw new NotFoundException('Không tìm thấy nhóm');
     }
 
-    if (team.ownerId !== userId) {
+    if (!isOwner) {
       throw new ForbiddenException('Chỉ chủ nhóm mới có quyền thay đổi vai trò của thành viên');
     }
 
@@ -322,11 +340,12 @@ export class TeamsService {
       },
     });
 
-    if (!caller) {
+    const isOwner = team.ownerId === userId;
+    if (!isOwner && !caller) {
       throw new NotFoundException('Không tìm thấy nhóm');
     }
 
-    if (team.ownerId !== userId) {
+    if (!isOwner) {
       throw new ForbiddenException('Chỉ chủ nhóm mới có quyền chuyển quyền sở hữu');
     }
 
@@ -357,11 +376,16 @@ export class TeamsService {
         data: { role: TeamRole.ADMIN },
       });
 
-      await tx.teamMember.update({
+      await tx.teamMember.upsert({
         where: {
           teamId_userId: { teamId, userId },
         },
-        data: { role: TeamRole.ADMIN },
+        update: { role: TeamRole.ADMIN },
+        create: {
+          teamId,
+          userId,
+          role: TeamRole.ADMIN,
+        },
       });
 
       return tx.team.findUnique({
@@ -412,17 +436,18 @@ export class TeamsService {
       },
     });
 
-    if (!caller) {
+    const isOwner = team.ownerId === userId;
+    if (!isOwner && !caller) {
       throw new NotFoundException('Không tìm thấy nhóm');
     }
 
     const isSelfLeaving = targetMember.userId === userId;
 
     if (!isSelfLeaving) {
-      if (caller.role !== TeamRole.ADMIN) {
+      if (!isOwner && caller?.role !== TeamRole.ADMIN) {
         throw new ForbiddenException('Thành viên thường không có quyền xóa thành viên khác');
       }
-      if (targetMember.role === TeamRole.ADMIN && team.ownerId !== userId) {
+      if (targetMember.role === TeamRole.ADMIN && !isOwner) {
         throw new ForbiddenException('Quản trị viên không thể xóa một quản trị viên khác');
       }
     }

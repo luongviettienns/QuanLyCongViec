@@ -2,13 +2,14 @@ import {
   IsNotEmpty,
   IsString,
   IsOptional,
-  IsIn,
+  IsEnum,
   MinLength,
   MaxLength,
   Matches,
   IsInt,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { TaskStatus, TaskPriority } from '@prisma/client';
 
 export class CreateTaskDto {
   @ApiProperty({
@@ -22,24 +23,24 @@ export class CreateTaskDto {
   title: string;
 
   @ApiPropertyOptional({
-    description: 'Mô tả chi tiết công việc (tối đa 500 ký tự)',
+    description: 'Mô tả chi tiết công việc (tối đa 1000 ký tự)',
     example: 'Tìm hiểu về Module, Controller, Service và Prisma',
   })
   @IsOptional()
   @IsString({ message: 'Mô tả phải là chuỗi ký tự' })
-  @MaxLength(500, { message: 'Mô tả không được vượt quá 500 ký tự' })
+  @MaxLength(1000, { message: 'Mô tả không được vượt quá 1000 ký tự' })
   description?: string;
 
   @ApiPropertyOptional({
     description: 'Trạng thái công việc',
-    enum: ['TODO', 'IN_PROGRESS', 'DONE'],
-    default: 'TODO',
+    enum: TaskStatus,
+    default: TaskStatus.TODO,
   })
   @IsOptional()
-  @IsIn(['TODO', 'IN_PROGRESS', 'DONE'], {
+  @IsEnum(TaskStatus, {
     message: 'Trạng thái phải là một trong các giá trị: TODO, IN_PROGRESS, DONE',
   })
-  status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
+  status?: TaskStatus;
 
   @ApiPropertyOptional({
     description: 'Ngày bắt đầu công việc (định dạng YYYY-MM-DD)',
@@ -59,14 +60,14 @@ export class CreateTaskDto {
 
   @ApiPropertyOptional({
     description: 'Mức độ ưu tiên của công việc',
-    enum: ['LOW', 'MEDIUM', 'HIGH'],
-    default: 'MEDIUM',
+    enum: TaskPriority,
+    default: TaskPriority.MEDIUM,
   })
   @IsOptional()
-  @IsIn(['LOW', 'MEDIUM', 'HIGH'], {
+  @IsEnum(TaskPriority, {
     message: 'Mức độ ưu tiên phải là một trong các giá trị: LOW, MEDIUM, HIGH',
   })
-  priority?: 'LOW' | 'MEDIUM' | 'HIGH';
+  priority?: TaskPriority;
 
   @ApiPropertyOptional({
     description: 'Mã danh mục của công việc (ID)',

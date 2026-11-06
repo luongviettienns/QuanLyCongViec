@@ -18,11 +18,19 @@ export class TaskQueryService {
   async findAll(query: FilterTasksDto | undefined, userId: number): Promise<Task[]> {
     let baseWhere: Prisma.TaskWhereInput = {};
 
+    const userTeamAccessWhere: Prisma.TeamWhereInput = {
+      OR: [
+        { ownerId: userId },
+        { members: { some: { userId } } },
+      ],
+    };
+
     if (query?.teamId) {
-      const isMember = await this.prisma.teamMember.findUnique({
-        where: { teamId_userId: { teamId: query.teamId, userId } },
+      const team = await this.prisma.team.findUnique({
+        where: { id: query.teamId },
+        include: { members: true },
       });
-      if (!isMember) {
+      if (!this.policy.isTeamMember(userId, team)) {
         throw new NotFoundException('Không tìm thấy nhóm');
       }
       baseWhere = { teamId: query.teamId };
@@ -31,7 +39,7 @@ export class TaskQueryService {
         assigneeId: userId,
         OR: [
           { teamId: null },
-          { team: { members: { some: { userId } } } },
+          { team: userTeamAccessWhere },
         ],
       };
     } else if (query?.scope === 'created_by_me') {
@@ -39,7 +47,7 @@ export class TaskQueryService {
         userId,
         OR: [
           { teamId: null },
-          { team: { members: { some: { userId } } } },
+          { team: userTeamAccessWhere },
         ],
       };
     } else {
@@ -47,7 +55,7 @@ export class TaskQueryService {
         OR: [
           { teamId: null, userId },
           { teamId: null, assigneeId: userId },
-          { team: { members: { some: { userId } } } },
+          { team: userTeamAccessWhere },
         ],
       };
     }
@@ -98,12 +106,16 @@ export class TaskQueryService {
     });
   }
 
-  async findOne(id: number, userId: number): Promise<TaskWithTeamAndMembers> {
+  async findOne(
+    id: number,
+    userId: number,
+    tx: Prisma.TransactionClient = this.prisma,
+  ): Promise<TaskWithTeamAndMembers> {
     if (isNaN(id) || id <= 0) {
       throw new BadRequestException('Mã công việc (ID) phải là số nguyên dương hợp lệ');
     }
 
-    const task = await this.prisma.task.findUnique({
+    const task = await tx.task.findUnique({
       where: { id },
       include: {
         category: true,

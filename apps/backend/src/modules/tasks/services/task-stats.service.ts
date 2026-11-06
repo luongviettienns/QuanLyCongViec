@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service.js';
 import { FilterTasksDto } from '../dto/filter-tasks.dto.js';
+import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class TaskStatsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly policy: TaskPolicyService,
+  ) {}
 
   async getStats(userId: number, query?: FilterTasksDto) {
     const vnDateFormatter = new Intl.DateTimeFormat('en-CA', {
@@ -26,10 +30,11 @@ export class TaskStatsService {
     let whereSql: Prisma.Sql;
 
     if (query?.teamId) {
-      const isMember = await this.prisma.teamMember.findUnique({
-        where: { teamId_userId: { teamId: query.teamId, userId } },
+      const team = await this.prisma.team.findUnique({
+        where: { id: query.teamId },
+        include: { members: true },
       });
-      if (!isMember) {
+      if (!this.policy.isTeamMember(userId, team)) {
         throw new NotFoundException('Không tìm thấy nhóm');
       }
       whereSql = Prisma.sql`"teamId" = ${query.teamId}`;
@@ -38,7 +43,11 @@ export class TaskStatsService {
         "userId" = ${userId}
         AND (
           "teamId" IS NULL
-          OR "teamId" IN (SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId})
+          OR "teamId" IN (
+            SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId}
+            UNION
+            SELECT "id" FROM "Team" WHERE "ownerId" = ${userId}
+          )
         )
       `;
     } else if (query?.scope === 'assigned_to_me') {
@@ -46,7 +55,11 @@ export class TaskStatsService {
         "assigneeId" = ${userId}
         AND (
           "teamId" IS NULL
-          OR "teamId" IN (SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId})
+          OR "teamId" IN (
+            SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId}
+            UNION
+            SELECT "id" FROM "Team" WHERE "ownerId" = ${userId}
+          )
         )
       `;
     } else {
@@ -54,7 +67,11 @@ export class TaskStatsService {
         ("userId" = ${userId} OR "assigneeId" = ${userId})
         AND (
           "teamId" IS NULL
-          OR "teamId" IN (SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId})
+          OR "teamId" IN (
+            SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId}
+            UNION
+            SELECT "id" FROM "Team" WHERE "ownerId" = ${userId}
+          )
         )
       `;
     }

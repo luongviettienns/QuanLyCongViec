@@ -34,26 +34,31 @@ export class AuthService {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(dto.password, salt);
 
-    const user = await this.prisma.user.create({
-      data: {
-        email: normalizedEmail,
-        name: dto.name.trim(),
-        passwordHash,
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        createdAt: true,
-      },
-    });
+    const user = await this.prisma.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: {
+          email: normalizedEmail,
+          name: dto.name.trim(),
+          passwordHash,
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          createdAt: true,
+        },
+      });
 
-    await this.prisma.category.createMany({
-      data: [
-        { name: 'Công việc', color: '#1890ff', userId: user.id },
-        { name: 'Học tập', color: '#52c41a', userId: user.id },
-        { name: 'Cá nhân', color: '#fa8c16', userId: user.id },
-      ],
+      await tx.category.createMany({
+        data: [
+          { name: 'Công việc', color: '#1890ff', userId: createdUser.id },
+          { name: 'Học tập', color: '#52c41a', userId: createdUser.id },
+          { name: 'Cá nhân', color: '#fa8c16', userId: createdUser.id },
+        ],
+        skipDuplicates: true,
+      });
+
+      return createdUser;
     });
 
     const accessToken = this.generateToken(user.id, user.email);

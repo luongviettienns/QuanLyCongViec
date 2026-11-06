@@ -47,33 +47,17 @@ export class TaskPolicyService {
     return task.userId === userId;
   }
 
-  canChangeStatus(
-    userId: number,
-    task: TaskWithTeamAndMembers,
-    newStatus?: TaskStatus,
-  ): boolean {
+  canChangeStatus(userId: number, task: TaskWithTeamAndMembers): boolean {
     if (task.teamId === null || !task.team) {
       return task.userId === userId;
     }
     if (!this.isTeamMember(userId, task.team)) {
       return false;
     }
-    if (this.isAdminOrOwner(userId, task.team)) {
-      return true;
-    }
-    if (task.userId === userId) {
+    if (this.isAdminOrOwner(userId, task.team) || task.userId === userId) {
       return true;
     }
     if (task.assigneeId === userId) {
-      if (newStatus !== undefined) {
-        if (task.status === TaskStatus.DONE && newStatus !== TaskStatus.DONE) {
-          return false;
-        }
-        if (task.status === TaskStatus.IN_PROGRESS && newStatus === TaskStatus.TODO) {
-          return false;
-        }
-        return true;
-      }
       return task.status !== TaskStatus.DONE;
     }
     return false;
@@ -121,20 +105,10 @@ export class TaskPolicyService {
     return task.userId === userId;
   }
 
-  canReorder(
-    userId: number,
-    task: TaskWithTeamAndMembers,
-    targetStatus?: TaskStatus,
-  ): boolean {
+  canReorder(userId: number, task: TaskWithTeamAndMembers): boolean {
     if (task.teamId === null || !task.team) {
       return task.userId === userId;
     }
-    if (!this.isTeamMember(userId, task.team)) {
-      return false;
-    }
-    if (!targetStatus || targetStatus === task.status) {
-      return true;
-    }
-    return this.canChangeStatus(userId, task, targetStatus);
+    return this.isTeamMember(userId, task.team);
   }
 }

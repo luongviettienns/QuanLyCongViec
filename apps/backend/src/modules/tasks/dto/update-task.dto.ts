@@ -1,13 +1,14 @@
 import {
   IsString,
   IsOptional,
-  IsIn,
+  IsEnum,
   MinLength,
   MaxLength,
   Matches,
   IsInt,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { TaskStatus, TaskPriority } from '@prisma/client';
 
 export class UpdateTaskDto {
   @ApiPropertyOptional({
@@ -21,23 +22,23 @@ export class UpdateTaskDto {
   title?: string;
 
   @ApiPropertyOptional({
-    description: 'Mô tả chi tiết công việc mới (tối đa 500 ký tự)',
+    description: 'Mô tả chi tiết công việc mới (tối đa 1000 ký tự)',
     example: 'Nghiên cứu về Guards và Interceptors',
   })
   @IsOptional()
   @IsString({ message: 'Mô tả phải là chuỗi ký tự' })
-  @MaxLength(500, { message: 'Mô tả không được vượt quá 500 ký tự' })
-  description?: string;
+  @MaxLength(1000, { message: 'Mô tả không được vượt quá 1000 ký tự' })
+  description?: string | null;
 
   @ApiPropertyOptional({
     description: 'Trạng thái công việc mới',
-    enum: ['TODO', 'IN_PROGRESS', 'DONE'],
+    enum: TaskStatus,
   })
   @IsOptional()
-  @IsIn(['TODO', 'IN_PROGRESS', 'DONE'], {
+  @IsEnum(TaskStatus, {
     message: 'Trạng thái phải là một trong các giá trị: TODO, IN_PROGRESS, DONE',
   })
-  status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
+  status?: TaskStatus;
 
   @ApiPropertyOptional({
     description: 'Ngày bắt đầu công việc mới (định dạng YYYY-MM-DD)',
@@ -45,7 +46,7 @@ export class UpdateTaskDto {
   })
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày bắt đầu phải có định dạng YYYY-MM-DD' })
-  startDate?: string;
+  startDate?: string | null;
 
   @ApiPropertyOptional({
     description: 'Hạn chót công việc mới (định dạng YYYY-MM-DD)',
@@ -53,17 +54,17 @@ export class UpdateTaskDto {
   })
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Hạn chót phải có định dạng YYYY-MM-DD' })
-  dueDate?: string;
+  dueDate?: string | null;
 
   @ApiPropertyOptional({
     description: 'Mức độ ưu tiên mới của công việc',
-    enum: ['LOW', 'MEDIUM', 'HIGH'],
+    enum: TaskPriority,
   })
   @IsOptional()
-  @IsIn(['LOW', 'MEDIUM', 'HIGH'], {
+  @IsEnum(TaskPriority, {
     message: 'Mức độ ưu tiên phải là một trong các giá trị: LOW, MEDIUM, HIGH',
   })
-  priority?: 'LOW' | 'MEDIUM' | 'HIGH';
+  priority?: TaskPriority;
 
   @ApiPropertyOptional({
     description: 'Mã danh mục mới của công việc (ID hoặc null để hủy gán)',
