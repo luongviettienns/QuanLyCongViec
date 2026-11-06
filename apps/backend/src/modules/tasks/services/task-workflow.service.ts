@@ -26,13 +26,29 @@ export class TaskWorkflowService {
     private readonly reorderService: TaskReorderService,
   ) {}
 
-  async updateStatus(id: number, data: UpdateTaskStatusDto, userId: number): Promise<Task> {
-    return this.prisma.$transaction(async (tx) => {
-      const currentTask = await this.queryService.findOne(id, userId, tx);
+  private executeInTransaction<T>(
+    externalTx: Prisma.TransactionClient | undefined,
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    if (externalTx) {
+      return fn(externalTx);
+    }
+    return this.prisma.$transaction(fn);
+  }
 
-      if (!this.workflowPolicy.canTransition(userId, currentTask, data.status)) {
-        throw new ForbiddenException('Bạn không có quyền thay đổi trạng thái công việc này');
-      }
+  async updateStatus(
+    id: number,
+    data: UpdateTaskStatusDto,
+    userId: number,
+    externalTx?: Prisma.TransactionClient,
+  ): Promise<Task> {
+    return this.executeInTransaction(externalTx, async (tx) => {
+      const initialTask = await this.queryService.findOne(id, userId, tx);
+      await this.reorderService.lockScope(tx, {
+        teamId: initialTask.teamId,
+        userId: initialTask.userId,
+      });
+      const currentTask = await this.queryService.findOne(id, userId, tx);
 
       const scopeWhere: Prisma.TaskWhereInput = currentTask.teamId
         ? { teamId: currentTask.teamId }
@@ -40,7 +56,14 @@ export class TaskWorkflowService {
 
       if (currentTask.status === data.status) {
         if (data.position === undefined) {
+          if (!this.workflowPolicy.canTransition(userId, currentTask, data.status)) {
+            throw new ForbiddenException('Bạn không có quyền thay đổi trạng thái công việc này');
+          }
           return currentTask;
+        }
+
+        if (!this.policy.canReorder(userId, currentTask)) {
+          throw new ForbiddenException('Bạn không có quyền sắp xếp công việc này');
         }
 
         const colTasks = await tx.task.findMany({
@@ -80,6 +103,14 @@ export class TaskWorkflowService {
         }
 
         return updatedCurrentTask;
+      }
+
+      if (!this.workflowPolicy.canTransition(userId, currentTask, data.status)) {
+        throw new ForbiddenException('Bạn không có quyền thay đổi trạng thái công việc này');
+      }
+
+      if (data.position !== undefined && !this.policy.canReorder(userId, currentTask)) {
+        throw new ForbiddenException('Bạn không có quyền sắp xếp công việc này');
       }
 
       await this.reorderService.reindexColumn(tx, scopeWhere, currentTask.status, [id]);
@@ -129,8 +160,13 @@ export class TaskWorkflowService {
     });
   }
 
-  async updateAssignee(id: number, data: UpdateTaskAssigneeDto, userId: number): Promise<Task> {
-    return this.prisma.$transaction(async (tx) => {
+  async updateAssignee(
+    id: number,
+    data: UpdateTaskAssigneeDto,
+    userId: number,
+    externalTx?: Prisma.TransactionClient,
+  ): Promise<Task> {
+    return this.executeInTransaction(externalTx, async (tx) => {
       const currentTask = await this.queryService.findOne(id, userId, tx);
 
       if (!this.policy.canChangeAssignee(userId, currentTask)) {
@@ -171,7 +207,23 @@ export class TaskWorkflowService {
   }
 
   async returnTask(id: number, data: ReturnTaskDto, userId: number): Promise<Task> {
+    const cleanReason = data.reason?.trim();
+    if (!cleanReason) {
+      throw new BadRequestException('Vui lòng nhập lý do trả lại công việc');
+    }
+
     return this.prisma.$transaction(async (tx) => {
+      const initialTask = await this.queryService.findOne(id, userId, tx);
+
+      if (initialTask.teamId === null) {
+        throw new BadRequestException('Công việc cá nhân không thể thực hiện thao tác trả về');
+      }
+
+      await this.reorderService.lockScope(tx, {
+        teamId: initialTask.teamId,
+        userId: initialTask.userId,
+      });
+
       const currentTask = await this.queryService.findOne(id, userId, tx);
 
       if (currentTask.teamId === null) {
@@ -203,7 +255,6 @@ export class TaskWorkflowService {
 
       const returningUser = await tx.user.findUnique({ where: { id: userId } });
       const returnerName = returningUser?.name || 'Assignee';
-      const cleanReason = data.reason?.trim() ? data.reason.trim() : 'Không có lý do cụ thể';
 
       const notifyUserId = isCreatorMember
         ? currentTask.userId
@@ -240,7 +291,12 @@ export class TaskWorkflowService {
     });
   }
 
-  async moveTeam(id: number, dto: MoveTaskTeamDto, userId: number): Promise<Task> {
+  async moveTeam(
+    id: number,
+    dto: MoveTaskTeamDto,
+    userId: number,
+    externalTx?: Prisma.TransactionClient,
+  ): Promise<Task> {
     const hasTeamId = dto.teamId !== undefined;
     const hasAssigneeId = dto.assigneeId !== undefined;
 
@@ -248,101 +304,128 @@ export class TaskWorkflowService {
       throw new BadRequestException('Vui lòng cung cấp ít nhất một thông tin cần cập nhật');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const currentTask = await this.queryService.findOne(id, userId, tx);
+    try {
+      return await this.executeInTransaction(externalTx, async (tx) => {
+        const initialTask = await this.queryService.findOne(id, userId, tx);
+        const targetTeamId = hasTeamId ? (dto.teamId ?? null) : initialTask.teamId;
 
-      if (hasTeamId && !this.policy.canEditContent(userId, currentTask)) {
-        throw new ForbiddenException('Bạn không có quyền chỉnh sửa nội dung công việc này');
-      }
+        await this.reorderService.lockScopes(tx, [
+          { teamId: initialTask.teamId, userId: initialTask.userId },
+          { teamId: targetTeamId, userId: initialTask.userId },
+        ]);
 
-      if (hasAssigneeId && !this.policy.canChangeAssignee(userId, currentTask)) {
-        throw new ForbiddenException('Bạn không có quyền phân công công việc này');
-      }
+        const currentTask = await this.queryService.findOne(id, userId, tx);
 
-      const effectiveTeamId = hasTeamId ? (dto.teamId ?? null) : currentTask.teamId;
-      const isTeamChanged = effectiveTeamId !== currentTask.teamId;
-      let effectiveAssigneeId = hasAssigneeId ? (dto.assigneeId ?? null) : currentTask.assigneeId;
-
-      if (effectiveTeamId !== null) {
-        const targetTeam = await tx.team.findUnique({
-          where: { id: effectiveTeamId },
-          include: { members: true },
-        });
-        if (!this.policy.isTeamMember(userId, targetTeam)) {
-          throw new NotFoundException('Không tìm thấy nhóm');
+        if (hasTeamId && !this.policy.canEditContent(userId, currentTask)) {
+          throw new ForbiddenException('Bạn không có quyền chỉnh sửa nội dung công việc này');
         }
 
-        if (hasAssigneeId) {
-          if (effectiveAssigneeId && !this.policy.isTeamMember(effectiveAssigneeId, targetTeam)) {
-            throw new BadRequestException('Người được phân công không thuộc nhóm này');
+        if (hasAssigneeId && !this.policy.canChangeAssignee(userId, currentTask)) {
+          throw new ForbiddenException('Bạn không có quyền phân công công việc này');
+        }
+
+        const effectiveTeamId = hasTeamId ? (dto.teamId ?? null) : currentTask.teamId;
+        const isTeamChanged = effectiveTeamId !== currentTask.teamId;
+        let effectiveAssigneeId = hasAssigneeId ? (dto.assigneeId ?? null) : currentTask.assigneeId;
+
+        if (effectiveTeamId !== null) {
+          const targetTeam = await tx.team.findUnique({
+            where: { id: effectiveTeamId },
+            include: { members: true },
+          });
+          if (!this.policy.isTeamMember(userId, targetTeam)) {
+            throw new NotFoundException('Không tìm thấy nhóm');
           }
-        } else if (isTeamChanged && effectiveAssigneeId) {
-          if (!this.policy.isTeamMember(effectiveAssigneeId, targetTeam)) {
+
+          if (hasAssigneeId) {
+            if (effectiveAssigneeId && !this.policy.isTeamMember(effectiveAssigneeId, targetTeam)) {
+              throw new BadRequestException('Người được phân công không thuộc nhóm này');
+            }
+          } else if (isTeamChanged && effectiveAssigneeId) {
+            if (!this.policy.isTeamMember(effectiveAssigneeId, targetTeam)) {
+              effectiveAssigneeId = null;
+            }
+          }
+        } else {
+          if (hasAssigneeId) {
+            if (effectiveAssigneeId && effectiveAssigneeId !== currentTask.userId) {
+              throw new BadRequestException('Công việc cá nhân chỉ có thể phân công cho chính bạn');
+            }
+          } else if (isTeamChanged && effectiveAssigneeId !== currentTask.userId) {
             effectiveAssigneeId = null;
           }
         }
-      } else {
-        if (hasAssigneeId) {
-          if (effectiveAssigneeId && effectiveAssigneeId !== currentTask.userId) {
-            throw new BadRequestException('Công việc cá nhân chỉ có thể phân công cho chính bạn');
-          }
-        } else if (isTeamChanged && effectiveAssigneeId !== currentTask.userId) {
-          effectiveAssigneeId = null;
-        }
-      }
 
-      const updateData: Prisma.TaskUpdateInput = {};
+        const updateData: Prisma.TaskUpdateInput = {};
 
-      if (isTeamChanged) {
-        const duplicateScopeWhere: Prisma.TaskWhereInput = effectiveTeamId
-          ? { teamId: effectiveTeamId }
-          : { userId: currentTask.userId, teamId: null };
+        if (isTeamChanged) {
+          const duplicateScopeWhere: Prisma.TaskWhereInput = effectiveTeamId
+            ? { teamId: effectiveTeamId }
+            : { userId: currentTask.userId, teamId: null };
 
-        const duplicateTask = await tx.task.findFirst({
-          where: {
-            ...duplicateScopeWhere,
-            title: {
-              equals: currentTask.title,
-              mode: 'insensitive',
+          const duplicateTask = await tx.task.findFirst({
+            where: {
+              ...duplicateScopeWhere,
+              title: {
+                equals: currentTask.title,
+                mode: 'insensitive',
+              },
+              NOT: { id },
             },
-            NOT: { id },
-          },
-        });
+          });
 
-        if (duplicateTask) {
-          throw new ConflictException(`Tiêu đề '${currentTask.title}' đã được sử dụng bởi một công việc khác`);
+          if (duplicateTask) {
+            throw new ConflictException(`Tiêu đề '${currentTask.title}' đã được sử dụng bởi một công việc khác`);
+          }
         }
-      }
 
-      if (hasTeamId) {
-        updateData.team = effectiveTeamId
-          ? { connect: { id: effectiveTeamId } }
-          : { disconnect: true };
-      }
+        if (hasTeamId) {
+          updateData.team = effectiveTeamId
+            ? { connect: { id: effectiveTeamId } }
+            : { disconnect: true };
+        }
 
-      if (hasAssigneeId || (isTeamChanged && effectiveAssigneeId !== currentTask.assigneeId)) {
-        updateData.assignee = effectiveAssigneeId
-          ? { connect: { id: effectiveAssigneeId } }
-          : { disconnect: true };
-      }
+        if (hasAssigneeId || (isTeamChanged && effectiveAssigneeId !== currentTask.assigneeId)) {
+          updateData.assignee = effectiveAssigneeId
+            ? { connect: { id: effectiveAssigneeId } }
+            : { disconnect: true };
+        }
 
-      if (isTeamChanged) {
-        const destScope: Prisma.TaskWhereInput = effectiveTeamId
-          ? { teamId: effectiveTeamId }
-          : { userId: currentTask.userId, teamId: null };
+        if (isTeamChanged) {
+          const destScope: Prisma.TaskWhereInput = effectiveTeamId
+            ? { teamId: effectiveTeamId }
+            : { userId: currentTask.userId, teamId: null };
 
-        const newPosition = await this.reorderService.getNextPosition(
-          tx,
-          destScope,
-          currentTask.status,
-        );
-        updateData.position = newPosition;
+          const newPosition = await this.reorderService.getNextPosition(
+            tx,
+            destScope,
+            currentTask.status,
+          );
+          updateData.position = newPosition;
 
-        const sourceScope: Prisma.TaskWhereInput = currentTask.teamId
-          ? { teamId: currentTask.teamId }
-          : { userId: currentTask.userId, teamId: null };
+          const sourceScope: Prisma.TaskWhereInput = currentTask.teamId
+            ? { teamId: currentTask.teamId }
+            : { userId: currentTask.userId, teamId: null };
 
-        const updatedTask = await tx.task.update({
+          const updatedTask = await tx.task.update({
+            where: { id },
+            data: updateData,
+            include: {
+              category: true,
+              assignee: {
+                select: { id: true, name: true, email: true },
+              },
+              team: {
+                select: { id: true, name: true },
+              },
+            },
+          });
+
+          await this.reorderService.reindexColumn(tx, sourceScope, currentTask.status, [id]);
+          return updatedTask;
+        }
+
+        return tx.task.update({
           where: { id },
           data: updateData,
           include: {
@@ -355,24 +438,12 @@ export class TaskWorkflowService {
             },
           },
         });
-
-        await this.reorderService.reindexColumn(tx, sourceScope, currentTask.status, [id]);
-        return updatedTask;
-      }
-
-      return tx.task.update({
-        where: { id },
-        data: updateData,
-        include: {
-          category: true,
-          assignee: {
-            select: { id: true, name: true, email: true },
-          },
-          team: {
-            select: { id: true, name: true },
-          },
-        },
       });
-    });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Tiêu đề công việc đã được sử dụng bởi một công việc khác trong phạm vi này');
+      }
+      throw error;
+    }
   }
 }

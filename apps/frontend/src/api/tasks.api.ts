@@ -161,7 +161,7 @@ export async function updateTaskAssignee(id: number, assigneeId: number | null):
   return handleApiResponse<Task>(response, 'Không thể thay đổi người thực hiện công việc');
 }
 
-export async function returnTask(id: number, reason?: string): Promise<Task> {
+export async function returnTask(id: number, reason: string): Promise<Task> {
   const response = await fetch(`/tasks/${id}/return`, {
     method: 'PATCH',
     headers: {

@@ -10,6 +10,11 @@ import { TaskPolicyService, type TaskWithTeamAndMembers } from '../policies/task
 import { TaskWorkflowPolicy } from '../policies/task-workflow-policy.service.js';
 import { Prisma, TaskStatus } from '@prisma/client';
 
+export interface BoardLockScope {
+  teamId?: number | null;
+  userId?: number;
+}
+
 @Injectable()
 export class TaskReorderService {
   constructor(
@@ -17,6 +22,34 @@ export class TaskReorderService {
     private readonly policy: TaskPolicyService,
     private readonly workflowPolicy: TaskWorkflowPolicy,
   ) {}
+
+  private resolveLockKey(scope: BoardLockScope): { namespace: number; key: number } {
+    if (scope.teamId !== null && scope.teamId !== undefined) {
+      return { namespace: 1001, key: scope.teamId };
+    }
+    return { namespace: 1002, key: scope.userId ?? 0 };
+  }
+
+  async lockScope(tx: Prisma.TransactionClient, scope: BoardLockScope): Promise<void> {
+    const { namespace, key } = this.resolveLockKey(scope);
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(CAST(${namespace} AS integer), CAST(${key} AS integer))`;
+  }
+
+  async lockScopes(tx: Prisma.TransactionClient, scopes: BoardLockScope[]): Promise<void> {
+    const uniqueKeys = new Map<string, { namespace: number; key: number }>();
+    for (const s of scopes) {
+      const resolved = this.resolveLockKey(s);
+      uniqueKeys.set(`${resolved.namespace}:${resolved.key}`, resolved);
+    }
+
+    const sorted = Array.from(uniqueKeys.values()).sort((a, b) =>
+      a.namespace !== b.namespace ? a.namespace - b.namespace : a.key - b.key,
+    );
+
+    for (const item of sorted) {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(CAST(${item.namespace} AS integer), CAST(${item.key} AS integer))`;
+    }
+  }
 
   async reindexColumn(
     tx: Prisma.TransactionClient,
@@ -72,6 +105,8 @@ export class TaskReorderService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      await this.lockScope(tx, { teamId: dto.teamId ?? null, userId });
+
       if (dto.teamId) {
         const team = await tx.team.findUnique({
           where: { id: dto.teamId },
@@ -112,9 +147,12 @@ export class TaskReorderService {
 
         for (const t of tasksToUpdate) {
           const taskWithTeam = t as TaskWithTeamAndMembers;
+          if (!this.policy.canReorder(userId, taskWithTeam)) {
+            throw new ForbiddenException(`Bạn không có quyền sắp xếp công việc "${t.title}"`);
+          }
           if (
-            !this.policy.canReorder(userId, taskWithTeam) ||
-            (t.status !== targetStatus && !this.workflowPolicy.canTransition(userId, taskWithTeam, targetStatus))
+            t.status !== targetStatus &&
+            !this.workflowPolicy.canTransition(userId, taskWithTeam, targetStatus)
           ) {
             throw new ForbiddenException(`Bạn không có quyền chuyển trạng thái công việc "${t.title}" sang ${targetStatus}`);
           }
@@ -172,11 +210,33 @@ export class TaskReorderService {
           }
         }
 
+        const unmentionedInSameCol = await tx.task.findMany({
+          where: {
+            ...scopeWhere,
+            status: firstStatus,
+            NOT: { id: { in: dto.taskIds } },
+          },
+          orderBy: [
+            { position: 'asc' },
+            { createdAt: 'desc' },
+          ],
+        });
+
         for (let i = 0; i < dto.taskIds.length; i++) {
           await tx.task.update({
             where: { id: dto.taskIds[i] },
             data: { position: i },
           });
+        }
+
+        for (let idx = 0; idx < unmentionedInSameCol.length; idx++) {
+          const targetPos = dto.taskIds.length + idx;
+          if (unmentionedInSameCol[idx].position !== targetPos) {
+            await tx.task.update({
+              where: { id: unmentionedInSameCol[idx].id },
+              data: { position: targetPos },
+            });
+          }
         }
       }
     });

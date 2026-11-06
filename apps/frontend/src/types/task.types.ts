@@ -111,7 +111,7 @@ export interface UpdateTaskContentPayload {
 }
 
 export interface ReturnTaskPayload {
-  reason?: string;
+  reason: string;
 }
 
 export interface TransferOwnershipPayload {
