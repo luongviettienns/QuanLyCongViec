@@ -135,14 +135,14 @@ export async function updateTaskContent(id: number, payload: UpdateTaskContentPa
   return handleApiResponse<Task>(response, 'Không thể cập nhật nội dung công việc');
 }
 
-export async function updateTaskStatus(id: number, status: TaskStatus): Promise<Task> {
+export async function updateTaskStatus(id: number, status: TaskStatus, position?: number): Promise<Task> {
   const response = await fetch(`/tasks/${id}/status`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
       ...getAuthHeaders(),
     },
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status, ...(position !== undefined ? { position } : {}) }),
   });
 
   return handleApiResponse<Task>(response, 'Không thể cập nhật trạng thái công việc');
@@ -161,7 +161,7 @@ export async function updateTaskAssignee(id: number, assigneeId: number | null):
   return handleApiResponse<Task>(response, 'Không thể thay đổi người thực hiện công việc');
 }
 
-export async function returnTask(id: number, reason?: string): Promise<Task> {
+export async function returnTask(id: number, reason: string): Promise<Task> {
   const response = await fetch(`/tasks/${id}/return`, {
     method: 'PATCH',
     headers: {

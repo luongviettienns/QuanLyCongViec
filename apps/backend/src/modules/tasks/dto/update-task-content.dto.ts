@@ -1,4 +1,4 @@
-import { IsString, IsOptional, MinLength, MaxLength, IsEnum, IsInt, IsDateString } from 'class-validator';
+import { IsString, IsOptional, MinLength, MaxLength, IsEnum, IsInt, Matches } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskPriority } from '@prisma/client';
 
@@ -39,7 +39,7 @@ export class UpdateTaskContentDto {
     example: '2026-11-05',
   })
   @IsOptional()
-  @IsDateString({}, { message: 'Ngày bắt đầu phải đúng định dạng YYYY-MM-DD' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày bắt đầu phải đúng định dạng YYYY-MM-DD' })
   startDate?: string | null;
 
   @ApiPropertyOptional({
@@ -47,7 +47,7 @@ export class UpdateTaskContentDto {
     example: '2026-11-10',
   })
   @IsOptional()
-  @IsDateString({}, { message: 'Hạn chót phải đúng định dạng YYYY-MM-DD' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Hạn chót phải đúng định dạng YYYY-MM-DD' })
   dueDate?: string | null;
 
   @ApiPropertyOptional({

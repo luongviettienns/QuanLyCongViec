@@ -131,6 +131,7 @@ model Task {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
+  @@unique([teamId, title])
   @@index([userId, status, position])
   @@index([teamId, status])
   @@index([assigneeId, status])

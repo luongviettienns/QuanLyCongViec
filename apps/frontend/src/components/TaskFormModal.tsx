@@ -11,7 +11,13 @@ import {
   Grid,
 } from 'antd';
 import type { Task, Category, Team, TaskFormValues } from '../types/task.types';
-import { createTask, updateTask, updateTaskStatus } from '../api/tasks.api';
+import {
+  createTask,
+  updateTaskContent,
+  updateTaskStatus,
+  updateTaskAssignee,
+  moveTaskTeam,
+} from '../api/tasks.api';
 import { useAuth } from '../hooks/useAuth';
 
 interface TaskFormModalProps {
@@ -50,7 +56,8 @@ export default function TaskFormModal({
   const canChangeAssignee = !task || !task.teamId || isCreator || isTeamAdmin;
   const isAssignee = task?.assigneeId === user?.id;
   const canChangeStatus = !task || !task.teamId || isCreator || isTeamAdmin || isAssignee;
-  const isReopenBlocked = task?.status === 'DONE' && isAssignee && !isCreator && !isTeamAdmin;
+  const isAssigneeOnly = Boolean(task && task.teamId && isAssignee && !isCreator && !isTeamAdmin);
+  const isReopenBlocked = isAssigneeOnly && task?.status === 'DONE';
 
   async function handleSubmit(values: TaskFormValues) {
     try {
@@ -63,18 +70,30 @@ export default function TaskFormModal({
             message.success('Cập nhật trạng thái công việc thành công');
           }
         } else {
-          const payload = {
+          await updateTaskContent(task.id, {
             title: values.title,
-            description: values.description,
-            status: values.status,
+            description: values.description ?? null,
             priority: values.priority || 'MEDIUM',
             categoryId: values.categoryId ?? null,
-            teamId: values.teamId ?? null,
-            assigneeId: values.teamId ? (values.assigneeId ?? null) : null,
             startDate: values.startDate ? values.startDate.format('YYYY-MM-DD') : null,
             dueDate: values.dueDate ? values.dueDate.format('YYYY-MM-DD') : null,
-          };
-          await updateTask(task.id, payload);
+          });
+
+          const nextTeamId = values.teamId ?? null;
+          const nextAssigneeId = nextTeamId ? (values.assigneeId ?? null) : null;
+          const currentTeamId = task.teamId ?? null;
+          const currentAssigneeId = task.assigneeId ?? null;
+
+          if (nextTeamId !== currentTeamId) {
+            await moveTaskTeam(task.id, nextTeamId, nextAssigneeId);
+          } else if (nextAssigneeId !== currentAssigneeId) {
+            await updateTaskAssignee(task.id, nextAssigneeId);
+          }
+
+          if (values.status && values.status !== task.status) {
+            await updateTaskStatus(task.id, values.status);
+          }
+
           message.success('Cập nhật công việc thành công');
         }
       } else {
@@ -174,17 +193,17 @@ export default function TaskFormModal({
             showCount
           />
         </Form.Item>
-          
+
         <Form.Item
           name="description"
           label="Mô tả"
-          rules={[{ max: 500, message: 'Mô tả không được vượt quá 500 ký tự' }]}
+          rules={[{ max: 1000, message: 'Mô tả không được vượt quá 1000 ký tự' }]}
         >
           <Input.TextArea
             disabled={!canEditContent}
             rows={3}
-            placeholder="Nhập mô tả chi tiết (tuỳ chọn, tối đa 500 ký tự)..."
-            maxLength={500}
+            placeholder="Nhập mô tả chi tiết (tuỳ chọn, tối đa 1000 ký tự)..."
+            maxLength={1000}
             showCount
           />
         </Form.Item>
@@ -254,9 +273,21 @@ export default function TaskFormModal({
             <Select
               disabled={!canChangeStatus || isReopenBlocked}
               options={[
-                { value: 'TODO', label: 'TODO' },
-                { value: 'IN_PROGRESS', label: 'IN_PROGRESS' },
-                { value: 'DONE', label: 'DONE' },
+                {
+                  value: 'TODO',
+                  label: 'TODO',
+                  disabled: isAssigneeOnly && task?.status !== 'TODO',
+                },
+                {
+                  value: 'IN_PROGRESS',
+                  label: 'IN_PROGRESS',
+                  disabled: isAssigneeOnly && task?.status === 'DONE',
+                },
+                {
+                  value: 'DONE',
+                  label: 'DONE',
+                  disabled: isAssigneeOnly && task?.status === 'TODO',
+                },
               ]}
             />
           </Form.Item>

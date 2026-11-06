@@ -3,10 +3,11 @@ import {
   ArrayUnique,
   IsInt,
   IsOptional,
-  IsIn,
+  IsEnum,
   ArrayNotEmpty,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { TaskStatus } from '@prisma/client';
 
 export class ReorderTasksDto {
   @ApiProperty({
@@ -21,13 +22,13 @@ export class ReorderTasksDto {
 
   @ApiPropertyOptional({
     description: 'Trạng thái cột của các công việc (tuỳ chọn)',
-    enum: ['TODO', 'IN_PROGRESS', 'DONE'],
+    enum: TaskStatus,
   })
   @IsOptional()
-  @IsIn(['TODO', 'IN_PROGRESS', 'DONE'], {
+  @IsEnum(TaskStatus, {
     message: 'Trạng thái phải là TODO, IN_PROGRESS hoặc DONE',
   })
-  status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
+  status?: TaskStatus;
 
   @ApiPropertyOptional({
     description: 'Mã nhóm làm việc (nếu sắp xếp trên bảng nhóm)',
@@ -36,5 +37,4 @@ export class ReorderTasksDto {
   @IsOptional()
   @IsInt({ message: 'Mã nhóm phải là số nguyên' })
   teamId?: number;
-} 
-
+}

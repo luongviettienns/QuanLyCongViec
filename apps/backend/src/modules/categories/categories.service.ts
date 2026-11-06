@@ -25,6 +25,7 @@ export class CategoriesService {
           { name: 'Học tập', color: '#52c41a', userId },
           { name: 'Cá nhân', color: '#fa8c16', userId },
         ],
+        skipDuplicates: true,
       });
     }
 

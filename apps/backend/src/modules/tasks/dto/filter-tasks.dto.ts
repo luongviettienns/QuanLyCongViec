@@ -1,6 +1,7 @@
-import { IsOptional, IsString, MaxLength, IsIn, IsInt } from 'class-validator';
+import { IsOptional, IsString, MaxLength, IsEnum, IsIn, IsInt } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { TaskStatus, TaskPriority } from '@prisma/client';
 
 export class FilterTasksDto {
   @ApiPropertyOptional({
@@ -14,23 +15,23 @@ export class FilterTasksDto {
 
   @ApiPropertyOptional({
     description: 'Trạng thái công việc cần lọc',
-    enum: ['TODO', 'IN_PROGRESS', 'DONE'],
+    enum: TaskStatus,
   })
   @IsOptional()
-  @IsIn(['TODO', 'IN_PROGRESS', 'DONE'], {
+  @IsEnum(TaskStatus, {
     message: 'Trạng thái lọc phải là TODO, IN_PROGRESS hoặc DONE',
   })
-  status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
+  status?: TaskStatus;
 
   @ApiPropertyOptional({
     description: 'Mức độ ưu tiên cần lọc',
-    enum: ['LOW', 'MEDIUM', 'HIGH'],
+    enum: TaskPriority,
   })
   @IsOptional()
-  @IsIn(['LOW', 'MEDIUM', 'HIGH'], {
+  @IsEnum(TaskPriority, {
     message: 'Mức độ ưu tiên lọc phải là LOW, MEDIUM hoặc HIGH',
   })
-  priority?: 'LOW' | 'MEDIUM' | 'HIGH';
+  priority?: TaskPriority;
 
   @ApiPropertyOptional({
     description: 'Mã danh mục cần lọc (ID)',
