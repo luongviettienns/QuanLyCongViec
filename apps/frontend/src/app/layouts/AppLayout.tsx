@@ -24,6 +24,7 @@ import {
   TeamOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../features/auth/hooks/useAuth';
+import { NotificationBell } from '../../features/notifications';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -37,6 +38,7 @@ interface AppLayoutProps {
   loading?: boolean;
   currentNav?: 'dashboard' | 'tasks' | 'teams' | 'categories';
   onNavChange?: (key: 'dashboard' | 'tasks' | 'teams' | 'categories') => void;
+  onNavigateNotification?: (dest: { type: 'task' | 'team'; id: number }) => void;
 }
 
 export default function AppLayout({
@@ -47,6 +49,7 @@ export default function AppLayout({
   loading = false,
   currentNav = 'tasks',
   onNavChange,
+  onNavigateNotification,
 }: AppLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -274,28 +277,40 @@ export default function AppLayout({
             )}
 
             {user ? (
-              <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click']}>
-                <div
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    cursor: 'pointer',
-                    userSelect: 'none',
+              <>
+                <NotificationBell
+                  onNavigate={(dest) => {
+                    if (onNavigateNotification) {
+                      onNavigateNotification(dest);
+                    } else {
+                      if (dest.type === 'task') onNavChange?.('tasks');
+                      else if (dest.type === 'team') onNavChange?.('teams');
+                    }
                   }}
-                >
-                  <Avatar style={{ backgroundColor: '#1677ff' }}>
-                    {user.name
-                      ? user.name.charAt(0).toUpperCase()
-                      : user.email.charAt(0).toUpperCase()}
-                  </Avatar>
-                  {screens.sm && (
-                    <Text strong style={{ maxWidth: 140, margin: 0, lineHeight: '32px' }} ellipsis>
-                      {user.name || user.email}
-                    </Text>
-                  )}
-                </div>
-              </Dropdown>
+                />
+                <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click']}>
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                    }}
+                  >
+                    <Avatar style={{ backgroundColor: '#1677ff' }}>
+                      {user.name
+                        ? user.name.charAt(0).toUpperCase()
+                        : user.email.charAt(0).toUpperCase()}
+                    </Avatar>
+                    {screens.sm && (
+                      <Text strong style={{ maxWidth: 140, margin: 0, lineHeight: '32px' }} ellipsis>
+                        {user.name || user.email}
+                      </Text>
+                    )}
+                  </div>
+                </Dropdown>
+              </>
             ) : (
               <Button icon={<LoginOutlined />} onClick={onOpenAuth}>
                 {screens.sm ? 'Đăng nhập' : undefined}

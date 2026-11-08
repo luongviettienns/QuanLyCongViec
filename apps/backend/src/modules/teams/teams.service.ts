@@ -11,10 +11,14 @@ import { AddMemberDto } from './dto/add-member.dto.js';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto.js';
 import { TransferOwnershipDto } from './dto/transfer-ownership.dto.js';
 import { TeamRole } from '@prisma/client';
+import { NotificationEventService } from '../notifications/services/notification-event.service.js';
 
 @Injectable()
 export class TeamsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationEventService: NotificationEventService,
+  ) {}
 
   async create(userId: number, dto: CreateTeamDto) {
     return this.prisma.$transaction(async (tx) => {
@@ -199,8 +203,20 @@ export class TeamsService {
       throw new ForbiddenException('Chỉ chủ nhóm mới có quyền giải tán nhóm');
     }
 
-    await this.prisma.team.delete({
-      where: { id: teamId },
+    await this.prisma.$transaction(async (tx) => {
+      await this.notificationEventService.publish(
+        {
+          type: 'TEAM_DELETED',
+          actorId: userId,
+          teamId,
+          teamName: team.name,
+        },
+        tx,
+      );
+
+      await tx.team.delete({
+        where: { id: teamId },
+      });
     });
 
     return { message: 'Đã giải tán nhóm thành công' };
@@ -253,7 +269,7 @@ export class TeamsService {
       throw new BadRequestException('Người dùng này đã là thành viên trong nhóm');
     }
 
-    return this.prisma.teamMember.create({
+    const member = await this.prisma.teamMember.create({
       data: {
         teamId,
         userId: targetUser.id,
@@ -265,6 +281,17 @@ export class TeamsService {
         },
       },
     });
+
+    await this.notificationEventService.publish({
+      type: 'TEAM_MEMBER_ADDED',
+      actorId: userId,
+      teamId,
+      teamName: team.name,
+      newMemberId: targetUser.id,
+      role: member.role,
+    });
+
+    return member;
   }
 
   async updateMemberRole(
@@ -312,7 +339,7 @@ export class TeamsService {
       throw new BadRequestException('Không thể tự thay đổi vai trò của chính mình');
     }
 
-    return this.prisma.teamMember.update({
+    const updated = await this.prisma.teamMember.update({
       where: { id: memberId },
       data: {
         role: dto.role,
@@ -323,6 +350,17 @@ export class TeamsService {
         },
       },
     });
+
+    await this.notificationEventService.publish({
+      type: 'TEAM_ROLE_CHANGED',
+      actorId: userId,
+      teamId,
+      teamName: team.name,
+      targetUserId: targetMember.userId,
+      newRole: dto.role,
+    });
+
+    return updated;
   }
 
   async transferOwnership(userId: number, teamId: number, dto: TransferOwnershipDto) {
@@ -387,6 +425,18 @@ export class TeamsService {
           role: TeamRole.ADMIN,
         },
       });
+
+      await this.notificationEventService.publish(
+        {
+          type: 'TEAM_OWNERSHIP_TRANSFERRED',
+          actorId: userId,
+          teamId,
+          teamName: team.name,
+          newOwnerId: dto.newOwnerId,
+          previousOwnerId: userId,
+        },
+        tx,
+      );
 
       return tx.team.findUnique({
         where: { id: teamId },
@@ -466,6 +516,18 @@ export class TeamsService {
       await tx.teamMember.delete({
         where: { id: memberId },
       });
+
+      await this.notificationEventService.publish(
+        {
+          type: 'TEAM_MEMBER_REMOVED',
+          actorId: userId,
+          teamId,
+          teamName: team.name,
+          removedUserId: targetMember.userId,
+          isSelfLeave: isSelfLeaving,
+        },
+        tx,
+      );
     });
 
     return {

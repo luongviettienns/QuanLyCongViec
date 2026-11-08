@@ -10,6 +10,7 @@ export default defineConfig({
       '/categories': 'http://localhost:3000',
       '/teams': 'http://localhost:3000',
       '/auth': 'http://localhost:3000',
+      '/notifications': 'http://localhost:3000',
     },
   },
 
@@ -26,6 +27,12 @@ export default defineConfig({
             }
             if (id.includes('@ant-design/icons')) {
               return 'vendor-icons';
+            }
+            if (id.includes('antd') || id.includes('@rc-component') || id.includes('rc-')) {
+              return 'vendor-antd';
+            }
+            if (id.includes('@dnd-kit')) {
+              return 'vendor-dnd';
             }
           }
         },

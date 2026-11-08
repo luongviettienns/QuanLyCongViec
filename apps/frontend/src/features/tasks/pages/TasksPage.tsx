@@ -1,12 +1,10 @@
-import { lazy } from 'react';
 import TaskToolbar from '../components/TaskToolbar';
+import KanbanBoard from '../components/kanban/KanbanBoard';
+import TaskTable from '../components/table/TaskTable';
+import CategoryManagerModal from '../../categories/components/CategoryManagerModal';
 import type { Task, TaskStatus, StatusFilter, PriorityFilter } from '../types/task.types';
 import type { Category } from '../../categories/types/category.types';
 import type { Team } from '../../teams/types/team.types';
-
-const KanbanBoard = lazy(() => import('../components/kanban/KanbanBoard'));
-const TaskTable = lazy(() => import('../components/table/TaskTable'));
-const CategoryManagerModal = lazy(() => import('../../categories/components/CategoryManagerModal'));
 
 interface TasksPageProps {
   tasks: Task[];

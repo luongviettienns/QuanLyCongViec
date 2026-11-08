@@ -60,6 +60,17 @@ export async function getTasks(
   return handleApiResponse<Task[]>(response, 'Không thể tải danh sách công việc');
 }
 
+export async function getTaskById(id: number, signal?: AbortSignal): Promise<Task> {
+  const response = await fetch(`/tasks/${id}`, {
+    headers: {
+      ...getAuthHeaders(),
+    },
+    signal,
+  });
+
+  return handleApiResponse<Task>(response, `Không thể tải thông tin công việc #${id}`);
+}
+
 export async function createTask(payload: CreateTaskPayload): Promise<Task> {
   const response = await fetch('/tasks', {
     method: 'POST',

@@ -7,6 +7,7 @@ import { TaskModule } from './modules/tasks/task.module.js';
 import { CategoriesModule } from './modules/categories/categories.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { TeamsModule } from './modules/teams/teams.module.js';
+import { NotificationsModule } from './modules/notifications/notifications.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -22,6 +23,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     TaskModule,
     CategoriesModule,
     TeamsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

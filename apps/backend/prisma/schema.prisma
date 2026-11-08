@@ -26,28 +26,42 @@ enum TeamRole {
 
 enum NotificationType {
   TASK_ASSIGNED
+  TASK_UNASSIGNED
   TASK_STATUS_CHANGED
+  TASK_COMPLETED
+  TASK_RETURNED
+  TASK_DEADLINE_CHANGED
+  TASK_DEADLINE_SOON
+  TASK_OVERDUE
+  TASK_DELETED
+  TASK_MOVED_TEAM
+  TEAM_MEMBER_ADDED
+  TEAM_MEMBER_REMOVED
+  TEAM_ROLE_CHANGED
+  TEAM_OWNERSHIP_TRANSFERRED
+  TEAM_DELETED
   TEAM_INVITED
   DEADLINE_SOON
 }
 
 model User {
-  id            Int            @id @default(autoincrement())
-  email         String         @unique
-  name          String
-  passwordHash  String
+  id                     Int            @id @default(autoincrement())
+  email                  String         @unique
+  name                   String
+  passwordHash           String
 
-  createdTasks  Task[]         @relation("CreatedTasks")
-  assignedTasks Task[]         @relation("AssignedTasks")
+  createdTasks           Task[]         @relation("CreatedTasks")
+  assignedTasks          Task[]         @relation("AssignedTasks")
 
-  ownedTeams    Team[]         @relation("TeamOwner")
-  teamMembers   TeamMember[]
+  ownedTeams             Team[]         @relation("TeamOwner")
+  teamMembers            TeamMember[]
 
-  categories    Category[]
-  notifications Notification[]
+  categories             Category[]
+  notifications          Notification[] @relation("NotificationRecipient")
+  triggeredNotifications Notification[] @relation("NotificationActor")
 
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
 
   @@map("User")
 }
@@ -139,24 +153,32 @@ model Task {
 }
 
 model Notification {
-  id        Int              @id @default(autoincrement())
+  id            Int              @id @default(autoincrement())
 
-  userId    Int
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        Int
+  user          User             @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
 
-  type      NotificationType
-  title     String
-  content   String
-  isRead    Boolean          @default(false)
+  actorId       Int?
+  actor         User?            @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
 
-  taskId    Int?
-  task      Task?            @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  type          NotificationType
+  title         String
+  content       String
+  isRead        Boolean          @default(false)
+  readAt        DateTime?
+  invalidatedAt DateTime?
 
-  teamId    Int?
-  team      Team?            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  taskId        Int?
+  task          Task?            @relation(fields: [taskId], references: [id], onDelete: SetNull)
 
-  createdAt DateTime         @default(now())
+  teamId        Int?
+  team          Team?            @relation(fields: [teamId], references: [id], onDelete: SetNull)
 
-  @@index([userId, isRead])
+  eventKey      String?          @unique
+
+  createdAt     DateTime         @default(now())
+
+  @@index([userId, isRead, createdAt])
+  @@index([userId, createdAt])
   @@map("Notification")
 }

@@ -14,6 +14,7 @@ import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { TaskWorkflowPolicy } from '../policies/task-workflow-policy.service.js';
 import { TaskQueryService } from './task-query.service.js';
 import { TaskReorderService } from './task-reorder.service.js';
+import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
 import { type Task, Prisma, TaskStatus } from '@prisma/client';
 
 @Injectable()
@@ -24,6 +25,7 @@ export class TaskWorkflowService {
     private readonly workflowPolicy: TaskWorkflowPolicy,
     private readonly queryService: TaskQueryService,
     private readonly reorderService: TaskReorderService,
+    private readonly notificationEventService: NotificationEventService,
   ) {}
 
   private executeInTransaction<T>(
@@ -156,6 +158,36 @@ export class TaskWorkflowService {
         }
       }
 
+      if (data.status === TaskStatus.DONE) {
+        await this.notificationEventService.publish(
+          {
+            type: 'TASK_COMPLETED',
+            actorId: userId,
+            taskId: updatedCurrentTask.id,
+            taskTitle: updatedCurrentTask.title,
+            teamId: updatedCurrentTask.teamId,
+            creatorId: updatedCurrentTask.userId,
+            assigneeId: updatedCurrentTask.assigneeId,
+          },
+          tx,
+        );
+      } else {
+        await this.notificationEventService.publish(
+          {
+            type: 'TASK_STATUS_CHANGED',
+            actorId: userId,
+            taskId: updatedCurrentTask.id,
+            taskTitle: updatedCurrentTask.title,
+            oldStatus: currentTask.status,
+            newStatus: data.status,
+            teamId: updatedCurrentTask.teamId,
+            creatorId: updatedCurrentTask.userId,
+            assigneeId: updatedCurrentTask.assigneeId,
+          },
+          tx,
+        );
+      }
+
       return updatedCurrentTask;
     });
   }
@@ -186,7 +218,10 @@ export class TaskWorkflowService {
         }
       }
 
-      return tx.task.update({
+      const previousAssigneeId = currentTask.assigneeId;
+      const targetAssigneeId = data.assigneeId ?? null;
+
+      const updatedTask = await tx.task.update({
         where: { id },
         data: {
           assignee: data.assigneeId
@@ -203,6 +238,38 @@ export class TaskWorkflowService {
           },
         },
       });
+
+      if (previousAssigneeId !== targetAssigneeId) {
+        if (previousAssigneeId) {
+          await this.notificationEventService.publish(
+            {
+              type: 'TASK_UNASSIGNED',
+              actorId: userId,
+              taskId: currentTask.id,
+              taskTitle: currentTask.title,
+              previousAssigneeId,
+              teamId: currentTask.teamId,
+            },
+            tx,
+          );
+        }
+
+        if (targetAssigneeId) {
+          await this.notificationEventService.publish(
+            {
+              type: 'TASK_ASSIGNED',
+              actorId: userId,
+              taskId: currentTask.id,
+              taskTitle: currentTask.title,
+              assigneeId: targetAssigneeId,
+              teamId: currentTask.teamId,
+            },
+            tx,
+          );
+        }
+      }
+
+      return updatedTask;
     });
   }
 
@@ -253,23 +320,18 @@ export class TaskWorkflowService {
         );
       }
 
-      const returningUser = await tx.user.findUnique({ where: { id: userId } });
-      const returnerName = returningUser?.name || 'Assignee';
-
-      const notifyUserId = isCreatorMember
-        ? currentTask.userId
-        : (currentTask.team?.ownerId ?? currentTask.userId);
-
-      await tx.notification.create({
-        data: {
-          userId: notifyUserId,
-          type: 'TASK_STATUS_CHANGED',
-          title: `Công việc #${currentTask.id} được trả lại`,
-          content: `${returnerName} đã trả lại công việc "${currentTask.title}". Lý do: ${cleanReason}`,
+      await this.notificationEventService.publish(
+        {
+          type: 'TASK_RETURNED',
+          actorId: userId,
           taskId: currentTask.id,
+          taskTitle: currentTask.title,
           teamId: currentTask.teamId,
+          creatorId: currentTask.userId,
+          reason: cleanReason,
         },
-      });
+        tx,
+      );
 
       return tx.task.update({
         where: { id },
@@ -402,30 +464,9 @@ export class TaskWorkflowService {
             currentTask.status,
           );
           updateData.position = newPosition;
-
-          const sourceScope: Prisma.TaskWhereInput = currentTask.teamId
-            ? { teamId: currentTask.teamId }
-            : { userId: currentTask.userId, teamId: null };
-
-          const updatedTask = await tx.task.update({
-            where: { id },
-            data: updateData,
-            include: {
-              category: true,
-              assignee: {
-                select: { id: true, name: true, email: true },
-              },
-              team: {
-                select: { id: true, name: true },
-              },
-            },
-          });
-
-          await this.reorderService.reindexColumn(tx, sourceScope, currentTask.status, [id]);
-          return updatedTask;
         }
 
-        return tx.task.update({
+        const updatedTask = await tx.task.update({
           where: { id },
           data: updateData,
           include: {
@@ -438,6 +479,64 @@ export class TaskWorkflowService {
             },
           },
         });
+
+        if (isTeamChanged) {
+          const sourceScope: Prisma.TaskWhereInput = currentTask.teamId
+            ? { teamId: currentTask.teamId }
+            : { userId: currentTask.userId, teamId: null };
+
+          await this.reorderService.reindexColumn(tx, sourceScope, currentTask.status, [id]);
+
+          if (effectiveTeamId) {
+            const targetTeam = await tx.team.findUnique({
+              where: { id: effectiveTeamId },
+              select: { name: true },
+            });
+            await this.notificationEventService.publish(
+              {
+                type: 'TASK_MOVED_TEAM',
+                actorId: userId,
+                taskId: currentTask.id,
+                taskTitle: currentTask.title,
+                targetTeamId: effectiveTeamId,
+                targetTeamName: targetTeam?.name || 'Nhóm',
+                assigneeId: effectiveAssigneeId,
+              },
+              tx,
+            );
+          }
+        }
+
+        if (currentTask.assigneeId !== effectiveAssigneeId) {
+          if (currentTask.assigneeId) {
+            await this.notificationEventService.publish(
+              {
+                type: 'TASK_UNASSIGNED',
+                actorId: userId,
+                taskId: currentTask.id,
+                taskTitle: currentTask.title,
+                previousAssigneeId: currentTask.assigneeId,
+                teamId: currentTask.teamId,
+              },
+              tx,
+            );
+          }
+          if (effectiveAssigneeId) {
+            await this.notificationEventService.publish(
+              {
+                type: 'TASK_ASSIGNED',
+                actorId: userId,
+                taskId: currentTask.id,
+                taskTitle: currentTask.title,
+                assigneeId: effectiveAssigneeId,
+                teamId: effectiveTeamId,
+              },
+              tx,
+            );
+          }
+        }
+
+        return updatedTask;
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

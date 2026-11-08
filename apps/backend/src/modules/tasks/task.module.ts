@@ -9,9 +9,10 @@ import { TaskStatsService } from './services/task-stats.service.js';
 import { TaskPolicyService } from './policies/task-policy.service.js';
 import { TaskWorkflowPolicy } from './policies/task-workflow-policy.service.js';
 import { AuthModule } from '../auth/auth.module.js';
+import { NotificationsModule } from '../notifications/notifications.module.js';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, NotificationsModule],
   controllers: [TasksController],
   providers: [
     TasksService,

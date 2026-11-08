@@ -11,6 +11,7 @@ import { UpdateTaskContentDto } from '../dto/update-task-content.dto.js';
 import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { TaskQueryService } from './task-query.service.js';
 import { TaskReorderService } from './task-reorder.service.js';
+import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
 import { type Task, Prisma, TaskStatus, TaskPriority } from '@prisma/client';
 
 @Injectable()
@@ -20,6 +21,7 @@ export class TaskCrudService {
     private readonly policy: TaskPolicyService,
     private readonly queryService: TaskQueryService,
     private readonly reorderService: TaskReorderService,
+    private readonly notificationEventService: NotificationEventService,
   ) {}
 
   private executeInTransaction<T>(
@@ -146,7 +148,7 @@ export class TaskCrudService {
           initialStatus,
         );
 
-        return tx.task.create({
+        const createdTask = await tx.task.create({
           data: {
             userId,
             title: cleanTitle,
@@ -170,6 +172,22 @@ export class TaskCrudService {
             },
           },
         });
+
+        if (createdTask.assigneeId && createdTask.assigneeId !== userId) {
+          await this.notificationEventService.publish(
+            {
+              type: 'TASK_ASSIGNED',
+              actorId: userId,
+              taskId: createdTask.id,
+              taskTitle: createdTask.title,
+              assigneeId: createdTask.assigneeId,
+              teamId: createdTask.teamId,
+            },
+            tx,
+          );
+        }
+
+        return createdTask;
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -296,7 +314,7 @@ export class TaskCrudService {
           }
         }
 
-        return tx.task.update({
+        const updatedTask = await tx.task.update({
           where: { id },
           data: updateData,
           include: {
@@ -309,6 +327,26 @@ export class TaskCrudService {
             },
           },
         });
+
+        const oldDueDateStr = currentTask.dueDate ? currentTask.dueDate.toISOString().slice(0, 10) : null;
+        const newDueDateStr = parsedDueDate ? parsedDueDate.toISOString().slice(0, 10) : null;
+        if (hasDueDate && oldDueDateStr !== newDueDateStr) {
+          await this.notificationEventService.publish(
+            {
+              type: 'TASK_DEADLINE_CHANGED',
+              actorId: userId,
+              taskId: updatedTask.id,
+              taskTitle: updatedTask.title,
+              newDueDate: newDueDateStr,
+              teamId: updatedTask.teamId,
+              assigneeId: updatedTask.assigneeId,
+              creatorId: updatedTask.userId,
+            },
+            tx,
+          );
+        }
+
+        return updatedTask;
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -330,6 +368,19 @@ export class TaskCrudService {
       if (!this.policy.canDeleteTask(userId, taskToDelete)) {
         throw new ForbiddenException('Bạn không có quyền xóa công việc này');
       }
+
+      await this.notificationEventService.publish(
+        {
+          type: 'TASK_DELETED',
+          actorId: userId,
+          taskId: taskToDelete.id,
+          taskTitle: taskToDelete.title,
+          teamId: taskToDelete.teamId,
+          assigneeId: taskToDelete.assigneeId,
+          creatorId: taskToDelete.userId,
+        },
+        tx,
+      );
 
       const remainingTasksScope: Prisma.TaskWhereInput = taskToDelete.teamId
         ? { teamId: taskToDelete.teamId }

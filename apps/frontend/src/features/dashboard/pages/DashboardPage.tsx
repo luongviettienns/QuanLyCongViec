@@ -26,6 +26,7 @@ const { Title, Paragraph } = Typography;
 interface DashboardPageProps {
   onNavigateToTasks?: (status?: TaskStatus) => void;
   onOpenCreateTask?: () => void;
+  active?: boolean;
 }
 
 function sanitizeNumber(val: unknown): number {
@@ -74,6 +75,7 @@ function sanitizeStats(raw: Partial<TaskStats> | null | undefined): TaskStats {
 export default function DashboardPage({
   onNavigateToTasks,
   onOpenCreateTask,
+  active = true,
 }: DashboardPageProps) {
   const [stats, setStats] = useState<TaskStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -109,6 +111,7 @@ export default function DashboardPage({
   }, [fetchStats]);
 
   useEffect(() => {
+    if (!active) return;
     const controller = new AbortController();
 
     async function load() {
@@ -121,7 +124,7 @@ export default function DashboardPage({
     return () => {
       controller.abort();
     };
-  }, [fetchStats]);
+  }, [active, fetchStats]);
 
   const safeStats = stats || sanitizeStats(null);
 
