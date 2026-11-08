@@ -57,4 +57,5 @@ jobs:
           DATABASE_URL: "postgresql://postgres:password123@localhost:5432/QuanLyCV_test?schema=public"
           JWT_SECRET: "ci_super_secret_jwt_key_for_testing_123456789"
           JWT_EXPIRATION: "7d"
+          INTERNAL_API_KEY: "ci_internal_secret_api_key_test"
         run: npm test
