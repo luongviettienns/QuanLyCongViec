@@ -21,6 +21,7 @@ import {
   TagsOutlined,
 } from '@ant-design/icons';
 import { useCategories } from '../hooks/useCategories';
+import { trimmedLengthRule } from '../../../shared/utils/validation.utils';
 import {
   CATEGORY_PRESET_COLORS,
   type Category,
@@ -197,8 +198,7 @@ export default function CategoryManagerModal({
                 name="name"
                 rules={[
                   { required: true, message: 'Nhập tên danh mục' },
-                  { min: 2, message: 'Tối thiểu 2 ký tự' },
-                  { max: 50, message: 'Tối đa 50 ký tự' },
+                  trimmedLengthRule({ label: 'Tên danh mục', min: 2, max: 50 }),
                 ]}
                 style={{ flex: 1, margin: 0 }}
               >
@@ -267,8 +267,7 @@ export default function CategoryManagerModal({
             label="Tên danh mục"
             rules={[
               { required: true, message: 'Vui lòng nhập tên danh mục' },
-              { min: 2, message: 'Tối thiểu 2 ký tự' },
-              { max: 50, message: 'Tối đa 50 ký tự' },
+              trimmedLengthRule({ label: 'Tên danh mục', min: 2, max: 50 }),
             ]}
           >
             <Input placeholder="Nhập tên danh mục" />

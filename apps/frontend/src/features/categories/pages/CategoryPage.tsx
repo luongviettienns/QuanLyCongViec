@@ -23,6 +23,7 @@ import {
   AppstoreOutlined,
 } from '@ant-design/icons';
 import { useCategories } from '../hooks/useCategories';
+import { trimmedLengthRule } from '../../../shared/utils/validation.utils';
 import {
   CATEGORY_PRESET_COLORS,
   type Category,
@@ -206,8 +207,7 @@ export default function CategoryPage({ onChanged }: CategoryPageProps) {
               label="Tên danh mục"
               rules={[
                 { required: true, message: 'Vui lòng nhập tên danh mục' },
-                { min: 2, message: 'Tối thiểu 2 ký tự' },
-                { max: 50, message: 'Tối đa 50 ký tự' },
+                trimmedLengthRule({ label: 'Tên danh mục', min: 2, max: 50 }),
               ]}
               style={{ flex: 1, margin: 0 }}
             >
@@ -356,8 +356,7 @@ export default function CategoryPage({ onChanged }: CategoryPageProps) {
             label="Tên danh mục"
             rules={[
               { required: true, message: 'Vui lòng nhập tên danh mục' },
-              { min: 2, message: 'Tối thiểu 2 ký tự' },
-              { max: 50, message: 'Tối đa 50 ký tự' },
+              trimmedLengthRule({ label: 'Tên danh mục', min: 2, max: 50 }),
             ]}
           >
             <Input placeholder="Nhập tên danh mục" size="large" />

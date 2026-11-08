@@ -7,6 +7,7 @@ import {
   MaxLength,
   Matches,
   IsInt,
+  Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskStatus, TaskPriority } from '@prisma/client';
@@ -75,6 +76,7 @@ export class CreateTaskDto {
   })
   @IsOptional()
   @IsInt({ message: 'Mã danh mục phải là số nguyên' })
+  @Min(1, { message: 'Mã danh mục phải là số nguyên dương' })
   categoryId?: number;
 
   @ApiPropertyOptional({
@@ -83,6 +85,7 @@ export class CreateTaskDto {
   })
   @IsOptional()
   @IsInt({ message: 'Mã nhóm phải là số nguyên' })
+  @Min(1, { message: 'Mã nhóm phải là số nguyên dương' })
   teamId?: number;
 
   @ApiPropertyOptional({
@@ -91,5 +94,6 @@ export class CreateTaskDto {
   })
   @IsOptional()
   @IsInt({ message: 'Mã người được phân công phải là số nguyên' })
+  @Min(1, { message: 'Mã người được phân công phải là số nguyên dương' })
   assigneeId?: number;
 }

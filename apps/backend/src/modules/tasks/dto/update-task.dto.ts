@@ -6,6 +6,8 @@ import {
   MaxLength,
   Matches,
   IsInt,
+  Min,
+  ValidateIf,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskStatus, TaskPriority } from '@prisma/client';
@@ -15,7 +17,8 @@ export class UpdateTaskDto {
     description: 'Tiêu đề công việc mới (từ 3 đến 100 ký tự)',
     example: 'Học NestJS nâng cao',
   })
-  @IsOptional()
+  // Non-nullable: only `undefined` skips validation, `null` must be rejected (400) instead of crashing the service.
+  @ValidateIf((_, value) => value !== undefined)
   @IsString({ message: 'Tiêu đề phải là chuỗi ký tự' })
   @MinLength(3, { message: 'Tiêu đề phải có ít nhất 3 ký tự' })
   @MaxLength(100, { message: 'Tiêu đề không được vượt quá 100 ký tự' })
@@ -34,7 +37,7 @@ export class UpdateTaskDto {
     description: 'Trạng thái công việc mới',
     enum: TaskStatus,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsEnum(TaskStatus, {
     message: 'Trạng thái phải là một trong các giá trị: TODO, IN_PROGRESS, DONE',
   })
@@ -60,7 +63,7 @@ export class UpdateTaskDto {
     description: 'Mức độ ưu tiên mới của công việc',
     enum: TaskPriority,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsEnum(TaskPriority, {
     message: 'Mức độ ưu tiên phải là một trong các giá trị: LOW, MEDIUM, HIGH',
   })
@@ -72,6 +75,7 @@ export class UpdateTaskDto {
   })
   @IsOptional()
   @IsInt({ message: 'Mã danh mục phải là số nguyên' })
+  @Min(1, { message: 'Mã danh mục phải là số nguyên dương' })
   categoryId?: number | null;
 
   @ApiPropertyOptional({
@@ -80,6 +84,7 @@ export class UpdateTaskDto {
   })
   @IsOptional()
   @IsInt({ message: 'Mã nhóm phải là số nguyên' })
+  @Min(1, { message: 'Mã nhóm phải là số nguyên dương' })
   teamId?: number | null;
 
   @ApiPropertyOptional({
@@ -88,5 +93,6 @@ export class UpdateTaskDto {
   })
   @IsOptional()
   @IsInt({ message: 'Mã người được phân công phải là số nguyên' })
+  @Min(1, { message: 'Mã người được phân công phải là số nguyên dương' })
   assigneeId?: number | null;
 }

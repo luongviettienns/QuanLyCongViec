@@ -1,4 +1,5 @@
 import { Modal, Form, Input, Select, type FormInstance } from 'antd';
+import { trimmedLengthRule } from '../../../shared/utils/validation.utils';
 import type {
   CreateTeamPayload,
   UpdateTeamPayload,
@@ -56,13 +57,16 @@ export function TeamModals({
             label="Tên nhóm"
             rules={[
               { required: true, message: 'Vui lòng nhập tên nhóm' },
-              { min: 2, message: 'Tên nhóm tối thiểu 2 ký tự' },
-              { max: 50, message: 'Tên nhóm tối đa 50 ký tự' },
+              trimmedLengthRule({ label: 'Tên nhóm', min: 2, max: 50 }),
             ]}
           >
             <Input placeholder="Ví dụ: Đội ngũ Phát triển Web" />
           </Form.Item>
-          <Form.Item name="description" label="Mô tả nhóm" rules={[{ max: 255, message: 'Tối đa 255 ký tự' }]}>
+          <Form.Item
+            name="description"
+            label="Mô tả nhóm"
+            rules={[trimmedLengthRule({ label: 'Mô tả nhóm', max: 255 })]}
+          >
             <Input.TextArea placeholder="Mô tả mục tiêu hoặc phạm vi công việc của nhóm" rows={3} />
           </Form.Item>
         </Form>
@@ -84,13 +88,16 @@ export function TeamModals({
             label="Tên nhóm"
             rules={[
               { required: true, message: 'Vui lòng nhập tên nhóm' },
-              { min: 2, message: 'Tên nhóm tối thiểu 2 ký tự' },
-              { max: 50, message: 'Tên nhóm tối đa 50 ký tự' },
+              trimmedLengthRule({ label: 'Tên nhóm', min: 2, max: 50 }),
             ]}
           >
             <Input />
           </Form.Item>
-          <Form.Item name="description" label="Mô tả nhóm" rules={[{ max: 255, message: 'Tối đa 255 ký tự' }]}>
+          <Form.Item
+            name="description"
+            label="Mô tả nhóm"
+            rules={[trimmedLengthRule({ label: 'Mô tả nhóm', max: 255 })]}
+          >
             <Input.TextArea rows={3} />
           </Form.Item>
         </Form>

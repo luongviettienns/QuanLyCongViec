@@ -1,4 +1,4 @@
-import { IsOptional, IsInt } from 'class-validator';
+import { IsOptional, IsInt, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class MoveTaskTeamDto {
@@ -8,6 +8,7 @@ export class MoveTaskTeamDto {
   })
   @IsOptional()
   @IsInt({ message: 'Mã nhóm phải là số nguyên' })
+  @Min(1, { message: 'Mã nhóm phải là số nguyên dương' })
   teamId?: number | null;
 
   @ApiPropertyOptional({
@@ -16,5 +17,6 @@ export class MoveTaskTeamDto {
   })
   @IsOptional()
   @IsInt({ message: 'Mã người được phân công phải là số nguyên' })
+  @Min(1, { message: 'Mã người được phân công phải là số nguyên dương' })
   assigneeId?: number | null;
 }
