@@ -6,7 +6,7 @@ import type { Team } from '../../teams/types/team.types';
 import { getTasks } from '../api/tasks.api';
 import { getCategories } from '../../categories/api/categories.api';
 import { getTeams } from '../../teams/api/teams.api';
-import { UnauthorizedError } from '../../auth/api/auth.api';
+import { UnauthorizedError } from '../../../shared/api';
 
 export function useTaskQueries(isAuthenticated: boolean) {
   const [tasks, setTasks] = useState<Task[]>([]);

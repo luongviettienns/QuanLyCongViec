@@ -3,7 +3,7 @@ import type {
   CreateCategoryPayload,
   UpdateCategoryPayload,
 } from '../types/category.types';
-import { getAuthHeaders, handleApiResponse } from '../../auth/api/auth.api';
+import { getAuthHeaders, handleApiResponse } from '../../../shared/api';
 
 export async function getCategories(signal?: AbortSignal): Promise<Category[]> {
   const response = await fetch('/categories', {

@@ -2,7 +2,7 @@ import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { message } from 'antd';
 import type { Task, TaskStatus } from '../types/task.types';
 import { updateTaskStatus, reorderTasks } from '../api/tasks.api';
-import { UnauthorizedError } from '../../auth/api/auth.api';
+import { UnauthorizedError } from '../../../shared/api';
 
 export function useTaskBoard(
   isAuthenticated: boolean,

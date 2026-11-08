@@ -6,7 +6,7 @@ import type {
 import {
   getAuthHeaders,
   handleApiResponse,
-} from '../../auth/api/auth.api';
+} from '../../../shared/api';
 
 export async function getNotifications(
   params?: QueryNotificationsParams,

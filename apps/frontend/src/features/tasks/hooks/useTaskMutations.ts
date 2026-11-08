@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { message } from 'antd';
 import { deleteTask } from '../api/tasks.api';
-import { UnauthorizedError } from '../../auth/api/auth.api';
+import { UnauthorizedError } from '../../../shared/api';
 
 export function useTaskMutations(isAuthenticated: boolean) {
   const handleDeleteTask = useCallback(
