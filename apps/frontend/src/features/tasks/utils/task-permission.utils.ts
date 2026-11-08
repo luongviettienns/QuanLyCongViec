@@ -17,8 +17,10 @@ export interface TaskPermissions {
   canDelete: boolean;
   /** Whether the user can return this task to the creator */
   canReturnTask: boolean;
-  /** Whether the user can change the status in general */
+  /** Whether the user can change task status across columns (canTransition) */
   canChangeStatus: boolean;
+  /** Whether the user can reorder tasks within the column (canReorder) */
+  canReorder: boolean;
   /** Whether the user can pick up and drag the card on the Kanban board */
   canDrag: boolean;
   /** If dragging is disabled, the reason to explain in a tooltip */
@@ -43,7 +45,7 @@ const ALL_STATUSES: readonly TaskStatus[] = ['TODO', 'IN_PROGRESS', 'DONE'];
 
 /**
  * Resolves all actor roles a user has with respect to a task.
- * Perfectly mirrors backend TaskWorkflowPolicy.getActorRoles.
+ * Mirrors backend TaskWorkflowPolicy.getActorRoles.
  */
 export function getTaskActorRoles(
   user: User | null | undefined,
@@ -70,16 +72,20 @@ export function getTaskActorRoles(
   }
 
   // Team task
-  const resolvedTeam = team ?? (task.team ? ({ id: task.team.id, ownerId: (task.team as { ownerId?: number }).ownerId ?? -1, members: [] } as unknown as Team) : null);
-  
+  const resolvedTeam = team ?? (task.team ? ({
+    id: task.team.id,
+    ownerId: (task.team as { ownerId?: number }).ownerId ?? -1,
+    members: [],
+  } as unknown as Team) : null);
+
   const isOwner = Boolean(
-    resolvedTeam && (resolvedTeam.ownerId === userId || (resolvedTeam.owner && resolvedTeam.owner.id === userId))
+    resolvedTeam && (resolvedTeam.ownerId === userId || (resolvedTeam.owner && resolvedTeam.owner.id === userId)),
   );
 
   const isMember = Boolean(
     isOwner ||
     resolvedTeam?.members?.some((m) => m.userId === userId) ||
-    resolvedTeam?.currentUserRole !== undefined
+    resolvedTeam?.currentUserRole !== undefined,
   );
 
   if (!isMember) {
@@ -89,7 +95,7 @@ export function getTaskActorRoles(
   const isAdmin = Boolean(
     isOwner ||
     resolvedTeam?.currentUserRole === 'ADMIN' ||
-    resolvedTeam?.members?.some((m) => m.userId === userId && m.role === 'ADMIN')
+    resolvedTeam?.members?.some((m) => m.userId === userId && m.role === 'ADMIN'),
   );
 
   const roles: TaskActorRole[] = [];
@@ -112,7 +118,7 @@ export function getTaskActorRoles(
 
 /**
  * Checks whether an actor role can transition a task from currentStatus to nextStatus.
- * Perfectly mirrors backend TaskWorkflowPolicy.canRoleTransition.
+ * Used for status transitions across different columns.
  */
 function canRoleTransition(
   role: TaskActorRole,
@@ -124,9 +130,6 @@ function canRoleTransition(
   }
 
   if (role === 'ASSIGNEE') {
-    if (currentStatus === nextStatus) {
-      return currentStatus !== 'DONE';
-    }
     return ASSIGNEE_ALLOWED_TRANSITIONS[currentStatus].includes(nextStatus);
   }
 
@@ -134,8 +137,51 @@ function canRoleTransition(
 }
 
 /**
- * Checks whether a user can transition a task from its current status to nextStatus.
- * Perfectly mirrors backend TaskWorkflowPolicy.canTransition.
+ * Checks whether a user can reorder a task within its column (canReorder).
+ * Perfectly matches backend TaskPolicyService.canReorder:
+ * - Personal task: Only creator.
+ * - Team task: Any team member.
+ */
+export function canReorderTask(
+  user: User | null | undefined,
+  task: Task,
+  team?: Team | null,
+): boolean {
+  if (!user) {
+    return false;
+  }
+
+  const userId = user.id;
+
+  // Personal task: Only creator can reorder
+  if (!task.teamId && !team) {
+    return task.userId === userId;
+  }
+
+  // Team task: Any team member can reorder
+  const resolvedTeam = team ?? (task.team ? ({
+    id: task.team.id,
+    ownerId: (task.team as { ownerId?: number }).ownerId ?? -1,
+    members: [],
+  } as unknown as Team) : null);
+
+  const isOwner = Boolean(
+    resolvedTeam && (resolvedTeam.ownerId === userId || (resolvedTeam.owner && resolvedTeam.owner.id === userId)),
+  );
+
+  return Boolean(
+    isOwner ||
+    resolvedTeam?.currentUserRole !== undefined ||
+    resolvedTeam?.members?.some((m) => m.userId === userId),
+  );
+}
+
+/**
+ * Checks whether a user can transition a task to nextStatus (canTransition).
+ * - Same column (currentStatus === nextStatus): delegates to canReorderTask.
+ * - Different column (cross-column transition):
+ *   - Personal task: Only creator.
+ *   - Team task: OWNER / ADMIN / CREATOR (all transitions), ASSIGNEE (TODO->IN_PROGRESS, IN_PROGRESS->DONE), MEMBER (false).
  */
 export function canTransitionTask(
   user: User | null | undefined,
@@ -147,23 +193,23 @@ export function canTransitionTask(
     return false;
   }
 
+  // Reordering within the same column
+  if (task.status === nextStatus) {
+    return canReorderTask(user, task, team);
+  }
+
+  // Cross-column transition for personal task
+  if (!task.teamId && !team) {
+    return task.userId === user.id;
+  }
+
+  // Cross-column transition for team task
   const roles = getTaskActorRoles(user, task, team);
   if (roles.length === 0) {
     return false;
   }
 
   return roles.some((role) => canRoleTransition(role, task.status, nextStatus));
-}
-
-/**
- * Checks whether a user can reorder a task in its current column.
- */
-export function canReorderTask(
-  user: User | null | undefined,
-  task: Task,
-  team?: Team | null,
-): boolean {
-  return canTransitionTask(user, task, task.status, team);
 }
 
 /**
@@ -177,11 +223,14 @@ export function getAllowedNextStatuses(
   if (!user) {
     return [];
   }
-  return ALL_STATUSES.filter((status) => canTransitionTask(user, task, status, team));
+  return ALL_STATUSES.filter(
+    (status) => status !== task.status && canTransitionTask(user, task, status, team),
+  );
 }
 
 /**
  * Evaluates full permissions and UX affordances for a task given the current user and team context.
+ * Distinctly separates canReorder (within column) and canChangeStatus (cross-column transitions).
  */
 export function getTaskPermissions(
   user: User | null | undefined,
@@ -197,6 +246,7 @@ export function getTaskPermissions(
       canDelete: false,
       canReturnTask: false,
       canChangeStatus: false,
+      canReorder: false,
       canDrag: false,
       dragDisabledReason: 'Vui lòng đăng nhập để thao tác',
       allowedNextStatuses: [],
@@ -211,6 +261,7 @@ export function getTaskPermissions(
   const isManager = isOwner || isAdmin || isCreator;
   const isTeamTask = Boolean(task.teamId || team);
 
+  // Allowed cross-column transitions
   const allowedNextStatuses = ALL_STATUSES.filter(
     (status) => status !== task.status && canTransitionTask(user, task, status, team),
   );
@@ -218,7 +269,8 @@ export function getTaskPermissions(
   const canEditContent = !isTeamTask ? isCreator : isManager;
   const canChangeAssignee = !isTeamTask ? isCreator : isManager;
   const canDelete = !isTeamTask ? isCreator : isManager;
-  const canChangeStatus = !isTeamTask ? isCreator : isManager || (isAssignee && task.status !== 'DONE');
+  const canChangeStatus = allowedNextStatuses.length > 0;
+  const canReorder = canReorderTask(user, task, team);
 
   const canReturnTask = Boolean(
     isTeamTask &&
@@ -228,20 +280,13 @@ export function getTaskPermissions(
     roles.length > 0,
   );
 
-  // Can this task be dragged on Kanban?
-  // Only if the user can move it to another status OR reorder within the same status.
-  const canMove = allowedNextStatuses.length > 0;
-  const canReorder = canReorderTask(user, task, team);
-  const canDrag = canMove || canReorder;
+  // User can drag card on Kanban if they can reorder in column OR transition to another column
+  const canDrag = canReorder || canChangeStatus;
 
   let dragDisabledReason: string | undefined;
   if (!canDrag) {
     if (roles.length === 0) {
       dragDisabledReason = 'Bạn không có quyền thao tác trên công việc này';
-    } else if (task.status === 'DONE' && isAssignee && !isManager) {
-      dragDisabledReason = 'Công việc đã hoàn thành. Chỉ người tạo hoặc quản trị viên mới có thể mở lại.';
-    } else if (!isManager && !isAssignee) {
-      dragDisabledReason = 'Chỉ người tạo, người được giao hoặc quản trị viên mới có thể chuyển trạng thái.';
     } else {
       dragDisabledReason = 'Không thể di chuyển công việc này';
     }
@@ -273,6 +318,7 @@ export function getTaskPermissions(
     canDelete,
     canReturnTask,
     canChangeStatus,
+    canReorder,
     canDrag,
     dragDisabledReason,
     allowedNextStatuses,
