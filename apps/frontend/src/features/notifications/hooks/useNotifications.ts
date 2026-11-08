@@ -24,6 +24,7 @@ export function useNotifications() {
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const nextCursorRef = useRef<number | null>(null);
+  const inFlightMarkReadRef = useRef<Set<number>>(new Set());
 
   const fetchUnreadCount = useCallback(async () => {
     if (!user) return;
@@ -94,26 +95,48 @@ export function useNotifications() {
 
   const markRead = useCallback(
     async (id: number) => {
-      // 1. Optimistic update: mark ONLY this specific notification as read
+      // 1. Vô hiệu hóa thao tác lặp trên cùng ID khi request còn đang chạy
+      if (inFlightMarkReadRef.current.has(id)) {
+        return;
+      }
+
+      // 2. Kiểm tra trạng thái: nếu notification đã đọc trước đó, không làm gì
+      const target = notifications.find((item) => item.id === id);
+      if (target && target.isRead) {
+        return;
+      }
+
+      inFlightMarkReadRef.current.add(id);
+
+      // Chỉ giảm unreadCount khi xác định notification thực sự đang chưa đọc
+      const wasActuallyUnread = target ? !target.isRead : false;
+
+      // 3. Optimistic update: chỉ cập nhật item tương ứng
       setNotifications((current) =>
         current.map((item) => (item.id === id ? { ...item, isRead: true } : item)),
       );
-      setUnreadCount((current) => Math.max(0, current - 1));
+      if (wasActuallyUnread) {
+        setUnreadCount((current) => Math.max(0, current - 1));
+      }
 
       try {
         await markNotificationAsRead(id);
       } catch {
-        // 2. Targeted rollback on error:
-        // Revert ONLY this specific item without clobbering concurrent updates from other requests
-        setNotifications((current) =>
-          current.map((item) => (item.id === id ? { ...item, isRead: false } : item)),
-        );
-        // 3. Refetch fresh source of truth from server
+        // 4. Targeted rollback: chỉ hoàn nguyên nếu trước đó thực sự chưa đọc
+        if (wasActuallyUnread) {
+          setNotifications((current) =>
+            current.map((item) => (item.id === id ? { ...item, isRead: false } : item)),
+          );
+          setUnreadCount((current) => current + 1);
+        }
+        // 5. Refetch fresh source of truth from server
         void fetchUnreadCount();
         void loadNotifications(true);
+      } finally {
+        inFlightMarkReadRef.current.delete(id);
       }
     },
-    [fetchUnreadCount, loadNotifications],
+    [notifications, fetchUnreadCount, loadNotifications],
   );
 
   const markAllRead = useCallback(async () => {

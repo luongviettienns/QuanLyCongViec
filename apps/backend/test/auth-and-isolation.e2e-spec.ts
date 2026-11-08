@@ -13,13 +13,13 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
   const userACredentials = {
     name: 'User A',
-    email: `usera_${timestamp}@taskflow.test`,
+    email: `auth_usera_${timestamp}@taskflow.test`,
     password: 'Password123!',
   };
 
   const userBCredentials = {
     name: 'User B',
-    email: `userb_${timestamp}@taskflow.test`,
+    email: `auth_userb_${timestamp}@taskflow.test`,
     password: 'Password123!',
   };
 
