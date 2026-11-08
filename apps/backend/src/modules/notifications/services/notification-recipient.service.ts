@@ -186,6 +186,19 @@ export class NotificationRecipientService {
       }
     }
 
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+
+    if (prisma.user?.findMany) {
+      const existingUsers = await prisma.user.findMany({
+        where: { id: { in: uniqueIds } },
+        select: { id: true },
+      });
+      const validUserIds = new Set(existingUsers.map((u) => u.id));
+      return uniqueIds.filter((id) => validUserIds.has(id));
+    }
+
     return uniqueIds;
   }
 }

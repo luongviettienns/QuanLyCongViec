@@ -10,7 +10,7 @@ import {
   getAuthHeaders,
   handleApiResponse,
   handleVoidApiResponse,
-} from '../../auth/api/auth.api';
+} from '../../../shared/api';
 
 export async function getTeams(signal?: AbortSignal): Promise<Team[]> {
   const response = await fetch('/teams', {

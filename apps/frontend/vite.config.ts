@@ -19,7 +19,7 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (/[\\/](react|react-dom|scheduler)[\\/]/.test(id)) {
+            if (/[\\/](react|react-dom|scheduler|react-router|react-router-dom)[\\/]/.test(id)) {
               return 'vendor-react';
             }
             if (id.includes('chart.js') || id.includes('react-chartjs-2')) {

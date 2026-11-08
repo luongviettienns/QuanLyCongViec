@@ -12,7 +12,7 @@ import {
   deleteCategory,
 } from '../api/categories.api';
 import { useAuth } from '../../auth/hooks/useAuth';
-import { UnauthorizedError } from '../../auth/api/auth.api';
+import { UnauthorizedError } from '../../../shared/api';
 
 export function useCategories() {
   const { user } = useAuth();
