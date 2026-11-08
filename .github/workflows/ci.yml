@@ -39,15 +39,17 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Run Linters
-        run: npm run lint
-
       - name: Setup Database Schema
         env:
           DATABASE_URL: "postgresql://postgres:password123@localhost:5432/QuanLyCV_test?schema=public"
         run: |
           npx prisma generate --schema=apps/backend/prisma/schema.prisma
           npx prisma migrate deploy --schema=apps/backend/prisma/schema.prisma
+
+      - name: Run Linters & Typechecks
+        run: |
+          npm run lint
+          npm run typecheck
 
       - name: Build Monorepo Workspaces
         run: npm run build
