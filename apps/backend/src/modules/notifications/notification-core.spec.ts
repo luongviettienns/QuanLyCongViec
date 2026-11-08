@@ -236,6 +236,25 @@ describe('Notification Core Module Unit Tests', () => {
       expect(res.readAt).toBe(existingReadDate);
       expect(mockPrisma.notification.update).not.toHaveBeenCalled();
     });
+
+    it('findAllForUser: cursor pagination correctly sets nextCursor to the last item returned without skipping', async () => {
+      // Mock 4 records returned when limit is 3 (limit + 1)
+      const mockItems = [
+        { id: 10, userId: 1, isRead: false },
+        { id: 9, userId: 1, isRead: false },
+        { id: 8, userId: 1, isRead: false },
+        { id: 7, userId: 1, isRead: false }, // 4th peek item
+      ];
+      mockPrisma.notification.findMany.mockResolvedValue([...mockItems]);
+      mockPrisma.notification.count.mockResolvedValue(10);
+
+      const res = await notificationsService.findAllForUser(1, { limit: 3 });
+
+      // Page 1 should return items [10, 9, 8] and nextCursor should be 8 (the last returned item)
+      expect(res.items.map((i) => i.id)).toEqual([10, 9, 8]);
+      expect(res.nextCursor).toBe(8);
+      expect(res.unreadCount).toBe(10);
+    });
   });
 
   describe('NotificationEventService Transactional Idempotency', () => {

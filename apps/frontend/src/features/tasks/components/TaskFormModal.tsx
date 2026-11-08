@@ -15,10 +15,8 @@ import type { Category } from '../../categories/types/category.types';
 import type { Team } from '../../teams/types/team.types';
 import {
   createTask,
-  updateTaskContent,
+  updateTask,
   updateTaskStatus,
-  updateTaskAssignee,
-  moveTaskTeam,
 } from '../api/tasks.api';
 import { useAuth } from '../../auth/hooks/useAuth';
 
@@ -72,29 +70,20 @@ export default function TaskFormModal({
             message.success('Cập nhật trạng thái công việc thành công');
           }
         } else {
-          await updateTaskContent(task.id, {
+          const nextTeamId = values.teamId ?? null;
+          const nextAssigneeId = nextTeamId ? (values.assigneeId ?? null) : null;
+
+          await updateTask(task.id, {
             title: values.title,
             description: values.description ?? null,
             priority: values.priority || 'MEDIUM',
             categoryId: values.categoryId ?? null,
+            teamId: nextTeamId,
+            assigneeId: nextAssigneeId,
+            status: values.status,
             startDate: values.startDate ? values.startDate.format('YYYY-MM-DD') : null,
             dueDate: values.dueDate ? values.dueDate.format('YYYY-MM-DD') : null,
           });
-
-          const nextTeamId = values.teamId ?? null;
-          const nextAssigneeId = nextTeamId ? (values.assigneeId ?? null) : null;
-          const currentTeamId = task.teamId ?? null;
-          const currentAssigneeId = task.assigneeId ?? null;
-
-          if (nextTeamId !== currentTeamId) {
-            await moveTaskTeam(task.id, nextTeamId, nextAssigneeId);
-          } else if (nextAssigneeId !== currentAssigneeId) {
-            await updateTaskAssignee(task.id, nextAssigneeId);
-          }
-
-          if (values.status && values.status !== task.status) {
-            await updateTaskStatus(task.id, values.status);
-          }
 
           message.success('Cập nhật công việc thành công');
         }

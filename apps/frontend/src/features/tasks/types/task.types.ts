@@ -60,7 +60,7 @@ export interface CreateTaskPayload {
 
 export interface UpdateTaskPayload {
   title?: string;
-  description?: string;
+  description?: string | null;
   status?: TaskStatus;
   priority?: TaskPriority;
   categoryId?: number | null;

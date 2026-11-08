@@ -43,8 +43,9 @@ export class NotificationsService {
 
     let nextCursor: number | null = null;
     if (items.length > limit) {
-      const nextItem = items.pop();
-      nextCursor = nextItem ? nextItem.id : null;
+      items.pop(); // Discard the extra peek item
+      const lastItem = items[items.length - 1];
+      nextCursor = lastItem ? lastItem.id : null;
     }
 
     const unreadCount = await this.getUnreadCount(userId);
