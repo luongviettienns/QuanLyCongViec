@@ -94,16 +94,25 @@ export function useNotifications() {
 
   const markRead = useCallback(
     async (id: number) => {
+      let previousNotifications: Notification[] = [];
+      let previousCount = 0;
+
       // Optimistic update
-      setNotifications((prev) =>
-        prev.map((item) => (item.id === id ? { ...item, isRead: true } : item)),
-      );
-      setUnreadCount((prev) => Math.max(0, prev - 1));
+      setNotifications((prev) => {
+        previousNotifications = prev;
+        return prev.map((item) => (item.id === id ? { ...item, isRead: true } : item));
+      });
+      setUnreadCount((prev) => {
+        previousCount = prev;
+        return Math.max(0, prev - 1);
+      });
 
       try {
         await markNotificationAsRead(id);
       } catch {
-        // Rollback on error if needed or re-fetch
+        // Rollback on error to restore exact item state
+        setNotifications(previousNotifications);
+        setUnreadCount(previousCount);
         fetchUnreadCount();
       }
     },
@@ -111,13 +120,25 @@ export function useNotifications() {
   );
 
   const markAllRead = useCallback(async () => {
+    let previousNotifications: Notification[] = [];
+    let previousCount = 0;
+
     // Optimistic update
-    setNotifications((prev) => prev.map((item) => ({ ...item, isRead: true })));
-    setUnreadCount(0);
+    setNotifications((prev) => {
+      previousNotifications = prev;
+      return prev.map((item) => ({ ...item, isRead: true }));
+    });
+    setUnreadCount((prev) => {
+      previousCount = prev;
+      return 0;
+    });
 
     try {
       await markAllNotificationsAsRead();
     } catch {
+      // Rollback on error to restore exact item state
+      setNotifications(previousNotifications);
+      setUnreadCount(previousCount);
       fetchUnreadCount();
     }
   }, [fetchUnreadCount]);

@@ -6,8 +6,10 @@ import {
   Param,
   Query,
   Body,
+  Headers,
   ParseIntPipe,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificationsService } from './services/notifications.service.js';
@@ -29,7 +31,13 @@ export class NotificationsController {
 
   @ApiOperation({ summary: 'Kích hoạt quét và gửi nhắc nhở deadline' })
   @Post('reminders/trigger')
-  triggerDeadlineReminders() {
+  triggerDeadlineReminders(
+    @Headers('x-internal-key') internalKey?: string,
+  ) {
+    const validKey = process.env.INTERNAL_API_KEY || 'taskflow-internal-secret';
+    if (!internalKey || internalKey !== validKey) {
+      throw new ForbiddenException('Yêu cầu mã xác thực nội bộ hợp lệ để kích hoạt quét nhắc nhở');
+    }
     return this.deadlineReminderService.checkAndSendReminders();
   }
 

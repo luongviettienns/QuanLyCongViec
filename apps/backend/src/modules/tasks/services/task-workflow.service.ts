@@ -409,6 +409,10 @@ export class TaskWorkflowService {
             }
           }
         } else {
+          if (isTeamChanged && currentTask.userId !== userId) {
+            throw new ForbiddenException('Chỉ người tạo mới có quyền chuyển công việc về không gian cá nhân');
+          }
+
           if (hasAssigneeId) {
             if (effectiveAssigneeId && effectiveAssigneeId !== currentTask.userId) {
               throw new BadRequestException('Công việc cá nhân chỉ có thể phân công cho chính bạn');

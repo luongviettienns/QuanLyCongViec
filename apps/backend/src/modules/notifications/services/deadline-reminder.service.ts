@@ -33,10 +33,29 @@ export class DeadlineReminderService {
   }> {
     const now = referenceDate || new Date();
 
-    // Rate-limiting check to prevent denial-of-service / duplicate load
+    // Rate-limiting check to prevent denial-of-service / duplicate load across instances & restarts
     if (!referenceDate && !force) {
       const nowMs = Date.now();
-      if (nowMs - this.lastRunTime < this.COOLDOWN_MS) {
+
+      // Check DB persistent setting
+      let lastRunMs = this.lastRunTime;
+      try {
+        if (this.prisma.systemSetting) {
+          const setting = await this.prisma.systemSetting.findUnique({
+            where: { key: 'DEADLINE_REMINDER_LAST_RUN' },
+          });
+          if (setting?.value) {
+            const parsed = parseInt(setting.value, 10);
+            if (!isNaN(parsed) && parsed > lastRunMs) {
+              lastRunMs = parsed;
+            }
+          }
+        }
+      } catch {
+        // Fallback to in-memory if DB transient issue
+      }
+
+      if (nowMs - lastRunMs < this.COOLDOWN_MS) {
         return {
           scanned: 0,
           deadlineSoonSent: 0,
@@ -45,7 +64,19 @@ export class DeadlineReminderService {
           message: 'Tác vụ quét deadline vừa được thực hiện gần đây, vui lòng thử lại sau',
         };
       }
+
       this.lastRunTime = nowMs;
+      try {
+        if (this.prisma.systemSetting) {
+          await this.prisma.systemSetting.upsert({
+            where: { key: 'DEADLINE_REMINDER_LAST_RUN' },
+            update: { value: String(nowMs) },
+            create: { key: 'DEADLINE_REMINDER_LAST_RUN', value: String(nowMs) },
+          });
+        }
+      } catch {
+        // Ignore setting upsert failure
+      }
     }
 
     // Standardize date comparison using Asia/Ho_Chi_Minh calendar day

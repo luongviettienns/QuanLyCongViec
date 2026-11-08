@@ -4,9 +4,11 @@ import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { AppModule } from '../src/app.module.js';
+import { PrismaService } from '../src/database/prisma.service.js';
 
 describe('Authentication and Data Isolation (e2e)', () => {
   let app: INestApplication<App>;
+  let prisma: PrismaService;
   const timestamp = Date.now();
 
   const userACredentials = {
@@ -23,6 +25,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
   let tokenA = '';
   let tokenB = '';
+  let userAId = 0;
   let catAId = 0;
   let catBId = 0;
   let taskAId = 0;
@@ -42,6 +45,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
       }),
     );
     await app.init();
+    prisma = app.get(PrismaService);
   });
 
   afterAll(async () => {
@@ -73,6 +77,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
       expect(response.body.user.password).toBeUndefined();
 
       tokenA = response.body.accessToken;
+      userAId = response.body.user.id;
     });
 
     it('successfully registers User B', async () => {
@@ -209,6 +214,26 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
       expect(catAId).toBeDefined();
       expect(catBId).toBeDefined();
+    });
+
+    it('P2.1: enforces case-insensitive unique category name per user (409 Conflict)', async () => {
+      // Trying lowercase version of Category A:
+      await request(app.getHttpServer())
+        .post('/categories')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ name: `category a ${timestamp}`, color: '#1890ff' })
+        .expect(409);
+
+      // Direct Prisma insert to verify PostgreSQL unique index on (userId, lower(name))
+      await expect(
+        prisma.category.create({
+          data: {
+            name: `CATEGORY A ${timestamp}`,
+            userId: userAId,
+            color: '#1890ff',
+          },
+        }),
+      ).rejects.toThrow();
     });
 
     it('isolates categories so User A cannot see User B categories and vice versa', async () => {
@@ -348,6 +373,43 @@ describe('Authentication and Data Isolation (e2e)', () => {
         .delete(`/categories/${catAId}`)
         .set('Authorization', `Bearer ${tokenB}`)
         .expect(404);
+    });
+
+    it('P1.3: does not automatically regenerate default categories when user deletes all categories', async () => {
+      const tempUserRes = await request(app.getHttpServer())
+        .post('/auth/register')
+        .send({
+          email: `cat_delete_${timestamp}@taskflow.test`,
+          name: 'Category Deleter',
+          password: 'Password123!',
+        })
+        .expect(201);
+
+      const tempToken = tempUserRes.body.accessToken;
+
+      // Initially has 3 default categories created during registration
+      const initialCats = await request(app.getHttpServer())
+        .get('/categories')
+        .set('Authorization', `Bearer ${tempToken}`)
+        .expect(200);
+
+      expect(initialCats.body.length).toBe(3);
+
+      // Delete all 3 categories
+      for (const cat of initialCats.body) {
+        await request(app.getHttpServer())
+          .delete(`/categories/${cat.id}`)
+          .set('Authorization', `Bearer ${tempToken}`)
+          .expect(200);
+      }
+
+      // GET /categories again -> MUST be empty [] and NOT auto-recreated
+      const afterDeleteCats = await request(app.getHttpServer())
+        .get('/categories')
+        .set('Authorization', `Bearer ${tempToken}`)
+        .expect(200);
+
+      expect(afterDeleteCats.body).toEqual([]);
     });
 
     it('filters tasks by matching title case-insensitively via GET /tasks?search=...', async () => {

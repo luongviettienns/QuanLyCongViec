@@ -49,8 +49,8 @@ export class NotificationEventService {
       const taskId = 'taskId' in event ? event.taskId : null;
       const teamId = 'teamId' in event ? event.teamId : null;
 
-      // 5. Create notifications for each recipient with unique eventKey
-      for (const recipientId of recipientIds) {
+      // 5. Prepare notification records for all recipients
+      const notificationsData = recipientIds.map((recipientId) => {
         let eventKey: string;
         if (event.type === 'TASK_DEADLINE_SOON' || event.type === 'TASK_OVERDUE') {
           eventKey = `${event.type}:${recipientId}:${taskId}:${event.dueDate}`;
@@ -59,29 +59,26 @@ export class NotificationEventService {
           eventKey = `${event.type}:${recipientId}:${taskId ?? teamId ?? 'global'}:${eventTimestamp}`;
         }
 
-        try {
-          await tx.notification.create({
-            data: {
-              userId: recipientId,
-              actorId: event.actorId > 0 ? event.actorId : null,
-              type: event.type,
-              title,
-              content,
-              taskId,
-              teamId,
-              eventKey,
-              isRead: false,
-            },
-          });
-        } catch (error: any) {
-          // If unique constraint violation on eventKey, it's an idempotent retry - ignore safely
-          if (error?.code === 'P2002') {
-            this.logger.warn(`Idempotent duplicate notification skipped: eventKey=${eventKey}`);
-          } else {
-            throw error;
-          }
-        }
-      }
+        return {
+          userId: recipientId,
+          actorId: event.actorId > 0 ? event.actorId : null,
+          type: event.type,
+          title,
+          content,
+          taskId,
+          teamId,
+          eventKey,
+          isRead: false,
+        };
+      });
+
+      // 6. Atomically insert with skipDuplicates: true (PostgreSQL ON CONFLICT DO NOTHING)
+      // This guarantees that idempotent duplicates do NOT trigger PostgreSQL constraint violations,
+      // preventing "current transaction is aborted" errors in PostgreSQL.
+      await tx.notification.createMany({
+        data: notificationsData,
+        skipDuplicates: true,
+      });
     };
 
     if (txClient) {

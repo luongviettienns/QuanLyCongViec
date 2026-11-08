@@ -64,10 +64,11 @@ export class TaskStatsService {
       `;
     } else {
       whereSql = Prisma.sql`
-        ("userId" = ${userId} OR "assigneeId" = ${userId})
-        AND (
-          "teamId" IS NULL
-          OR "teamId" IN (
+        (
+          "teamId" IS NULL AND ("userId" = ${userId} OR "assigneeId" = ${userId})
+        )
+        OR (
+          "teamId" IN (
             SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId}
             UNION
             SELECT "id" FROM "Team" WHERE "ownerId" = ${userId}

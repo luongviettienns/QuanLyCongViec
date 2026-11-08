@@ -258,14 +258,14 @@ describe('Notification Core Module Unit Tests', () => {
   });
 
   describe('NotificationEventService Transactional Idempotency', () => {
-    it('skips duplicate insert when P2002 unique constraint on eventKey occurs', async () => {
+    it('uses createMany with skipDuplicates: true to safely handle idempotent events without aborting transaction', async () => {
       const mockRecipientService = {
         resolveRecipients: vi.fn().mockResolvedValue([2]),
       };
       const mockTx = {
         user: { findUnique: vi.fn().mockResolvedValue({ name: 'Sender' }) },
         notification: {
-          create: vi.fn().mockRejectedValue({ code: 'P2002' }), // unique eventKey collision
+          createMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
       };
       const mockPrisma = {
@@ -274,7 +274,6 @@ describe('Notification Core Module Unit Tests', () => {
 
       const eventService = new NotificationEventService(mockPrisma, mockRecipientService as any);
 
-      // Should not throw, handles gracefully
       await expect(
         eventService.publish(
           {
@@ -287,6 +286,17 @@ describe('Notification Core Module Unit Tests', () => {
           mockTx as any,
         ),
       ).resolves.not.toThrow();
+
+      expect(mockTx.notification.createMany).toHaveBeenCalledWith({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            userId: 2,
+            type: 'TASK_ASSIGNED',
+            taskId: 10,
+          }),
+        ]),
+        skipDuplicates: true,
+      });
     });
   });
 });
