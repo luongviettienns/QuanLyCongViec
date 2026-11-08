@@ -1,8 +1,6 @@
 import {
   Injectable,
   NotFoundException,
-  ForbiddenException,
-  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service.js';
 import { CreateTeamDto } from './dto/create-team.dto.js';
@@ -12,12 +10,16 @@ import { UpdateMemberRoleDto } from './dto/update-member-role.dto.js';
 import { TransferOwnershipDto } from './dto/transfer-ownership.dto.js';
 import { TeamRole } from '@prisma/client';
 import { NotificationEventService } from '../notifications/services/notification-event.service.js';
+import { TeamPolicyService } from './policies/team-policy.service.js';
+import { TeamMembershipService } from './services/team-membership.service.js';
 
 @Injectable()
 export class TeamsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationEventService: NotificationEventService,
+    private readonly policy: TeamPolicyService,
+    private readonly membershipService: TeamMembershipService,
   ) {}
 
   async create(userId: number, dto: CreateTeamDto) {
@@ -119,15 +121,16 @@ export class TeamsService {
       throw new NotFoundException('Không tìm thấy nhóm');
     }
 
-    const isOwner = team.ownerId === userId;
     const callerMember = team.members.find((m) => m.userId === userId);
-    if (!isOwner && !callerMember) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
+    const { callerRole } = this.policy.resolveCallerContext(
+      team.ownerId,
+      callerMember,
+      userId,
+    );
 
     return {
       ...team,
-      currentUserRole: isOwner ? TeamRole.ADMIN : callerMember!.role,
+      currentUserRole: callerRole,
     };
   }
 
@@ -146,14 +149,13 @@ export class TeamsService {
       },
     });
 
-    const isOwner = team.ownerId === userId;
-    if (!isOwner && !caller) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
+    const { isOwner, callerRole } = this.policy.resolveCallerContext(
+      team.ownerId,
+      caller,
+      userId,
+    );
 
-    if (!isOwner && caller?.role !== TeamRole.ADMIN) {
-      throw new ForbiddenException('Chỉ quản trị viên mới có quyền cập nhật thông tin nhóm');
-    }
+    this.policy.assertCanUpdate(isOwner, callerRole);
 
     return this.prisma.team.update({
       where: { id: teamId },
@@ -194,14 +196,13 @@ export class TeamsService {
       },
     });
 
-    const isOwner = team.ownerId === userId;
-    if (!isOwner && !caller) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
+    const { isOwner } = this.policy.resolveCallerContext(
+      team.ownerId,
+      caller,
+      userId,
+    );
 
-    if (!isOwner) {
-      throw new ForbiddenException('Chỉ chủ nhóm mới có quyền giải tán nhóm');
-    }
+    this.policy.assertCanDelete(isOwner);
 
     await this.prisma.$transaction(async (tx) => {
       await this.notificationEventService.publish(
@@ -223,75 +224,7 @@ export class TeamsService {
   }
 
   async addMember(userId: number, teamId: number, dto: AddMemberDto) {
-    const team = await this.prisma.team.findUnique({
-      where: { id: teamId },
-    });
-
-    if (!team) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
-
-    const caller = await this.prisma.teamMember.findUnique({
-      where: {
-        teamId_userId: { teamId, userId },
-      },
-    });
-
-    const isOwner = team.ownerId === userId;
-    if (!isOwner && !caller) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
-
-    if (!isOwner && caller?.role !== TeamRole.ADMIN) {
-      throw new ForbiddenException('Chỉ quản trị viên mới có quyền thêm thành viên');
-    }
-
-    if (dto.role === TeamRole.ADMIN && !isOwner) {
-      throw new ForbiddenException('Chỉ chủ nhóm mới có quyền bổ nhiệm Quản trị viên');
-    }
-
-    const targetEmail = dto.email.trim().toLowerCase();
-    const targetUser = await this.prisma.user.findUnique({
-      where: { email: targetEmail },
-    });
-
-    if (!targetUser) {
-      throw new NotFoundException('Không tìm thấy tài khoản người dùng với email này');
-    }
-
-    const existingMember = await this.prisma.teamMember.findUnique({
-      where: {
-        teamId_userId: { teamId, userId: targetUser.id },
-      },
-    });
-
-    if (existingMember || team.ownerId === targetUser.id) {
-      throw new BadRequestException('Người dùng này đã là thành viên trong nhóm');
-    }
-
-    const member = await this.prisma.teamMember.create({
-      data: {
-        teamId,
-        userId: targetUser.id,
-        role: dto.role ?? TeamRole.MEMBER,
-      },
-      include: {
-        user: {
-          select: { id: true, name: true, email: true },
-        },
-      },
-    });
-
-    await this.notificationEventService.publish({
-      type: 'TEAM_MEMBER_ADDED',
-      actorId: userId,
-      teamId,
-      teamName: team.name,
-      newMemberId: targetUser.id,
-      role: member.role,
-    });
-
-    return member;
+    return this.membershipService.addMember(userId, teamId, dto);
   }
 
   async updateMemberRole(
@@ -300,238 +233,14 @@ export class TeamsService {
     memberId: number,
     dto: UpdateMemberRoleDto,
   ) {
-    const team = await this.prisma.team.findUnique({
-      where: { id: teamId },
-    });
-
-    if (!team) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
-
-    const caller = await this.prisma.teamMember.findUnique({
-      where: {
-        teamId_userId: { teamId, userId },
-      },
-    });
-
-    const isOwner = team.ownerId === userId;
-    if (!isOwner && !caller) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
-
-    if (!isOwner) {
-      throw new ForbiddenException('Chỉ chủ nhóm mới có quyền thay đổi vai trò của thành viên');
-    }
-
-    const targetMember = await this.prisma.teamMember.findUnique({
-      where: { id: memberId },
-    });
-
-    if (!targetMember || targetMember.teamId !== teamId) {
-      throw new NotFoundException('Không tìm thấy thành viên trong nhóm này');
-    }
-
-    if (targetMember.userId === team.ownerId) {
-      throw new BadRequestException('Không thể thay đổi vai trò của chủ nhóm');
-    }
-
-    if (targetMember.userId === userId) {
-      throw new BadRequestException('Không thể tự thay đổi vai trò của chính mình');
-    }
-
-    const updated = await this.prisma.teamMember.update({
-      where: { id: memberId },
-      data: {
-        role: dto.role,
-      },
-      include: {
-        user: {
-          select: { id: true, name: true, email: true },
-        },
-      },
-    });
-
-    await this.notificationEventService.publish({
-      type: 'TEAM_ROLE_CHANGED',
-      actorId: userId,
-      teamId,
-      teamName: team.name,
-      targetUserId: targetMember.userId,
-      newRole: dto.role,
-    });
-
-    return updated;
+    return this.membershipService.updateMemberRole(userId, teamId, memberId, dto);
   }
 
   async transferOwnership(userId: number, teamId: number, dto: TransferOwnershipDto) {
-    const team = await this.prisma.team.findUnique({
-      where: { id: teamId },
-    });
-
-    if (!team) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
-
-    const caller = await this.prisma.teamMember.findUnique({
-      where: {
-        teamId_userId: { teamId, userId },
-      },
-    });
-
-    const isOwner = team.ownerId === userId;
-    if (!isOwner && !caller) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
-
-    if (!isOwner) {
-      throw new ForbiddenException('Chỉ chủ nhóm mới có quyền chuyển quyền sở hữu');
-    }
-
-    if (dto.newOwnerId === userId) {
-      throw new BadRequestException('Bạn đang là chủ sở hữu của nhóm này');
-    }
-
-    const targetMember = await this.prisma.teamMember.findUnique({
-      where: {
-        teamId_userId: { teamId, userId: dto.newOwnerId },
-      },
-    });
-
-    if (!targetMember) {
-      throw new BadRequestException('Người nhận quyền sở hữu phải là thành viên trong nhóm');
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.team.update({
-        where: { id: teamId },
-        data: { ownerId: dto.newOwnerId },
-      });
-
-      await tx.teamMember.update({
-        where: {
-          teamId_userId: { teamId, userId: dto.newOwnerId },
-        },
-        data: { role: TeamRole.ADMIN },
-      });
-
-      await tx.teamMember.upsert({
-        where: {
-          teamId_userId: { teamId, userId },
-        },
-        update: { role: TeamRole.ADMIN },
-        create: {
-          teamId,
-          userId,
-          role: TeamRole.ADMIN,
-        },
-      });
-
-      await this.notificationEventService.publish(
-        {
-          type: 'TEAM_OWNERSHIP_TRANSFERRED',
-          actorId: userId,
-          teamId,
-          teamName: team.name,
-          newOwnerId: dto.newOwnerId,
-          previousOwnerId: userId,
-        },
-        tx,
-      );
-
-      return tx.team.findUnique({
-        where: { id: teamId },
-        include: {
-          owner: {
-            select: { id: true, name: true, email: true },
-          },
-          members: {
-            include: {
-              user: {
-                select: { id: true, name: true, email: true },
-              },
-            },
-          },
-          _count: {
-            select: { members: true, tasks: true },
-          },
-        },
-      });
-    });
+    return this.membershipService.transferOwnership(userId, teamId, dto);
   }
 
   async removeMember(userId: number, teamId: number, memberId: number) {
-    const team = await this.prisma.team.findUnique({
-      where: { id: teamId },
-    });
-
-    if (!team) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
-
-    const targetMember = await this.prisma.teamMember.findUnique({
-      where: { id: memberId },
-    });
-
-    if (!targetMember || targetMember.teamId !== teamId) {
-      throw new NotFoundException('Không tìm thấy thành viên trong nhóm này');
-    }
-
-    if (targetMember.userId === team.ownerId) {
-      throw new BadRequestException('Chủ nhóm cần chuyển quyền sở hữu trước khi rời nhóm hoặc bị xóa');
-    }
-
-    const caller = await this.prisma.teamMember.findUnique({
-      where: {
-        teamId_userId: { teamId, userId },
-      },
-    });
-
-    const isOwner = team.ownerId === userId;
-    if (!isOwner && !caller) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
-
-    const isSelfLeaving = targetMember.userId === userId;
-
-    if (!isSelfLeaving) {
-      if (!isOwner && caller?.role !== TeamRole.ADMIN) {
-        throw new ForbiddenException('Thành viên thường không có quyền xóa thành viên khác');
-      }
-      if (targetMember.role === TeamRole.ADMIN && !isOwner) {
-        throw new ForbiddenException('Quản trị viên không thể xóa một quản trị viên khác');
-      }
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.task.updateMany({
-        where: {
-          teamId,
-          assigneeId: targetMember.userId,
-        },
-        data: {
-          assigneeId: null,
-        },
-      });
-
-      await tx.teamMember.delete({
-        where: { id: memberId },
-      });
-
-      await this.notificationEventService.publish(
-        {
-          type: 'TEAM_MEMBER_REMOVED',
-          actorId: userId,
-          teamId,
-          teamName: team.name,
-          removedUserId: targetMember.userId,
-          isSelfLeave: isSelfLeaving,
-        },
-        tx,
-      );
-    });
-
-    return {
-      message: isSelfLeaving ? 'Đã rời nhóm thành công' : 'Đã xóa thành viên khỏi nhóm thành công',
-    };
+    return this.membershipService.removeMember(userId, teamId, memberId);
   }
 }
