@@ -95,7 +95,7 @@ export class TaskQueryService {
           select: { id: true, name: true, email: true },
         },
         team: {
-          select: { id: true, name: true },
+          select: { id: true, name: true, ownerId: true },
         },
       },
       orderBy: [

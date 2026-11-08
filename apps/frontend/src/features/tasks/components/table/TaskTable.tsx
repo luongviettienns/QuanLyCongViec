@@ -1,12 +1,16 @@
-import { Table, Tag, Button, Popconfirm, Space, Grid, List, Card } from 'antd';
-import { EditOutlined, DeleteOutlined, UserOutlined } from '@ant-design/icons';
+import { Table, Tag, Button, Popconfirm, Space, Grid, List, Card, Tooltip } from 'antd';
+import { EditOutlined, DeleteOutlined, UserOutlined, EyeOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import { TASK_PRIORITY_CONFIG, type Task } from '../../types/task.types';
 import type { Category } from '../../../categories/types/category.types';
+import type { Team } from '../../../teams/types/team.types';
+import { useAuth } from '../../../auth/hooks/useAuth';
+import { getTaskPermissions } from '../../utils/task-permission.utils';
 import { formatDate, checkIsOverdue } from '../../../../shared/utils/date.utils';
 
 interface TaskTableProps {
   tasks: Task[];
+  teams?: Team[];
   loading: boolean;
   onEdit: (task: Task) => void;
   onDelete: (id: number) => void;
@@ -14,11 +18,18 @@ interface TaskTableProps {
 
 export default function TaskTable({
   tasks,
+  teams = [],
   loading,
   onEdit,
   onDelete,
 }: TaskTableProps) {
+  const { user } = useAuth();
   const screens = Grid.useBreakpoint();
+
+  function getPerms(task: Task) {
+    const team = task.teamId ? teams.find((t) => t.id === task.teamId) : null;
+    return getTaskPermissions(user, task, team);
+  }
 
   const columns: TableProps<Task>['columns'] = [
     {
@@ -36,7 +47,7 @@ export default function TaskTable({
       key: 'teamAssignee',
       width: 170,
       render: (_, record) => (
-        <Space orientation="vertical" size={2}>
+        <Space direction="vertical" size={2}>
           {record.team ? (
             <Tag color="cyan" style={{ margin: 0, fontSize: 11 }}>
               {record.team.name}
@@ -107,26 +118,39 @@ export default function TaskTable({
     {
       title: 'Hành động',
       key: 'action',
-      width: 150,
-      render: (_, record) => (
-        <Space size="middle">
-          <Button type="link" onClick={() => onEdit(record)}>
-            Sửa
-          </Button>
-          <Popconfirm
-            title="Xác nhận xoá"
-            description={`Bạn có chắc chắn muốn xoá công việc "${record.title}"?`}
-            onConfirm={() => onDelete(record.id)}
-            okText="Xoá"
-            cancelText="Huỷ"
-            okButtonProps={{ danger: true }}
-          >
-            <Button type="link" danger>
-              Xoá
+      width: 160,
+      render: (_, record) => {
+        const perms = getPerms(record);
+        const editLabel = perms.canEditContent ? 'Sửa' : perms.canChangeStatus ? 'Cập nhật' : 'Xem';
+
+        return (
+          <Space size="small">
+            <Button type="link" size="small" onClick={() => onEdit(record)}>
+              {editLabel}
             </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            {perms.canDelete ? (
+              <Popconfirm
+                title="Xác nhận xoá"
+                description={`Bạn có chắc chắn muốn xoá công việc "${record.title}"?`}
+                onConfirm={() => onDelete(record.id)}
+                okText="Xoá"
+                cancelText="Huỷ"
+                okButtonProps={{ danger: true }}
+              >
+                <Button type="link" size="small" danger>
+                  Xoá
+                </Button>
+              </Popconfirm>
+            ) : (
+              <Tooltip title="Chỉ người tạo hoặc quản trị viên mới có thể xóa">
+                <Button type="link" size="small" disabled style={{ color: '#d9d9d9' }}>
+                  Xoá
+                </Button>
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 
@@ -142,6 +166,8 @@ export default function TaskTable({
           const priority = task.priority || 'MEDIUM';
           const pConfig = TASK_PRIORITY_CONFIG[priority] || { color: 'default', label: priority };
           const isOverdue = checkIsOverdue(task.dueDate, task.status);
+          const perms = getPerms(task);
+          const editLabel = perms.canEditContent ? 'Sửa' : perms.canChangeStatus ? 'Cập nhật' : 'Xem';
 
           return (
             <Card
@@ -149,53 +175,39 @@ export default function TaskTable({
               style={{
                 marginBottom: 12,
                 borderRadius: 8,
-                border: '1px solid #f0f0f0',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                borderLeft: `4px solid ${
+                  task.status === 'DONE' ? '#52c41a' : task.status === 'IN_PROGRESS' ? '#1890ff' : '#fa8c16'
+                }`,
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                <div style={{ fontWeight: 600, fontSize: 15, color: '#1f1f1f', flex: 1 }}>
-                  {task.title}
-                </div>
-                <Tag color={statusColor} style={{ margin: 0 }}>
-                  {task.status}
-                </Tag>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                <span style={{ fontWeight: 600, fontSize: 15 }}>{task.title}</span>
+                <Tag color={statusColor}>{task.status}</Tag>
               </div>
 
               {task.description && (
-                <div style={{ fontSize: 13, color: '#595959', margin: '8px 0' }}>
+                <div style={{ color: '#666', fontSize: 13, marginBottom: 8 }}>
                   {task.description}
                 </div>
               )}
 
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0', alignItems: 'center' }}>
-                <Tag color={pConfig.color} style={{ margin: 0 }}>
-                  {pConfig.label}
-                </Tag>
-                {task.team && (
-                  <Tag color="cyan" style={{ margin: 0, fontSize: 11 }}>
-                    {task.team.name}
-                  </Tag>
-                )}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                {task.team && <Tag color="cyan">{task.team.name}</Tag>}
                 {task.assignee && (
-                  <Tag icon={<UserOutlined />} color="purple" style={{ margin: 0, fontSize: 11 }}>
+                  <Tag icon={<UserOutlined />} color="purple">
                     {task.assignee.name}
                   </Tag>
                 )}
-                {task.category && (
-                  <Tag color={task.category.color} style={{ margin: 0 }}>
-                    {task.category.name}
-                  </Tag>
-                )}
-                {task.startDate && (
-                  <Tag style={{ margin: 0, fontSize: 11 }}>
-                    Bắt đầu: {formatDate(task.startDate)}
-                  </Tag>
-                )}
+                <Tag color={pConfig.color}>{pConfig.label}</Tag>
+                {task.category && <Tag color={task.category.color}>{task.category.name}</Tag>}
+              </div>
+
+              <div style={{ fontSize: 12, color: '#888', display: 'flex', gap: 12, marginBottom: 8 }}>
+                {task.startDate && <span>Bắt đầu: {formatDate(task.startDate)}</span>}
                 {task.dueDate && (
-                  <Tag color={isOverdue ? 'error' : 'default'} style={{ margin: 0, fontSize: 11 }}>
+                  <span style={{ color: isOverdue ? '#ff4d4f' : 'inherit', fontWeight: isOverdue ? 600 : 400 }}>
                     Hạn: {formatDate(task.dueDate)} {isOverdue ? '(Quá hạn)' : ''}
-                  </Tag>
+                  </span>
                 )}
               </div>
 
@@ -212,24 +224,26 @@ export default function TaskTable({
                 <Button
                   size="small"
                   type="text"
-                  icon={<EditOutlined />}
+                  icon={perms.canEditContent ? <EditOutlined /> : <EyeOutlined />}
                   onClick={() => onEdit(task)}
                   style={{ color: '#1677ff' }}
                 >
-                  Sửa
+                  {editLabel}
                 </Button>
-                <Popconfirm
-                  title="Xác nhận xoá"
-                  description={`Bạn có chắc chắn muốn xoá công việc "${task.title}"?`}
-                  onConfirm={() => onDelete(task.id)}
-                  okText="Xoá"
-                  cancelText="Huỷ"
-                  okButtonProps={{ danger: true }}
-                >
-                  <Button size="small" type="text" danger icon={<DeleteOutlined />}>
-                    Xoá
-                  </Button>
-                </Popconfirm>
+                {perms.canDelete ? (
+                  <Popconfirm
+                    title="Xác nhận xoá"
+                    description={`Bạn có chắc chắn muốn xoá công việc "${task.title}"?`}
+                    onConfirm={() => onDelete(task.id)}
+                    okText="Xoá"
+                    cancelText="Huỷ"
+                    okButtonProps={{ danger: true }}
+                  >
+                    <Button size="small" type="text" danger icon={<DeleteOutlined />}>
+                      Xoá
+                    </Button>
+                  </Popconfirm>
+                ) : null}
               </div>
             </Card>
           );

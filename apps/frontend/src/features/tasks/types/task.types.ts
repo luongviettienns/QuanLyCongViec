@@ -26,7 +26,7 @@ export interface Task {
   categoryId?: number | null;
   category?: Category | null;
   teamId?: number | null;
-  team?: { id: number; name: string } | null;
+  team?: { id: number; name: string; ownerId?: number } | null;
   assigneeId?: number | null;
   assignee?: TeamMemberUser | null;
   position?: number;

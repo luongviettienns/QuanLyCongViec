@@ -87,14 +87,17 @@ export default function TasksPage({
       <div style={{ marginBottom: 30 }}>
         <KanbanBoard
           tasks={tasks}
+          teams={teams}
           onReorder={onReorder}
           onStatusChange={onStatusMove}
+          onEdit={onEdit}
           isFiltering={isFiltering}
         />
       </div>
 
       <TaskTable
         tasks={tasks}
+        teams={teams}
         loading={loading}
         onEdit={onEdit}
         onDelete={onDelete}

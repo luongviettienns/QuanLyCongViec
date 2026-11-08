@@ -14,7 +14,13 @@ export function useTasks(options?: { enabled?: boolean }) {
   const filters = useTaskFilters();
   const queries = useTaskQueries(isAuthenticated);
   const mutations = useTaskMutations(isAuthenticated);
-  const board = useTaskBoard(isAuthenticated, queries.tasks, queries.setTasks);
+  const board = useTaskBoard(
+    isAuthenticated,
+    queries.tasks,
+    queries.setTasks,
+    user,
+    queries.teams,
+  );
 
   const resetAll = useCallback(() => {
     queries.resetState();

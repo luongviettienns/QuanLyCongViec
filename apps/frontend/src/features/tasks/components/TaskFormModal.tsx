@@ -7,6 +7,7 @@ import {
   Select,
   DatePicker,
   Tag,
+  Alert,
   message,
   Grid,
 } from 'antd';
@@ -19,6 +20,7 @@ import {
   updateTaskStatus,
 } from '../api/tasks.api';
 import { useAuth } from '../../auth/hooks/useAuth';
+import { getTaskPermissions } from '../utils/task-permission.utils';
 
 interface TaskFormModalProps {
   open: boolean;
@@ -50,14 +52,21 @@ export default function TaskFormModal({
   })) ?? [];
 
   const taskTeam = task?.teamId ? teams.find((t) => t.id === task.teamId) : null;
-  const isTeamAdmin = taskTeam?.currentUserRole === 'ADMIN' || taskTeam?.ownerId === user?.id;
-  const isCreator = !task || task.userId === user?.id;
-  const canEditContent = !task || !task.teamId || isCreator || isTeamAdmin;
-  const canChangeAssignee = !task || !task.teamId || isCreator || isTeamAdmin;
-  const isAssignee = task?.assigneeId === user?.id;
-  const canChangeStatus = !task || !task.teamId || isCreator || isTeamAdmin || isAssignee;
-  const isAssigneeOnly = Boolean(task && task.teamId && isAssignee && !isCreator && !isTeamAdmin);
+  const permissions = task ? getTaskPermissions(user, task, taskTeam) : null;
+
+  const canEditContent = !task ? true : (permissions?.canEditContent ?? true);
+  const canChangeAssignee = !task ? true : (permissions?.canChangeAssignee ?? true);
+  const canChangeStatus = !task ? true : (permissions?.canChangeStatus ?? true);
+  const isAssigneeOnly = Boolean(
+    task &&
+      task.teamId &&
+      permissions?.roles.includes('ASSIGNEE') &&
+      !permissions?.roles.includes('CREATOR') &&
+      !permissions?.roles.includes('ADMIN') &&
+      !permissions?.roles.includes('OWNER'),
+  );
   const isReopenBlocked = isAssigneeOnly && task?.status === 'DONE';
+  const isReadOnly = Boolean(task && !canEditContent && !canChangeStatus);
 
   async function handleSubmit(values: TaskFormValues) {
     try {
@@ -115,7 +124,13 @@ export default function TaskFormModal({
 
   return (
     <Modal
-      title={task ? 'Cập nhật công việc' : 'Thêm công việc mới'}
+      title={
+        isReadOnly
+          ? 'Chi tiết công việc'
+          : task
+            ? 'Cập nhật công việc'
+            : 'Thêm công việc mới'
+      }
       open={open}
       onOk={() => form.submit()}
       onCancel={onClose}
@@ -148,8 +163,9 @@ export default function TaskFormModal({
         }
       }}
       confirmLoading={saving}
+      okButtonProps={isReadOnly ? { style: { display: 'none' } } : undefined}
       okText={task ? 'Lưu thay đổi' : 'Tạo mới'}
-      cancelText="Huỷ"
+      cancelText={isReadOnly ? 'Đóng' : 'Huỷ'}
       destroyOnHidden
       width={screens.sm ? 560 : '95%'}
       style={{ maxWidth: 560 }}
@@ -160,6 +176,14 @@ export default function TaskFormModal({
         onFinish={(values) => void handleSubmit(values)}
         initialValues={{ status: 'TODO', priority: 'MEDIUM' }}
       >
+        {isReadOnly && (
+          <Alert
+            message="Bạn đang xem công việc này ở chế độ chỉ đọc. Chỉ người tạo, người được giao hoặc quản trị viên mới có thể chỉnh sửa."
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+        )}
         <Form.Item
           name="title"
           label="Tiêu đề"

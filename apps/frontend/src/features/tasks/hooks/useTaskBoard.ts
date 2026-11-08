@@ -1,13 +1,18 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { message } from 'antd';
 import type { Task, TaskStatus } from '../types/task.types';
+import type { Team } from '../../teams/types/team.types';
+import type { User } from '../../auth/types/auth.types';
 import { updateTaskStatus, reorderTasks } from '../api/tasks.api';
 import { UnauthorizedError } from '../../../shared/api';
+import { canTransitionTask } from '../utils/task-permission.utils';
 
 export function useTaskBoard(
   isAuthenticated: boolean,
   tasks: Task[],
   setTasks: Dispatch<SetStateAction<Task[]>>,
+  user?: User | null,
+  teams?: Team[],
 ) {
   const handleStatusMove = useCallback(
     async (taskId: number, newStatus: TaskStatus, newPosition?: number) => {
@@ -18,6 +23,19 @@ export function useTaskBoard(
       if (!targetTask) {
         return;
       }
+
+      const taskTeam = targetTask.teamId && teams ? teams.find((t) => t.id === targetTask.teamId) : null;
+      if (!canTransitionTask(user, targetTask, newStatus, taskTeam)) {
+        if (targetTask.status === 'TODO' && newStatus === 'DONE') {
+          message.warning('Người thực hiện cần chuyển qua "Đang làm" trước khi Hoàn thành.');
+        } else if (targetTask.status === 'DONE') {
+          message.warning('Chỉ người tạo hoặc quản trị viên mới có thể mở lại công việc đã hoàn thành.');
+        } else {
+          message.warning('Bạn không có quyền thay đổi trạng thái công việc này.');
+        }
+        return;
+      }
+
       const previousTasks = [...tasks];
 
       setTasks((prev) => {
@@ -61,7 +79,7 @@ export function useTaskBoard(
         );
       }
     },
-    [isAuthenticated, tasks, setTasks],
+    [isAuthenticated, tasks, setTasks, user, teams],
   );
 
   const handleReorder = useCallback(
