@@ -11,6 +11,7 @@ describe('DeadlineReminderService', () => {
       task: {
         findMany: vi.fn(),
       },
+      $queryRaw: vi.fn(),
     };
     mockEventService = {
       publish: vi.fn().mockResolvedValue(undefined),
@@ -101,5 +102,43 @@ describe('DeadlineReminderService', () => {
     expect(result.deadlineSoonSent).toBe(0);
     expect(result.overdueSent).toBe(0);
     expect(mockEventService.publish).not.toHaveBeenCalled();
+  });
+
+  describe('Multi-Instance Atomic Cooldown Claim', () => {
+    it('returns skipped=true when atomic claim returns 0 rows (another instance already claimed or cooldown active)', async () => {
+      // Simulate atomic query returning empty array (lock not acquired)
+      mockPrisma.$queryRaw.mockResolvedValue([]);
+
+      const result = await service.checkAndSendReminders();
+
+      expect(result.skipped).toBe(true);
+      expect(result.scanned).toBe(0);
+      expect(mockPrisma.task.findMany).not.toHaveBeenCalled();
+    });
+
+    it('proceeds with scan when atomic claim returns 1 row (lock acquired)', async () => {
+      // Simulate atomic claim successful
+      mockPrisma.$queryRaw.mockResolvedValue([{ key: 'DEADLINE_REMINDER_LAST_RUN' }]);
+      mockPrisma.task.findMany.mockResolvedValue([]);
+
+      const result = await service.checkAndSendReminders();
+
+      expect(result.skipped).toBeUndefined();
+      expect(result.scanned).toBe(0);
+      expect(mockPrisma.task.findMany).toHaveBeenCalled();
+    });
+
+    it('re-throws error when database access fails during atomic claim instead of silently ignoring it', async () => {
+      // Simulate database connection failure
+      const dbError = new Error('PostgreSQL connection timeout');
+      mockPrisma.$queryRaw.mockRejectedValue(dbError);
+
+      await expect(service.checkAndSendReminders()).rejects.toThrow(
+        'PostgreSQL connection timeout',
+      );
+
+      // Verify tasks were NOT scanned without a valid lock
+      expect(mockPrisma.task.findMany).not.toHaveBeenCalled();
+    });
   });
 });

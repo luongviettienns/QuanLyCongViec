@@ -94,54 +94,41 @@ export function useNotifications() {
 
   const markRead = useCallback(
     async (id: number) => {
-      let previousNotifications: Notification[] = [];
-      let previousCount = 0;
-
-      // Optimistic update
-      setNotifications((prev) => {
-        previousNotifications = prev;
-        return prev.map((item) => (item.id === id ? { ...item, isRead: true } : item));
-      });
-      setUnreadCount((prev) => {
-        previousCount = prev;
-        return Math.max(0, prev - 1);
-      });
+      // 1. Optimistic update: mark ONLY this specific notification as read
+      setNotifications((current) =>
+        current.map((item) => (item.id === id ? { ...item, isRead: true } : item)),
+      );
+      setUnreadCount((current) => Math.max(0, current - 1));
 
       try {
         await markNotificationAsRead(id);
       } catch {
-        // Rollback on error to restore exact item state
-        setNotifications(previousNotifications);
-        setUnreadCount(previousCount);
-        fetchUnreadCount();
+        // 2. Targeted rollback on error:
+        // Revert ONLY this specific item without clobbering concurrent updates from other requests
+        setNotifications((current) =>
+          current.map((item) => (item.id === id ? { ...item, isRead: false } : item)),
+        );
+        // 3. Refetch fresh source of truth from server
+        void fetchUnreadCount();
+        void loadNotifications(true);
       }
     },
-    [fetchUnreadCount],
+    [fetchUnreadCount, loadNotifications],
   );
 
   const markAllRead = useCallback(async () => {
-    let previousNotifications: Notification[] = [];
-    let previousCount = 0;
-
-    // Optimistic update
-    setNotifications((prev) => {
-      previousNotifications = prev;
-      return prev.map((item) => ({ ...item, isRead: true }));
-    });
-    setUnreadCount((prev) => {
-      previousCount = prev;
-      return 0;
-    });
+    // 1. Optimistic update: mark all items as read
+    setNotifications((current) => current.map((item) => ({ ...item, isRead: true })));
+    setUnreadCount(0);
 
     try {
       await markAllNotificationsAsRead();
     } catch {
-      // Rollback on error to restore exact item state
-      setNotifications(previousNotifications);
-      setUnreadCount(previousCount);
-      fetchUnreadCount();
+      // 2. On failure, refetch fresh source of truth from server
+      void fetchUnreadCount();
+      void loadNotifications(true);
     }
-  }, [fetchUnreadCount]);
+  }, [fetchUnreadCount, loadNotifications]);
 
   // Initial load & when activeTab changes
   useEffect(() => {

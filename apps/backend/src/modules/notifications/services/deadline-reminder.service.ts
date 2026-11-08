@@ -6,13 +6,45 @@ import { TaskStatus } from '@prisma/client';
 @Injectable()
 export class DeadlineReminderService {
   private readonly logger = new Logger(DeadlineReminderService.name);
-  private lastRunTime = 0;
   private readonly COOLDOWN_MS = 60000; // 60s minimum interval between scans
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationEventService: NotificationEventService,
   ) {}
+
+  /**
+   * Atomically claims the execution lock in PostgreSQL.
+   * Uses INSERT ... ON CONFLICT ("key") DO UPDATE ... WHERE ... RETURNING "key"
+   * to guarantee that at any given moment, across multiple NestJS instances,
+   * ONLY ONE instance wins the right to execute.
+   *
+   * If database access fails, the error is NOT silently ignored,
+   * preserving system safety and alerting operators.
+   */
+  async acquireExecutionLock(nowMs: number, force = false): Promise<boolean> {
+    if (force) {
+      await this.prisma.$queryRaw`
+        INSERT INTO "SystemSetting" ("key", "value", "updatedAt")
+        VALUES ('DEADLINE_REMINDER_LAST_RUN', ${String(nowMs)}, NOW())
+        ON CONFLICT ("key") DO UPDATE
+        SET "value" = EXCLUDED."value", "updatedAt" = EXCLUDED."updatedAt"
+        RETURNING "key";
+      `;
+      return true;
+    }
+
+    const rows = await this.prisma.$queryRaw<Array<{ key: string }>>`
+      INSERT INTO "SystemSetting" ("key", "value", "updatedAt")
+      VALUES ('DEADLINE_REMINDER_LAST_RUN', ${String(nowMs)}, NOW())
+      ON CONFLICT ("key") DO UPDATE
+      SET "value" = EXCLUDED."value", "updatedAt" = EXCLUDED."updatedAt"
+      WHERE (${nowMs}::bigint - CASE WHEN "SystemSetting"."value" ~ '^[0-9]+$' THEN "SystemSetting"."value"::bigint ELSE 0::bigint END) >= ${this.COOLDOWN_MS}::bigint
+      RETURNING "key";
+    `;
+
+    return rows.length > 0;
+  }
 
   /**
    * Scans non-completed tasks with due dates and publishes:
@@ -33,29 +65,18 @@ export class DeadlineReminderService {
   }> {
     const now = referenceDate || new Date();
 
-    // Rate-limiting check to prevent denial-of-service / duplicate load across instances & restarts
-    if (!referenceDate && !force) {
+    // Rate-limiting check with atomic claim across instances & restarts
+    if (!referenceDate) {
       const nowMs = Date.now();
-
-      // Check DB persistent setting
-      let lastRunMs = this.lastRunTime;
+      let acquired = false;
       try {
-        if (this.prisma.systemSetting) {
-          const setting = await this.prisma.systemSetting.findUnique({
-            where: { key: 'DEADLINE_REMINDER_LAST_RUN' },
-          });
-          if (setting?.value) {
-            const parsed = parseInt(setting.value, 10);
-            if (!isNaN(parsed) && parsed > lastRunMs) {
-              lastRunMs = parsed;
-            }
-          }
-        }
-      } catch {
-        // Fallback to in-memory if DB transient issue
+        acquired = await this.acquireExecutionLock(nowMs, force);
+      } catch (error) {
+        this.logger.error('Lỗi khi kiểm tra hoặc xác lập khóa phân tán deadline qua SystemSetting', error);
+        throw error;
       }
 
-      if (nowMs - lastRunMs < this.COOLDOWN_MS) {
+      if (!acquired) {
         return {
           scanned: 0,
           deadlineSoonSent: 0,
@@ -63,19 +84,6 @@ export class DeadlineReminderService {
           skipped: true,
           message: 'Tác vụ quét deadline vừa được thực hiện gần đây, vui lòng thử lại sau',
         };
-      }
-
-      this.lastRunTime = nowMs;
-      try {
-        if (this.prisma.systemSetting) {
-          await this.prisma.systemSetting.upsert({
-            where: { key: 'DEADLINE_REMINDER_LAST_RUN' },
-            update: { value: String(nowMs) },
-            create: { key: 'DEADLINE_REMINDER_LAST_RUN', value: String(nowMs) },
-          });
-        }
-      } catch {
-        // Ignore setting upsert failure
       }
     }
 
