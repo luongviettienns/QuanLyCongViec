@@ -14,6 +14,7 @@ import TeamPage from '../../features/teams/pages/TeamPage';
 import DashboardPage from '../../features/dashboard/pages/DashboardPage';
 import TaskFormModal from '../../features/tasks/components/TaskFormModal';
 import AuthScreen from '../../features/auth/components/AuthScreen';
+import { NotFoundPage, ForbiddenPage, UnauthorizedPage } from '../pages/errors';
 
 function FullScreenSpinner() {
   return (
@@ -252,7 +253,7 @@ function TaskAppShell() {
           path="categories"
           element={<CategoryPage onChanged={() => void refetch()} />}
         />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
 
       {modalState.open && (
@@ -280,6 +281,9 @@ export function AppRouter() {
           </PublicRoute>
         }
       />
+      <Route path="/unauthorized" element={<UnauthorizedPage />} />
+      <Route path="/forbidden" element={<ForbiddenPage />} />
+      <Route path="/404" element={<NotFoundPage />} />
       <Route
         path="/*"
         element={
