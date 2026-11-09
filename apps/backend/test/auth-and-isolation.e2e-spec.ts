@@ -1,10 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/database/prisma.service.js';
+import { configureTestApp } from './test-app.helper.js';
 
 describe('Authentication and Data Isolation (e2e)', () => {
   let app: INestApplication<App>;
@@ -36,14 +37,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: true,
-      }),
-    );
+    app = configureTestApp(moduleFixture.createNestApplication());
     await app.init();
     prisma = app.get(PrismaService);
   });

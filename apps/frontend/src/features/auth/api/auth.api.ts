@@ -31,7 +31,7 @@ export {
 };
 
 export async function login(payload: LoginPayload): Promise<AuthResponse> {
-  const response = await fetch('/auth/login', {
+  const response = await fetch('/api/auth/login', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -49,7 +49,7 @@ export async function login(payload: LoginPayload): Promise<AuthResponse> {
 }
 
 export async function register(payload: RegisterPayload): Promise<AuthResponse> {
-  const response = await fetch('/auth/register', {
+  const response = await fetch('/api/auth/register', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -72,7 +72,7 @@ export async function getProfile(signal?: AbortSignal): Promise<User> {
     throw new Error('Chưa đăng nhập');
   }
 
-  const response = await fetch('/auth/me', {
+  const response = await fetch('/api/auth/me', {
     headers: {
       Authorization: `Bearer ${token}`,
     },

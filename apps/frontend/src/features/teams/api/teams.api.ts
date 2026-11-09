@@ -13,7 +13,7 @@ import {
 } from '../../../shared/api';
 
 export async function getTeams(signal?: AbortSignal): Promise<Team[]> {
-  const response = await fetch('/teams', {
+  const response = await fetch('/api/teams', {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -26,7 +26,7 @@ export async function getTeams(signal?: AbortSignal): Promise<Team[]> {
 }
 
 export async function getTeamById(id: number, signal?: AbortSignal): Promise<Team> {
-  const response = await fetch(`/teams/${id}`, {
+  const response = await fetch(`/api/teams/${id}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -39,7 +39,7 @@ export async function getTeamById(id: number, signal?: AbortSignal): Promise<Tea
 }
 
 export async function createTeam(payload: CreateTeamPayload): Promise<Team> {
-  const response = await fetch('/teams', {
+  const response = await fetch('/api/teams', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -52,7 +52,7 @@ export async function createTeam(payload: CreateTeamPayload): Promise<Team> {
 }
 
 export async function updateTeam(id: number, payload: UpdateTeamPayload): Promise<Team> {
-  const response = await fetch(`/teams/${id}`, {
+  const response = await fetch(`/api/teams/${id}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -65,7 +65,7 @@ export async function updateTeam(id: number, payload: UpdateTeamPayload): Promis
 }
 
 export async function deleteTeam(id: number): Promise<void> {
-  const response = await fetch(`/teams/${id}`, {
+  const response = await fetch(`/api/teams/${id}`, {
     method: 'DELETE',
     headers: {
       'Content-Type': 'application/json',
@@ -77,7 +77,7 @@ export async function deleteTeam(id: number): Promise<void> {
 }
 
 export async function addTeamMember(teamId: number, payload: AddMemberPayload): Promise<TeamMember> {
-  const response = await fetch(`/teams/${teamId}/members`, {
+  const response = await fetch(`/api/teams/${teamId}/members`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -94,7 +94,7 @@ export async function updateTeamMemberRole(
   memberId: number,
   role: TeamRole,
 ): Promise<TeamMember> {
-  const response = await fetch(`/teams/${teamId}/members/${memberId}`, {
+  const response = await fetch(`/api/teams/${teamId}/members/${memberId}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -107,7 +107,7 @@ export async function updateTeamMemberRole(
 }
 
 export async function transferOwnership(teamId: number, newOwnerId: number): Promise<Team> {
-  const response = await fetch(`/teams/${teamId}/transfer-ownership`, {
+  const response = await fetch(`/api/teams/${teamId}/transfer-ownership`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -120,7 +120,7 @@ export async function transferOwnership(teamId: number, newOwnerId: number): Pro
 }
 
 export async function removeTeamMember(teamId: number, memberId: number): Promise<void> {
-  const response = await fetch(`/teams/${teamId}/members/${memberId}`, {
+  const response = await fetch(`/api/teams/${teamId}/members/${memberId}`, {
     method: 'DELETE',
     headers: {
       'Content-Type': 'application/json',

@@ -19,7 +19,7 @@ export async function getNotifications(
   if (params?.type) query.set('type', params.type);
 
   const queryString = query.toString();
-  const url = `/notifications${queryString ? `?${queryString}` : ''}`;
+  const url = `/api/notifications${queryString ? `?${queryString}` : ''}`;
 
   const response = await fetch(url, {
     method: 'GET',
@@ -34,7 +34,7 @@ export async function getNotifications(
 }
 
 export async function getUnreadNotificationCount(signal?: AbortSignal): Promise<number> {
-  const response = await fetch('/notifications/unread-count', {
+  const response = await fetch('/api/notifications/unread-count', {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -51,7 +51,7 @@ export async function getUnreadNotificationCount(signal?: AbortSignal): Promise<
 }
 
 export async function markNotificationAsRead(id: number): Promise<Notification> {
-  const response = await fetch(`/notifications/${id}/read`, {
+  const response = await fetch(`/api/notifications/${id}/read`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -63,7 +63,7 @@ export async function markNotificationAsRead(id: number): Promise<Notification> 
 }
 
 export async function markAllNotificationsAsRead(): Promise<{ success: boolean; updatedCount: number }> {
-  const response = await fetch('/notifications/read-all', {
+  const response = await fetch('/api/notifications/read-all', {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -80,7 +80,7 @@ export async function markAllNotificationsAsRead(): Promise<{ success: boolean; 
 export async function markBulkNotificationsAsRead(
   ids: number[],
 ): Promise<{ success: boolean; updatedCount: number }> {
-  const response = await fetch('/notifications/read-bulk', {
+  const response = await fetch('/api/notifications/read-bulk', {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',

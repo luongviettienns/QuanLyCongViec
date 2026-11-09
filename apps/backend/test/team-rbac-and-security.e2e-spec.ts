@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/database/prisma.service.js';
+import { configureTestApp } from './test-app.helper.js';
 
 describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
   let app: INestApplication<App>;
@@ -64,14 +65,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: true,
-      }),
-    );
+    app = configureTestApp(moduleFixture.createNestApplication());
     await app.init();
     prisma = app.get(PrismaService);
 

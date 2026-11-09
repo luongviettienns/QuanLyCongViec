@@ -18,6 +18,10 @@ async function bootstrap() {
 
   app.enableCors();
 
+  app.setGlobalPrefix('api', {
+    exclude: ['/', 'health'],
+  });
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -36,7 +40,8 @@ async function bootstrap() {
   const swaggerDocument = () =>
     SwaggerModule.createDocument(app, swaggerConfig);
 
-  SwaggerModule.setup('api', app, swaggerDocument);
+  SwaggerModule.setup('api/docs', app, swaggerDocument);
+  SwaggerModule.setup('docs', app, swaggerDocument);
 
   await app.listen(process.env.PORT ?? 3000);
 }

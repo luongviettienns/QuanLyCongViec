@@ -18,7 +18,7 @@ export async function getCategories(
     query.append('scope', params.scope);
   }
   const queryString = query.toString();
-  const url = queryString ? `/categories?${queryString}` : '/categories';
+  const url = queryString ? `/api/categories?${queryString}` : '/api/categories';
 
   const response = await fetch(url, {
     headers: {
@@ -31,7 +31,7 @@ export async function getCategories(
 }
 
 export async function createCategory(payload: CreateCategoryPayload): Promise<Category> {
-  const response = await fetch('/categories', {
+  const response = await fetch('/api/categories', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -47,7 +47,7 @@ export async function updateCategory(
   id: number,
   payload: UpdateCategoryPayload,
 ): Promise<Category> {
-  const response = await fetch(`/categories/${id}`, {
+  const response = await fetch(`/api/categories/${id}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -62,7 +62,7 @@ export async function updateCategory(
 export async function deleteCategory(
   id: number,
 ): Promise<{ success: boolean; message: string }> {
-  const response = await fetch(`/categories/${id}`, {
+  const response = await fetch(`/api/categories/${id}`, {
     method: 'DELETE',
     headers: {
       ...getAuthHeaders(),

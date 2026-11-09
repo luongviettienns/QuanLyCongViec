@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/database/prisma.service.js';
+import { configureTestApp } from './test-app.helper.js';
 
 /**
  * Regression suite for input-validation edge cases that only show up with
@@ -30,10 +31,7 @@ describe('Input validation edge cases (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
-    );
+    app = configureTestApp(moduleFixture.createNestApplication());
     await app.init();
     prisma = app.get(PrismaService);
 

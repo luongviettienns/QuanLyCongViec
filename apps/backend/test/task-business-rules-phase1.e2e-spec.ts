@@ -1,10 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/database/prisma.service.js';
 import { TaskStatus } from '@prisma/client';
+import { configureTestApp } from './test-app.helper.js';
 
 describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () => {
   let app: INestApplication<App>;
@@ -58,34 +59,27 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: true,
-      }),
-    );
+    app = configureTestApp(moduleFixture.createNestApplication());
     await app.init();
     prisma = app.get(PrismaService);
 
     // Register users
-    const rOwner = await request(app.getHttpServer()).post('/auth/register').send(ownerCreds).expect(201);
+    const rOwner = await request(app.getHttpServer()).post('/api/auth/register').send(ownerCreds).expect(201);
     tokenOwner = rOwner.body.accessToken;
     ownerId = rOwner.body.user.id;
 
-    const rAdmin = await request(app.getHttpServer()).post('/auth/register').send(adminCreds).expect(201);
+    const rAdmin = await request(app.getHttpServer()).post('/api/auth/register').send(adminCreds).expect(201);
     tokenAdmin = rAdmin.body.accessToken;
 
-    const rMem1 = await request(app.getHttpServer()).post('/auth/register').send(member1Creds).expect(201);
+    const rMem1 = await request(app.getHttpServer()).post('/api/auth/register').send(member1Creds).expect(201);
     tokenMember1 = rMem1.body.accessToken;
     member1Id = rMem1.body.user.id;
 
-    const rMem2 = await request(app.getHttpServer()).post('/auth/register').send(member2Creds).expect(201);
+    const rMem2 = await request(app.getHttpServer()).post('/api/auth/register').send(member2Creds).expect(201);
     tokenMember2 = rMem2.body.accessToken;
     member2Id = rMem2.body.user.id;
 
-    const rOutsider = await request(app.getHttpServer()).post('/auth/register').send(outsiderCreds).expect(201);
+    const rOutsider = await request(app.getHttpServer()).post('/api/auth/register').send(outsiderCreds).expect(201);
     tokenOutsider = rOutsider.body.accessToken;
 
     // Create team

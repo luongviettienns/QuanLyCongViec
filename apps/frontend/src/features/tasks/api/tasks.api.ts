@@ -49,7 +49,7 @@ export async function getTasks(
   }
 
   const queryString = searchParams.toString();
-  const url = queryString ? `/tasks?${queryString}` : '/tasks';
+  const url = queryString ? `/api/tasks?${queryString}` : '/api/tasks';
   const response = await fetch(url, {
     headers: {
       ...getAuthHeaders(),
@@ -61,7 +61,7 @@ export async function getTasks(
 }
 
 export async function getTaskById(id: number, signal?: AbortSignal): Promise<Task> {
-  const response = await fetch(`/tasks/${id}`, {
+  const response = await fetch(`/api/tasks/${id}`, {
     headers: {
       ...getAuthHeaders(),
     },
@@ -72,7 +72,7 @@ export async function getTaskById(id: number, signal?: AbortSignal): Promise<Tas
 }
 
 export async function createTask(payload: CreateTaskPayload): Promise<Task> {
-  const response = await fetch('/tasks', {
+  const response = await fetch('/api/tasks', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -85,7 +85,7 @@ export async function createTask(payload: CreateTaskPayload): Promise<Task> {
 }
 
 export async function updateTask(id: number, payload: UpdateTaskPayload): Promise<Task> {
-  const response = await fetch(`/tasks/${id}`, {
+  const response = await fetch(`/api/tasks/${id}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -98,7 +98,7 @@ export async function updateTask(id: number, payload: UpdateTaskPayload): Promis
 }
 
 export async function updateTaskContent(id: number, payload: UpdateTaskContentPayload): Promise<Task> {
-  const response = await fetch(`/tasks/${id}`, {
+  const response = await fetch(`/api/tasks/${id}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -111,7 +111,7 @@ export async function updateTaskContent(id: number, payload: UpdateTaskContentPa
 }
 
 export async function updateTaskStatus(id: number, status: TaskStatus, position?: number): Promise<Task> {
-  const response = await fetch(`/tasks/${id}/status`, {
+  const response = await fetch(`/api/tasks/${id}/status`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -124,7 +124,7 @@ export async function updateTaskStatus(id: number, status: TaskStatus, position?
 }
 
 export async function updateTaskAssignee(id: number, assigneeId: number | null): Promise<Task> {
-  const response = await fetch(`/tasks/${id}/assignee`, {
+  const response = await fetch(`/api/tasks/${id}/assignee`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -137,7 +137,7 @@ export async function updateTaskAssignee(id: number, assigneeId: number | null):
 }
 
 export async function returnTask(id: number, reason: string): Promise<Task> {
-  const response = await fetch(`/tasks/${id}/return`, {
+  const response = await fetch(`/api/tasks/${id}/return`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -150,7 +150,7 @@ export async function returnTask(id: number, reason: string): Promise<Task> {
 }
 
 export async function deleteTask(id: number): Promise<void> {
-  const response = await fetch(`/tasks/${id}`, {
+  const response = await fetch(`/api/tasks/${id}`, {
     method: 'DELETE',
     headers: {
       ...getAuthHeaders(),
@@ -161,7 +161,7 @@ export async function deleteTask(id: number): Promise<void> {
 }
 
 export async function reorderTasks(taskIds: number[], status?: TaskStatus, teamId?: number): Promise<void> {
-  const response = await fetch('/tasks/reorder', {
+  const response = await fetch('/api/tasks/reorder', {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -178,7 +178,7 @@ export async function moveTaskTeam(
   teamId: number | null,
   assigneeId?: number | null,
 ): Promise<Task> {
-  const response = await fetch(`/tasks/${id}/team`, {
+  const response = await fetch(`/api/tasks/${id}/team`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -206,7 +206,7 @@ export async function getTaskStats(
     searchParams.append('scope', params.scope);
   }
   const queryString = searchParams.toString();
-  const url = queryString ? `/tasks/stats?${queryString}` : '/tasks/stats';
+  const url = queryString ? `/api/tasks/stats?${queryString}` : '/api/tasks/stats';
   const response = await fetch(url, {
     headers: {
       ...getAuthHeaders(),
