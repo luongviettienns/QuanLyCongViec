@@ -68,6 +68,14 @@ export class TaskTransferService {
           throw new ForbiddenException('Bạn không có quyền phân công công việc này');
         }
 
+        if (
+          currentTask.status === 'DONE' &&
+          hasAssigneeId &&
+          (dto.assigneeId ?? null) !== currentTask.assigneeId
+        ) {
+          throw new BadRequestException('Không thể thay đổi người thực hiện khi công việc đã hoàn thành');
+        }
+
         const effectiveTeamId = hasTeamId ? (dto.teamId ?? null) : currentTask.teamId;
         const isTeamChanged = effectiveTeamId !== currentTask.teamId;
         let effectiveAssigneeId = hasAssigneeId ? (dto.assigneeId ?? null) : currentTask.assigneeId;
@@ -108,8 +116,8 @@ export class TaskTransferService {
 
         if (isTeamChanged) {
           const duplicateScopeWhere: Prisma.TaskWhereInput = effectiveTeamId
-            ? { teamId: effectiveTeamId }
-            : { userId: currentTask.userId, teamId: null };
+            ? { teamId: effectiveTeamId, deletedAt: null }
+            : { userId: currentTask.userId, teamId: null, deletedAt: null };
 
           const targetTitle = (dto.title && dto.title.trim()) ? dto.title.trim() : currentTask.title;
 
@@ -168,8 +176,8 @@ export class TaskTransferService {
 
         if (isTeamChanged) {
           const destScope: Prisma.TaskWhereInput = effectiveTeamId
-            ? { teamId: effectiveTeamId }
-            : { userId: currentTask.userId, teamId: null };
+            ? { teamId: effectiveTeamId, deletedAt: null }
+            : { userId: currentTask.userId, teamId: null, deletedAt: null };
 
           const newPosition = await this.reorderService.getNextPosition(
             tx,
@@ -195,8 +203,8 @@ export class TaskTransferService {
 
         if (isTeamChanged) {
           const sourceScope: Prisma.TaskWhereInput = currentTask.teamId
-            ? { teamId: currentTask.teamId }
-            : { userId: currentTask.userId, teamId: null };
+            ? { teamId: currentTask.teamId, deletedAt: null }
+            : { userId: currentTask.userId, teamId: null, deletedAt: null };
 
           await this.reorderService.reindexColumn(tx, sourceScope, currentTask.status, [id]);
 
@@ -270,8 +278,13 @@ export class TaskTransferService {
 
       return updatedTask;
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException('Tiêu đề công việc đã được sử dụng bởi một công việc khác trong phạm vi này');
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new ConflictException('Tiêu đề công việc đã được sử dụng bởi một công việc khác trong phạm vi này');
+        }
+        if (error.code === 'P2025') {
+          throw new NotFoundException('Không tìm thấy công việc (có thể đã bị xoá bởi người khác)');
+        }
       }
       throw error;
     }

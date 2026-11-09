@@ -202,6 +202,14 @@ export default function TaskFormModal({
             style={{ marginBottom: 16 }}
           />
         )}
+        {task?.status === 'DONE' && (
+          <Alert
+            message="Công việc này đã hoàn thành. Hãy mở lại trạng thái (Cần làm / Đang làm) nếu bạn cần chỉnh sửa nội dung hoặc thay đổi người thực hiện."
+            type="warning"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+        )}
         <Form.Item
           name="title"
           label="Tiêu đề"

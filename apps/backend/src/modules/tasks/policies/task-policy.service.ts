@@ -105,10 +105,17 @@ export class TaskPolicyService {
     return task.userId === userId;
   }
 
+  canRestoreTask(userId: number, task: TaskWithTeamAndMembers): boolean {
+    if (task.teamId === null || !task.team) {
+      return task.userId === userId;
+    }
+    return this.isAdminOrOwner(userId, task.team);
+  }
+
   canReorder(userId: number, task: TaskWithTeamAndMembers): boolean {
     if (task.teamId === null || !task.team) {
       return task.userId === userId;
     }
-    return this.isTeamMember(userId, task.team);
+    return this.isAdminOrOwner(userId, task.team);
   }
 }

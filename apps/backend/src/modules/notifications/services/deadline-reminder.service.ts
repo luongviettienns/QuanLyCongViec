@@ -113,6 +113,7 @@ export class DeadlineReminderService {
       where: {
         status: { not: TaskStatus.DONE },
         dueDate: { not: null },
+        deletedAt: null,
       },
       select: {
         id: true,
@@ -132,33 +133,37 @@ export class DeadlineReminderService {
 
       const dueDateStr = task.dueDate.toISOString().slice(0, 10);
 
-      // Overdue check: dueDate is strictly prior to today's calendar date
-      if (dueDateStr < todayStr) {
-        await this.notificationEventService.publish({
-          type: 'TASK_OVERDUE',
-          actorId: 0,
-          taskId: task.id,
-          taskTitle: task.title,
-          dueDate: dueDateStr,
-          creatorId: task.userId,
-          assigneeId: task.assigneeId,
-          teamId: task.teamId,
-        });
-        overdueSent++;
-      }
-      // Soon check: dueDate is today or tomorrow
-      else if (dueDateStr === todayStr || dueDateStr === tomorrowStr) {
-        await this.notificationEventService.publish({
-          type: 'TASK_DEADLINE_SOON',
-          actorId: 0,
-          taskId: task.id,
-          taskTitle: task.title,
-          dueDate: dueDateStr,
-          creatorId: task.userId,
-          assigneeId: task.assigneeId,
-          teamId: task.teamId,
-        });
-        deadlineSoonSent++;
+      try {
+        // Overdue check: dueDate is strictly prior to today's calendar date
+        if (dueDateStr < todayStr) {
+          await this.notificationEventService.publish({
+            type: 'TASK_OVERDUE',
+            actorId: 0,
+            taskId: task.id,
+            taskTitle: task.title,
+            dueDate: dueDateStr,
+            creatorId: task.userId,
+            assigneeId: task.assigneeId,
+            teamId: task.teamId,
+          });
+          overdueSent++;
+        }
+        // Soon check: dueDate is today or tomorrow
+        else if (dueDateStr === todayStr || dueDateStr === tomorrowStr) {
+          await this.notificationEventService.publish({
+            type: 'TASK_DEADLINE_SOON',
+            actorId: 0,
+            taskId: task.id,
+            taskTitle: task.title,
+            dueDate: dueDateStr,
+            creatorId: task.userId,
+            assigneeId: task.assigneeId,
+            teamId: task.teamId,
+          });
+          deadlineSoonSent++;
+        }
+      } catch (err) {
+        this.logger.warn(`Failed to send reminder for task ${task.id}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 

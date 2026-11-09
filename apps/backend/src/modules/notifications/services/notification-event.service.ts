@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService, POST_COMMIT_HOOKS } from '../../../database/prisma.service.js';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { NotificationRecipientService } from './notification-recipient.service.js';
 import { renderNotificationTemplate } from '../templates/notification-template.js';
 import type { DomainNotificationEvent } from '../types/notification-event.types.js';

@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/database/prisma.service.js';
+import { configureTestApp } from './test-app.helper.js';
 
 describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
   let app: INestApplication<App>;
@@ -64,14 +65,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: true,
-      }),
-    );
+    app = configureTestApp(moduleFixture.createNestApplication());
     await app.init();
     prisma = app.get(PrismaService);
 
@@ -585,10 +579,22 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       t2Id = task2.body.id;
     });
 
-    it('allows any team member to reorder tasks within the same column', async () => {
-      const res = await request(app.getHttpServer())
+    it('restricts board reorder to team managers (forbids regular member, allows owner/admin)', async () => {
+      // Regular member receives 403 Forbidden
+      await request(app.getHttpServer())
         .patch('/tasks/reorder')
         .set('Authorization', `Bearer ${tokenMember}`)
+        .send({
+          teamId: team1Id,
+          taskIds: [t2Id, t1Id],
+          status: 'TODO',
+        })
+        .expect(403);
+
+      // Owner receives 200 OK
+      const res = await request(app.getHttpServer())
+        .patch('/tasks/reorder')
+        .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           teamId: team1Id,
           taskIds: [t2Id, t1Id],

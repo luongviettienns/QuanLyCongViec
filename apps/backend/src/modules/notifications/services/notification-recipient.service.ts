@@ -28,6 +28,26 @@ export class NotificationRecipientService {
         if (event.previousAssigneeId) {
           candidateIds.push(event.previousAssigneeId);
         }
+        if (event.teamId) {
+          const team = await prisma.team.findUnique({
+            where: { id: event.teamId },
+            select: {
+              ownerId: true,
+              members: {
+                where: { role: 'ADMIN' },
+                select: { userId: true },
+              },
+            },
+          });
+          if (team?.ownerId) {
+            candidateIds.push(team.ownerId);
+          }
+          if (team?.members) {
+            for (const m of team.members) {
+              candidateIds.push(m.userId);
+            }
+          }
+        }
         break;
 
       case 'TASK_STATUS_CHANGED':
@@ -54,7 +74,7 @@ export class NotificationRecipientService {
         break;
 
       case 'TASK_RETURNED':
-        // Creator if still in team, else Team Owner
+        // Creator if still in team, else Team Owner & Admins
         if (event.teamId) {
           const creatorMember = await prisma.teamMember.findUnique({
             where: {
@@ -66,10 +86,21 @@ export class NotificationRecipientService {
           } else {
             const team = await prisma.team.findUnique({
               where: { id: event.teamId },
-              select: { ownerId: true },
+              select: {
+                ownerId: true,
+                members: {
+                  where: { role: 'ADMIN' },
+                  select: { userId: true },
+                },
+              },
             });
             if (team?.ownerId) {
               candidateIds.push(team.ownerId);
+            }
+            if (team?.members) {
+              for (const m of team.members) {
+                candidateIds.push(m.userId);
+              }
             }
           }
         } else {

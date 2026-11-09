@@ -272,9 +272,10 @@ export default function CategoryPage({ onChanged }: CategoryPageProps) {
   }
 
   async function onFinishCreate(values: { name: string }) {
+    const normalizedColor = createColor ? (createColor.trim().startsWith('#') ? createColor.trim() : `#${createColor.trim()}`) : '#1677ff';
     const payload: CreateCategoryPayload = {
       name: values.name.trim(),
-      color: createColor,
+      color: normalizedColor,
       teamId: typeof selectedContext === 'number' ? selectedContext : undefined,
     };
     const success = await handleCreate(payload);
@@ -295,9 +296,10 @@ export default function CategoryPage({ onChanged }: CategoryPageProps) {
 
   async function onFinishEdit(values: { name: string }) {
     if (!editingCategory) return;
+    const normalizedColor = editColor ? (editColor.trim().startsWith('#') ? editColor.trim() : `#${editColor.trim()}`) : '#1677ff';
     const success = await handleUpdate(editingCategory.id, {
       name: values.name.trim(),
-      color: editColor,
+      color: normalizedColor,
     });
     if (success) {
       setEditingCategory(null);

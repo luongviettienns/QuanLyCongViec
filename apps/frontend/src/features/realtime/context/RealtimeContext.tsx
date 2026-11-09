@@ -55,7 +55,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       const currentToken = getAuthToken();
       if (!currentToken) return;
 
-      const url = `/realtime/stream?token=${encodeURIComponent(currentToken)}`;
+      const url = `/api/realtime/stream?token=${encodeURIComponent(currentToken)}`;
       const es = new EventSource(url);
       eventSourceRef.current = es;
 

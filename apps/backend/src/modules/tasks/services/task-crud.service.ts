@@ -95,8 +95,8 @@ export class TaskCrudService {
         });
 
         const titleScopeWhere: Prisma.TaskWhereInput = data.teamId
-          ? { teamId: data.teamId }
-          : { userId, teamId: null };
+          ? { teamId: data.teamId, deletedAt: null }
+          : { userId, teamId: null, deletedAt: null };
 
         const existingTask = await tx.task.findFirst({
           where: {
@@ -260,6 +260,10 @@ export class TaskCrudService {
           throw new ForbiddenException('Bạn không có quyền chỉnh sửa nội dung công việc này');
         }
 
+        if (currentTask.status === TaskStatus.DONE) {
+          throw new BadRequestException('Không thể chỉnh sửa nội dung công việc đã hoàn thành. Vui lòng mở lại công việc trước khi chỉnh sửa.');
+        }
+
         const updateData: Prisma.TaskUpdateInput = {};
 
         let parsedStartDate: Date | null = null;
@@ -296,8 +300,8 @@ export class TaskCrudService {
           }
 
           const duplicateScopeWhere: Prisma.TaskWhereInput = currentTask.teamId
-            ? { teamId: currentTask.teamId }
-            : { userId: currentTask.userId, teamId: null };
+            ? { teamId: currentTask.teamId, deletedAt: null }
+            : { userId: currentTask.userId, teamId: null, deletedAt: null };
 
           const duplicateTask = await tx.task.findFirst({
             where: {
@@ -416,8 +420,13 @@ export class TaskCrudService {
 
       return updatedTask;
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException('Tiêu đề công việc đã được sử dụng bởi một công việc khác');
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new ConflictException('Tiêu đề công việc đã được sử dụng bởi một công việc khác');
+        }
+        if (error.code === 'P2025') {
+          throw new NotFoundException('Không tìm thấy công việc (có thể đã bị xoá bởi người khác)');
+        }
       }
       throw error;
     }
@@ -450,11 +459,15 @@ export class TaskCrudService {
       );
 
       const remainingTasksScope: Prisma.TaskWhereInput = taskToDelete.teamId
-        ? { teamId: taskToDelete.teamId }
-        : { userId: taskToDelete.userId, teamId: null };
+        ? { teamId: taskToDelete.teamId, deletedAt: null }
+        : { userId: taskToDelete.userId, teamId: null, deletedAt: null };
 
-      const deletedTask = await tx.task.delete({
+      const deletedTask = await tx.task.update({
         where: { id },
+        data: {
+          deletedAt: new Date(),
+          deletedById: userId,
+        },
       });
 
       await this.reorderService.reindexColumn(tx, remainingTasksScope, taskToDelete.status, [id]);
@@ -476,6 +489,117 @@ export class TaskCrudService {
       payload: {
         taskId: id,
         teamId: result.deletedTask.teamId,
+      },
+    });
+
+    return result;
+  }
+
+  async restore(id: number, userId: number): Promise<Task> {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const currentTask = await this.queryService.findOne(id, userId, tx, { includeDeleted: true });
+
+      if (!currentTask.deletedAt) {
+        throw new BadRequestException('Công việc này chưa bị xóa, không thể khôi phục');
+      }
+
+      if (!this.policy.canRestoreTask(userId, currentTask)) {
+        throw new ForbiddenException('Bạn không có quyền khôi phục công việc này');
+      }
+
+      await this.reorderService.lockScope(tx, {
+        teamId: currentTask.teamId,
+        userId: currentTask.userId,
+      });
+
+      const duplicateScopeWhere: Prisma.TaskWhereInput = currentTask.teamId
+        ? { teamId: currentTask.teamId, deletedAt: null }
+        : { userId: currentTask.userId, teamId: null, deletedAt: null };
+
+      const duplicateTask = await tx.task.findFirst({
+        where: {
+          ...duplicateScopeWhere,
+          title: {
+            equals: currentTask.title,
+            mode: 'insensitive',
+          },
+          NOT: { id },
+        },
+      });
+
+      if (duplicateTask) {
+        throw new ConflictException(`Không thể khôi phục: Tiêu đề '${currentTask.title}' đang được sử dụng bởi một công việc khác`);
+      }
+
+      let effectiveAssigneeId = currentTask.assigneeId;
+      if (effectiveAssigneeId) {
+        if (currentTask.teamId) {
+          const isMember = this.policy.isTeamMember(effectiveAssigneeId, currentTask.team);
+          if (!isMember) {
+            effectiveAssigneeId = null;
+          }
+        } else {
+          if (effectiveAssigneeId !== currentTask.userId) {
+            effectiveAssigneeId = null;
+          }
+        }
+      }
+
+      let effectiveCategoryId = currentTask.categoryId;
+      if (effectiveCategoryId) {
+        if (currentTask.teamId) {
+          const category = await tx.category.findFirst({
+            where: { id: effectiveCategoryId, teamId: currentTask.teamId },
+          });
+          if (!category) {
+            effectiveCategoryId = null;
+          }
+        } else {
+          const category = await tx.category.findFirst({
+            where: { id: effectiveCategoryId, userId: currentTask.userId, teamId: null },
+          });
+          if (!category) {
+            effectiveCategoryId = null;
+          }
+        }
+      }
+
+      const newPosition = await this.reorderService.getNextPosition(
+        tx,
+        duplicateScopeWhere,
+        currentTask.status,
+      );
+
+      const restoredTask = await tx.task.update({
+        where: { id },
+        data: {
+          deletedAt: null,
+          deletedById: null,
+          position: newPosition,
+          assigneeId: effectiveAssigneeId,
+          categoryId: effectiveCategoryId,
+        },
+        include: {
+          category: true,
+          assignee: { select: { id: true, name: true, email: true } },
+          team: { select: { id: true, name: true } },
+        },
+      });
+
+      return restoredTask;
+    });
+
+    void this.realtimeService.emit({
+      type: 'TASK_CREATED',
+      actorId: userId,
+      teamId: result.teamId,
+      targetUserIds: result.teamId
+        ? undefined
+        : [result.userId, ...(result.assigneeId ? [result.assigneeId] : [])],
+      payload: {
+        taskId: result.id,
+        teamId: result.teamId,
+        status: result.status,
       },
     });
 

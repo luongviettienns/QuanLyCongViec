@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   ForbiddenException,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service.js';
 import { UpdateTaskAssigneeDto } from '../dto/update-task-assignee.dto.js';
@@ -46,78 +47,96 @@ export class TaskAssignmentService {
     }
     const targetAssigneeId: number | null = data.assigneeId;
 
-    return this.executeInTransaction(externalTx, async (tx) => {
-      const currentTask = await this.queryService.findOne(id, userId, tx);
+    try {
+      return await this.executeInTransaction(externalTx, async (tx) => {
+        const initialTask = await this.queryService.findOne(id, userId, tx);
+        await this.reorderService.lockScope(tx, {
+          teamId: initialTask.teamId,
+          userId: initialTask.userId,
+        });
+        const currentTask = await this.queryService.findOne(id, userId, tx);
 
-      if (!this.policy.canChangeAssignee(userId, currentTask)) {
-        throw new ForbiddenException('Bạn không có quyền phân công công việc này');
-      }
+        if (currentTask.status === TaskStatus.DONE) {
+          throw new BadRequestException(
+            'Không thể thay đổi người thực hiện khi công việc đã hoàn thành. Vui lòng mở lại công việc trước khi phân công lại.',
+          );
+        }
 
-      if (targetAssigneeId !== null) {
-        if (currentTask.teamId) {
-          const isMember = this.policy.isTeamMember(targetAssigneeId, currentTask.team);
-          if (!isMember) {
-            throw new BadRequestException('Người được phân công không thuộc nhóm này');
-          }
-        } else {
-          if (targetAssigneeId !== currentTask.userId) {
-            throw new BadRequestException('Công việc cá nhân chỉ có thể phân công cho chính bạn');
+        if (!this.policy.canChangeAssignee(userId, currentTask)) {
+          throw new ForbiddenException('Bạn không có quyền phân công công việc này');
+        }
+
+        if (targetAssigneeId !== null) {
+          if (currentTask.teamId) {
+            const isMember = this.policy.isTeamMember(targetAssigneeId, currentTask.team);
+            if (!isMember) {
+              throw new BadRequestException('Người được phân công không thuộc nhóm này');
+            }
+          } else {
+            if (targetAssigneeId !== currentTask.userId) {
+              throw new BadRequestException('Công việc cá nhân chỉ có thể phân công cho chính bạn');
+            }
           }
         }
-      }
 
-      const previousAssigneeId = currentTask.assigneeId;
+        const previousAssigneeId = currentTask.assigneeId;
 
-      const updatedTask = await tx.task.update({
-        where: { id },
-        data: {
-          assignee: targetAssigneeId
-            ? { connect: { id: targetAssigneeId } }
-            : { disconnect: true },
-        },
-        include: {
-          category: true,
-          assignee: {
-            select: { id: true, name: true, email: true },
+        const updatedTask = await tx.task.update({
+          where: { id },
+          data: {
+            assignee: targetAssigneeId
+              ? { connect: { id: targetAssigneeId } }
+              : { disconnect: true },
           },
-          team: {
-            select: { id: true, name: true },
+          include: {
+            category: true,
+            assignee: {
+              select: { id: true, name: true, email: true },
+            },
+            team: {
+              select: { id: true, name: true },
+            },
           },
-        },
+        });
+
+        if (previousAssigneeId !== targetAssigneeId) {
+          if (previousAssigneeId) {
+            await this.notificationEventService.publish(
+              {
+                type: 'TASK_UNASSIGNED',
+                actorId: userId,
+                taskId: currentTask.id,
+                taskTitle: currentTask.title,
+                previousAssigneeId,
+                teamId: currentTask.teamId,
+              },
+              tx,
+            );
+          }
+
+          if (targetAssigneeId) {
+            await this.notificationEventService.publish(
+              {
+                type: 'TASK_ASSIGNED',
+                actorId: userId,
+                taskId: currentTask.id,
+                taskTitle: currentTask.title,
+                assigneeId: targetAssigneeId,
+                teamId: currentTask.teamId,
+              },
+              tx,
+            );
+          }
+        }
+
+        return updatedTask;
       });
-
-      if (previousAssigneeId !== targetAssigneeId) {
-        if (previousAssigneeId) {
-          await this.notificationEventService.publish(
-            {
-              type: 'TASK_UNASSIGNED',
-              actorId: userId,
-              taskId: currentTask.id,
-              taskTitle: currentTask.title,
-              previousAssigneeId,
-              teamId: currentTask.teamId,
-            },
-            tx,
-          );
-        }
-
-        if (targetAssigneeId) {
-          await this.notificationEventService.publish(
-            {
-              type: 'TASK_ASSIGNED',
-              actorId: userId,
-              taskId: currentTask.id,
-              taskTitle: currentTask.title,
-              assigneeId: targetAssigneeId,
-              teamId: currentTask.teamId,
-            },
-            tx,
-          );
-        }
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        throw new NotFoundException('Không tìm thấy công việc (có thể đã bị xoá bởi người khác)');
       }
-
-      return updatedTask;
-    });
+      throw error;
+    }
   }
 
   async returnTask(id: number, data: ReturnTaskDto, userId: number): Promise<Task> {
