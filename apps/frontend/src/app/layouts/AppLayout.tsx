@@ -8,9 +8,9 @@ import {
   Typography,
   Dropdown,
   Drawer,
-  Grid,
   type MenuProps,
 } from 'antd';
+import { useResponsive } from '../../shared/hooks';
 import {
   CheckSquareOutlined,
   DashboardOutlined,
@@ -53,7 +53,7 @@ export default function AppLayout({
 }: AppLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const screens = Grid.useBreakpoint();
+  const screens = useResponsive();
   const isMobile = !screens.md;
   const { user, logout } = useAuth();
 

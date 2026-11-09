@@ -16,7 +16,8 @@
     "build:frontend": "npm run build --workspace=@taskflow/frontend",
     "test": "npm run test --workspaces --if-present",
     "test:backend": "npm run test --workspace=@taskflow/backend",
-    "lint": "npm run lint --workspaces --if-present"
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.4",

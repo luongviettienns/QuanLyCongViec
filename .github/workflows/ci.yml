@@ -39,15 +39,17 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Run Linters
-        run: npm run lint
-
       - name: Setup Database Schema
         env:
           DATABASE_URL: "postgresql://postgres:password123@localhost:5432/QuanLyCV_test?schema=public"
         run: |
           npx prisma generate --schema=apps/backend/prisma/schema.prisma
           npx prisma migrate deploy --schema=apps/backend/prisma/schema.prisma
+
+      - name: Run Linters & Typechecks
+        run: |
+          npm run lint
+          npm run typecheck
 
       - name: Build Monorepo Workspaces
         run: npm run build
@@ -57,4 +59,5 @@ jobs:
           DATABASE_URL: "postgresql://postgres:password123@localhost:5432/QuanLyCV_test?schema=public"
           JWT_SECRET: "ci_super_secret_jwt_key_for_testing_123456789"
           JWT_EXPIRATION: "7d"
+          INTERNAL_API_KEY: "ci_internal_secret_api_key_test"
         run: npm test

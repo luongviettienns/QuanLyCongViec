@@ -15,7 +15,6 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { TasksService } from './tasks.service.js';
 import { CreateTaskDto } from './dto/create-task.dto.js';
 import { UpdateTaskDto } from './dto/update-task.dto.js';
-import { UpdateTaskContentDto } from './dto/update-task-content.dto.js';
 import { UpdateTaskStatusDto } from './dto/update-task-status.dto.js';
 import { UpdateTaskAssigneeDto } from './dto/update-task-assignee.dto.js';
 import { ReturnTaskDto } from './dto/return-task.dto.js';
@@ -77,14 +76,14 @@ export class TasksController {
     return this.tasksService.create(body, user.id);
   }
 
-  @ApiOperation({ summary: 'Cập nhật nội dung công việc (title, description, dates, priority, category)' })
+  @ApiOperation({ summary: 'Cập nhật công việc (nội dung, danh mục, nhóm, người thực hiện, trạng thái)' })
   @Patch(':id')
-  updateContent(
+  patch(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: UpdateTaskContentDto,
+    @Body() body: UpdateTaskDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.tasksService.updateContent(id, body, user.id);
+    return this.tasksService.update(id, body, user.id);
   }
 
   @ApiOperation({ summary: 'Cập nhật trạng thái công việc (TODO, IN_PROGRESS, DONE)' })

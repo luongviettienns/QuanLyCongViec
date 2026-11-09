@@ -257,7 +257,7 @@ describe('Notification Core Module Unit Tests', () => {
     });
   });
 
-  describe('NotificationEventService Transactional Idempotency', () => {
+  describe('NotificationEventService Transactional Idempotency and Post-Commit Delivery', () => {
     it('uses createMany with skipDuplicates: true to safely handle idempotent events without aborting transaction', async () => {
       const mockRecipientService = {
         resolveRecipients: vi.fn().mockResolvedValue([2]),
@@ -265,14 +265,22 @@ describe('Notification Core Module Unit Tests', () => {
       const mockTx = {
         user: { findUnique: vi.fn().mockResolvedValue({ name: 'Sender' }) },
         notification: {
+          findMany: vi.fn().mockResolvedValue([]),
           createMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
       };
       const mockPrisma = {
         $transaction: vi.fn((cb) => cb(mockTx)),
       } as any;
+      const mockRealtimeService = {
+        emit: vi.fn().mockResolvedValue(undefined),
+      };
 
-      const eventService = new NotificationEventService(mockPrisma, mockRecipientService as any);
+      const eventService = new NotificationEventService(
+        mockPrisma,
+        mockRecipientService as any,
+        mockRealtimeService as any,
+      );
 
       await expect(
         eventService.publish(
@@ -297,6 +305,115 @@ describe('Notification Core Module Unit Tests', () => {
         ]),
         skipDuplicates: true,
       });
+    });
+
+    it('defers realtime emission until post-commit and does NOT emit inside transaction', async () => {
+      const mockRecipientService = {
+        resolveRecipients: vi.fn().mockResolvedValue([2]),
+      };
+      const postCommitHooks: Array<() => void> = [];
+      const mockTx: any = {
+        user: { findUnique: vi.fn().mockResolvedValue({ name: 'Sender' }) },
+        notification: {
+          findMany: vi.fn().mockResolvedValue([]),
+          createMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+      };
+      // Attach post commit collector as PrismaService.$transaction does
+      const { POST_COMMIT_HOOKS } = await import('../../database/prisma.service.js');
+      mockTx[POST_COMMIT_HOOKS] = postCommitHooks;
+
+      const mockPrisma = {
+        $transaction: vi.fn((cb) => cb(mockTx)),
+      } as any;
+      const mockRealtimeService = {
+        emit: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const eventService = new NotificationEventService(
+        mockPrisma,
+        mockRecipientService as any,
+        mockRealtimeService as any,
+      );
+
+      await eventService.publish(
+        {
+          type: 'TASK_ASSIGNED',
+          actorId: 1,
+          taskId: 10,
+          taskTitle: 'Post-commit Task',
+          assigneeId: 2,
+        },
+        mockTx,
+      );
+
+      // Verify that realtimeService.emit has NOT been called yet while transaction is open
+      expect(mockRealtimeService.emit).not.toHaveBeenCalled();
+      expect(postCommitHooks).toHaveLength(1);
+
+      // Simulate transaction commit
+      postCommitHooks[0]();
+
+      // Now it must be called
+      expect(mockRealtimeService.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'NOTIFICATION_NEW',
+          targetUserIds: [2],
+          payload: expect.objectContaining({
+            title: expect.stringContaining('phân công'),
+          }),
+        }),
+      );
+    });
+
+    it('filters out duplicate records and does NOT emit SSE for skipped notifications', async () => {
+      const mockRecipientService = {
+        resolveRecipients: vi.fn().mockResolvedValue([2]),
+      };
+      const postCommitHooks: Array<() => void> = [];
+      const { POST_COMMIT_HOOKS } = await import('../../database/prisma.service.js');
+      const mockTx: any = {
+        user: { findUnique: vi.fn().mockResolvedValue({ name: 'Sender' }) },
+        notification: {
+          // Simulate database already having this eventKey
+          findMany: vi.fn().mockResolvedValue([
+            { eventKey: 'TASK_DEADLINE_SOON:2:10:2026-11-15' },
+          ]),
+          createMany: vi.fn(),
+        },
+      };
+      mockTx[POST_COMMIT_HOOKS] = postCommitHooks;
+
+      const mockPrisma = {
+        $transaction: vi.fn((cb) => cb(mockTx)),
+      } as any;
+      const mockRealtimeService = {
+        emit: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const eventService = new NotificationEventService(
+        mockPrisma,
+        mockRecipientService as any,
+        mockRealtimeService as any,
+      );
+
+      await eventService.publish(
+        {
+          type: 'TASK_DEADLINE_SOON',
+          actorId: 0,
+          taskId: 10,
+          taskTitle: 'Duplicate Deadline Task',
+          dueDate: '2026-11-15',
+          creatorId: 1,
+          assigneeId: 2,
+        },
+        mockTx,
+      );
+
+      // Should skip insert and register no post-commit hook
+      expect(mockTx.notification.createMany).not.toHaveBeenCalled();
+      expect(postCommitHooks).toHaveLength(0);
+      expect(mockRealtimeService.emit).not.toHaveBeenCalled();
     });
   });
 });

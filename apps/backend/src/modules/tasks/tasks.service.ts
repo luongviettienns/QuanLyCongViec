@@ -5,6 +5,7 @@ import { TaskCrudService } from './services/task-crud.service.js';
 import { TaskWorkflowService } from './services/task-workflow.service.js';
 import { TaskReorderService } from './services/task-reorder.service.js';
 import { TaskStatsService } from './services/task-stats.service.js';
+import { RealtimeService } from '../realtime/realtime.service.js';
 import { CreateTaskDto } from './dto/create-task.dto.js';
 import { UpdateTaskDto } from './dto/update-task.dto.js';
 import { UpdateTaskContentDto } from './dto/update-task-content.dto.js';
@@ -26,6 +27,7 @@ export class TasksService {
     private readonly taskWorkflowService: TaskWorkflowService,
     private readonly taskReorderService: TaskReorderService,
     private readonly taskStatsService: TaskStatsService,
+    private readonly realtimeService: RealtimeService,
   ) {}
 
   findAll(query: FilterTasksDto | undefined, userId: number): Promise<Task[]> {
@@ -56,9 +58,34 @@ export class TasksService {
       throw new BadRequestException('Vui lòng cung cấp ít nhất một thông tin cần cập nhật');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       let updated: Task | undefined;
 
+      // Bước 1: Nếu có thay đổi nhóm hoặc phân công, thực hiện moveTeam trước
+      // Điều này đảm bảo task đã thuộc phạm vi Team mới (hoặc không gian cá nhân mới)
+      // trước khi validate danh mục (categoryId) và nội dung ở bước tiếp theo.
+      if (hasTeam) {
+        updated = await this.taskWorkflowService.moveTeam(
+          id,
+          {
+            teamId: data.teamId,
+            assigneeId: data.assigneeId,
+            title: data.title,
+          },
+          userId,
+          tx,
+        );
+      } else if (hasAssignee) {
+        updated = await this.taskWorkflowService.updateAssignee(
+          id,
+          { assigneeId: data.assigneeId },
+          userId,
+          tx,
+        );
+      }
+
+      // Bước 2: Cập nhật nội dung (tiêu đề, mô tả, ưu tiên, ngày tháng, và categoryId)
+      // CategoryId ở đây sẽ được kiểm tra tính hợp lệ đối với Team đích (đã cập nhật ở Bước 1).
       if (hasContent) {
         updated = await this.taskCrudService.updateContent(
           id,
@@ -75,25 +102,7 @@ export class TasksService {
         );
       }
 
-      if (hasTeam) {
-        updated = await this.taskWorkflowService.moveTeam(
-          id,
-          {
-            teamId: data.teamId,
-            assigneeId: data.assigneeId,
-          },
-          userId,
-          tx,
-        );
-      } else if (hasAssignee) {
-        updated = await this.taskWorkflowService.updateAssignee(
-          id,
-          { assigneeId: data.assigneeId },
-          userId,
-          tx,
-        );
-      }
-
+      // Bước 3: Cập nhật trạng thái quy trình (nếu có)
       if (hasStatus && data.status !== undefined) {
         updated = await this.taskWorkflowService.updateStatus(
           id,
@@ -109,6 +118,22 @@ export class TasksService {
 
       return updated;
     });
+
+    void this.realtimeService.emit({
+      type: 'TASK_UPDATED',
+      actorId: userId,
+      teamId: result.teamId,
+      targetUserIds: result.teamId
+        ? undefined
+        : [result.userId, ...(result.assigneeId ? [result.assigneeId] : [])],
+      payload: {
+        taskId: result.id,
+        teamId: result.teamId,
+        status: result.status,
+      },
+    });
+
+    return result;
   }
 
   updateContent(id: number, data: UpdateTaskContentDto, userId: number): Promise<Task> {

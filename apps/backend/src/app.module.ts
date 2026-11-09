@@ -8,6 +8,7 @@ import { CategoriesModule } from './modules/categories/categories.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { TeamsModule } from './modules/teams/teams.module.js';
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
+import { RealtimeModule } from './modules/realtime/realtime.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -20,6 +21,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     }),
     DatabaseModule,
     AuthModule,
+    RealtimeModule,
     TaskModule,
     CategoriesModule,
     TeamsModule,

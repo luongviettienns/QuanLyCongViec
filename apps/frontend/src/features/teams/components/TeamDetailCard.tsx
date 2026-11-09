@@ -20,6 +20,7 @@ import {
   LogoutOutlined,
 } from '@ant-design/icons';
 import type { Team, TeamMember, TeamRole } from '../types/team.types';
+import { TeamCategorySection } from './TeamCategorySection';
 
 const { Title, Text } = Typography;
 
@@ -270,6 +271,11 @@ export function TeamDetailCard({
         rowKey="id"
         pagination={false}
         size="small"
+      />
+
+      <TeamCategorySection
+        teamId={selectedTeam.id}
+        canManage={canManageMembers}
       />
     </Card>
   );

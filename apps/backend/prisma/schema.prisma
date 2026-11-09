@@ -76,6 +76,7 @@ model Team {
 
   members       TeamMember[]
   tasks         Task[]
+  categories    Category[]
   notifications Notification[]
 
   createdAt     DateTime       @default(now())
@@ -107,12 +108,16 @@ model Category {
   userId    Int
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  teamId    Int?
+  team      Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
   tasks     Task[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([userId, name])
+  @@index([userId])
+  @@index([teamId])
   @@map("Category")
 }
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Card,
   Table,
@@ -11,23 +11,34 @@ import {
   Popconfirm,
   Typography,
   Modal,
-  Grid,
   List,
+  Select,
+  Alert,
   type TableColumnsType,
 } from 'antd';
+import { useResponsive } from '../../../shared/hooks';
 import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
   TagsOutlined,
   AppstoreOutlined,
+  UserOutlined,
+  TeamOutlined,
+  CrownOutlined,
+  SafetyCertificateOutlined,
+  LockOutlined,
 } from '@ant-design/icons';
 import { useCategories } from '../hooks/useCategories';
+import { trimmedLengthRule } from '../../../shared/utils/validation.utils';
 import {
   CATEGORY_PRESET_COLORS,
   type Category,
   type CreateCategoryPayload,
 } from '../types/category.types';
+import { useAuth } from '../../auth/hooks/useAuth';
+import { getTeams } from '../../teams/api/teams.api';
+import type { Team } from '../../teams/types/team.types';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -36,25 +47,235 @@ interface CategoryPageProps {
 }
 
 export default function CategoryPage({ onChanged }: CategoryPageProps) {
+  const { user } = useAuth();
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [selectedContext, setSelectedContext] = useState<'personal' | number>('personal');
+
   const {
     categories,
     loading,
+    setTeamId,
     handleCreate,
     handleUpdate,
     handleDelete,
-  } = useCategories();
+  } = useCategories({ teamId: null });
 
-  const screens = Grid.useBreakpoint();
+  const screens = useResponsive();
   const [createForm] = Form.useForm<{ name: string }>();
   const [editForm] = Form.useForm<{ name: string }>();
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [createColor, setCreateColor] = useState<string>('#1677ff');
   const [editColor, setEditColor] = useState<string>('#1677ff');
 
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      try {
+        const teamList = await getTeams();
+        if (active) setTeams(teamList);
+      } catch {
+        // ignore
+      }
+    }
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const currentTeam =
+    typeof selectedContext === 'number'
+      ? teams.find((t) => t.id === selectedContext)
+      : null;
+
+  const isOwner = Boolean(currentTeam && currentTeam.ownerId === user?.id);
+  const isOwnerOrAdmin =
+    selectedContext === 'personal' ||
+    Boolean(
+      currentTeam &&
+        (isOwner ||
+          currentTeam.members?.some(
+            (m) => m.userId === user?.id && m.role === 'ADMIN',
+          )),
+    );
+
+  const contextOptions = useMemo(() => {
+    return [
+      {
+        label: (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              color: '#8c8c8c',
+              letterSpacing: '0.5px',
+            }}
+          >
+            Không gian cá nhân
+          </span>
+        ),
+        options: [
+          {
+            value: 'personal' as const,
+            title: 'Danh mục cá nhân',
+            label: (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '3px 0',
+                }}
+              >
+                <Space size={10}>
+                  <div
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 6,
+                      background: '#e6f4ff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#1677ff',
+                      fontSize: 14,
+                    }}
+                  >
+                    <UserOutlined />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: '#1f1f1f', lineHeight: 1.3 }}>
+                      Danh mục cá nhân
+                    </div>
+                    <div style={{ fontSize: 11, color: '#8c8c8c', lineHeight: 1.2 }}>
+                      Riêng tư · Dành riêng cho bạn
+                    </div>
+                  </div>
+                </Space>
+                <Tag bordered={false} color="blue" style={{ margin: 0, fontSize: 11 }}>
+                  Cá nhân
+                </Tag>
+              </div>
+            ),
+          },
+        ],
+      },
+      ...(teams.length > 0
+        ? [
+            {
+              label: (
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    color: '#8c8c8c',
+                    letterSpacing: '0.5px',
+                  }}
+                >
+                  Nhóm làm việc ({teams.length})
+                </span>
+              ),
+              options: teams.map((t) => {
+                const isTeamOwner = t.ownerId === user?.id;
+                const isTeamAdmin = t.members?.some((m) => m.userId === user?.id && m.role === 'ADMIN');
+                return {
+                  value: t.id,
+                  title: t.name,
+                  label: (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '3px 0',
+                      }}
+                    >
+                      <Space size={10}>
+                        <div
+                          style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 6,
+                            background: isTeamOwner ? '#fffbe6' : isTeamAdmin ? '#f0f5ff' : '#f5f5f5',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: isTeamOwner ? '#d48806' : isTeamAdmin ? '#1d39c4' : '#595959',
+                            fontSize: 14,
+                          }}
+                        >
+                          <TeamOutlined />
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13, color: '#1f1f1f', lineHeight: 1.3 }}>
+                            {t.name}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#8c8c8c', lineHeight: 1.2 }}>
+                            {t.members?.length || 1} thành viên
+                          </div>
+                        </div>
+                      </Space>
+                      <Tag
+                        bordered={false}
+                        color={isTeamOwner ? 'gold' : isTeamAdmin ? 'geekblue' : 'default'}
+                        style={{ margin: 0, fontSize: 11 }}
+                      >
+                        {isTeamOwner ? 'Chủ sở hữu' : isTeamAdmin ? 'Quản trị viên' : 'Thành viên'}
+                      </Tag>
+                    </div>
+                  ),
+                };
+              }),
+            },
+          ]
+        : []),
+    ];
+  }, [teams, user?.id]);
+
+  function renderSelectedLabel(props: { label?: React.ReactNode; value: string | number }) {
+    if (props.value === 'personal') {
+      return (
+        <Space size={8} style={{ fontWeight: 600, fontSize: 13 }}>
+          <UserOutlined style={{ color: '#1677ff' }} />
+          <span>Danh mục cá nhân</span>
+          <Tag bordered={false} color="blue" style={{ margin: 0, fontSize: 11, padding: '0 6px', lineHeight: '18px' }}>
+            Cá nhân
+          </Tag>
+        </Space>
+      );
+    }
+    const teamId = typeof props.value === 'number' ? props.value : Number(props.value);
+    const team = teams.find((t) => t.id === teamId);
+    if (!team) return props.label;
+    const isTeamOwner = team.ownerId === user?.id;
+    const isTeamAdmin = team.members?.some((m) => m.userId === user?.id && m.role === 'ADMIN');
+    return (
+      <Space size={8} style={{ fontWeight: 600, fontSize: 13 }}>
+        <TeamOutlined style={{ color: isTeamOwner ? '#d48806' : '#1677ff' }} />
+        <span>{team.name}</span>
+        <Tag
+          bordered={false}
+          color={isTeamOwner ? 'gold' : isTeamAdmin ? 'geekblue' : 'default'}
+          style={{ margin: 0, fontSize: 11, padding: '0 6px', lineHeight: '18px' }}
+        >
+          {isTeamOwner ? 'Chủ sở hữu' : isTeamAdmin ? 'Quản trị' : 'Thành viên'}
+        </Tag>
+      </Space>
+    );
+  }
+
+  function handleContextChange(value: 'personal' | number) {
+    setSelectedContext(value);
+    setTeamId(value === 'personal' ? null : value);
+  }
+
   async function onFinishCreate(values: { name: string }) {
     const payload: CreateCategoryPayload = {
       name: values.name.trim(),
       color: createColor,
+      teamId: typeof selectedContext === 'number' ? selectedContext : undefined,
     };
     const success = await handleCreate(payload);
     if (success) {
@@ -134,34 +355,35 @@ export default function CategoryPage({ onChanged }: CategoryPageProps) {
       key: 'action',
       width: 140,
       align: 'right',
-      render: (_, record: Category) => (
-        <Space size="small">
-          <Button
-            type="text"
-            icon={<EditOutlined />}
-            onClick={() => startEdit(record)}
-            style={{ color: '#1677ff' }}
-          >
-            Sửa
-          </Button>
-          <Popconfirm
-            title="Xoá danh mục"
-            description={`Bạn có chắc muốn xoá danh mục "${record.name}"?`}
-            onConfirm={() => void confirmDelete(record.id)}
-            okText="Xoá"
-            cancelText="Huỷ"
-            okButtonProps={{ danger: true }}
-          >
+      render: (_, record: Category) => {
+        if (!isOwnerOrAdmin) {
+          return <Tag style={{ margin: 0 }}>Chỉ xem</Tag>;
+        }
+        return (
+          <Space size="small">
             <Button
               type="text"
-              danger
-              icon={<DeleteOutlined />}
+              icon={<EditOutlined />}
+              onClick={() => startEdit(record)}
+              style={{ color: '#1677ff' }}
             >
-              Xoá
+              Sửa
             </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            <Popconfirm
+              title="Xoá danh mục"
+              description={`Bạn có chắc muốn xoá danh mục "${record.name}"?`}
+              onConfirm={() => void confirmDelete(record.id)}
+              okText="Xoá"
+              cancelText="Huỷ"
+              okButtonProps={{ danger: true }}
+            >
+              <Button type="text" danger icon={<DeleteOutlined />}>
+                Xoá
+              </Button>
+            </Popconfirm>
+          </Space>
+        );
+      },
     },
   ];
 
@@ -179,76 +401,177 @@ export default function CategoryPage({ onChanged }: CategoryPageProps) {
         </Paragraph>
       </div>
 
-      <Card
-        title={
-          <Space size={8}>
-            <PlusOutlined style={{ color: '#1677ff' }} />
-            <span>Thêm danh mục mới</span>
-          </Space>
-        }
-        style={{ marginBottom: 24, borderRadius: 8 }}
+      {/* Workspace Context Switcher Header */}
+      <div
+        style={{
+          background: '#ffffff',
+          borderRadius: 10,
+          border: '1px solid #e8e8e8',
+          padding: '14px 18px',
+          marginBottom: 20,
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 12,
+        }}
       >
-        <Form
-          form={createForm}
-          layout="vertical"
-          onFinish={(values) => void onFinishCreate(values)}
-        >
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: screens.sm ? 'row' : 'column',
-              gap: 12,
-              alignItems: screens.sm ? 'flex-end' : 'stretch',
-            }}
-          >
-            <Form.Item
-              name="name"
-              label="Tên danh mục"
-              rules={[
-                { required: true, message: 'Vui lòng nhập tên danh mục' },
-                { min: 2, message: 'Tối thiểu 2 ký tự' },
-                { max: 50, message: 'Tối đa 50 ký tự' },
-              ]}
-              style={{ flex: 1, margin: 0 }}
-            >
-              <Input
-                placeholder="Nhập tên danh mục (ví dụ: Họp dự án, Thiết kế UI, Cá nhân...)"
-                size="large"
-              />
-            </Form.Item>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', flex: 1 }}>
+          <Space size={8} align="center">
+            <AppstoreOutlined style={{ color: '#1677ff', fontSize: 16 }} />
+            <Text strong style={{ fontSize: 14, color: '#262626' }}>
+              Phạm vi quản lý:
+            </Text>
+          </Space>
 
-            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
-              <div>
-                <div style={{ fontSize: 14, marginBottom: 8, color: '#595959' }}>Màu sắc</div>
-                <ColorPicker
-                  value={createColor}
-                  onChange={(c) => setCreateColor(c.toHexString())}
-                  presets={[{ label: 'Màu gợi ý', colors: CATEGORY_PRESET_COLORS }]}
+          <Select<'personal' | number>
+            value={selectedContext}
+            onChange={handleContextChange}
+            style={{ minWidth: 280, maxWidth: screens.sm ? 400 : '100%', flex: screens.sm ? undefined : 1 }}
+            size="middle"
+            popupMatchSelectWidth={screens.sm ? 380 : true}
+            showSearch
+            filterOption={(input, option) =>
+              Boolean(option?.title?.toLowerCase().includes(input.toLowerCase()))
+            }
+            labelRender={renderSelectedLabel}
+            options={contextOptions}
+          />
+        </div>
+
+        {/* Status Pill on the Right */}
+        <Space size={8} wrap>
+          {selectedContext === 'personal' ? (
+            <Tag color="blue" bordered={false} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6 }}>
+              <UserOutlined style={{ marginRight: 6 }} />
+              {categories.length} danh mục cá nhân
+            </Tag>
+          ) : (
+            <>
+              <Tag
+                color={isOwner ? 'gold' : isOwnerOrAdmin ? 'geekblue' : 'default'}
+                bordered={false}
+                style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6 }}
+              >
+                {isOwner ? (
+                  <>
+                    <CrownOutlined style={{ marginRight: 6 }} />
+                    Chủ sở hữu nhóm
+                  </>
+                ) : isOwnerOrAdmin ? (
+                  <>
+                    <SafetyCertificateOutlined style={{ marginRight: 6 }} />
+                    Quản trị viên
+                  </>
+                ) : (
+                  <>
+                    <LockOutlined style={{ marginRight: 6 }} />
+                    Thành viên (Chỉ đọc)
+                  </>
+                )}
+              </Tag>
+              <Tag color="cyan" bordered={false} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6 }}>
+                <TeamOutlined style={{ marginRight: 6 }} />
+                {categories.length} danh mục nhóm
+              </Tag>
+            </>
+          )}
+        </Space>
+      </div>
+
+      {!isOwnerOrAdmin && (
+        <Alert
+          message="Bạn đang xem danh mục của nhóm với quyền Thành viên (chỉ đọc). Chỉ Trưởng nhóm và Quản trị viên mới có thể tạo, chỉnh sửa hoặc xoá danh mục nhóm."
+          type="info"
+          showIcon
+          style={{ marginBottom: 20 }}
+        />
+      )}
+
+      {isOwnerOrAdmin && (
+        <Card
+          title={
+            <Space size={8}>
+              <PlusOutlined style={{ color: '#1677ff' }} />
+              <span>
+                {currentTeam
+                  ? `Thêm danh mục cho nhóm "${currentTeam.name}"`
+                  : 'Thêm danh mục cá nhân mới'}
+              </span>
+            </Space>
+          }
+          style={{ marginBottom: 24, borderRadius: 8 }}
+        >
+          <Form
+            form={createForm}
+            layout="vertical"
+            onFinish={(values) => void onFinishCreate(values)}
+          >
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: screens.sm ? 'row' : 'column',
+                gap: 12,
+                alignItems: screens.sm ? 'flex-end' : 'stretch',
+              }}
+            >
+              <Form.Item
+                name="name"
+                label="Tên danh mục"
+                rules={[
+                  { required: true, message: 'Vui lòng nhập tên danh mục' },
+                  trimmedLengthRule({ label: 'Tên danh mục', min: 2, max: 50 }),
+                ]}
+                style={{ flex: 1, margin: 0 }}
+              >
+                <Input
+                  placeholder={
+                    currentTeam
+                      ? 'Ví dụ: Bug, Feature, Urgent, Frontend...'
+                      : 'Nhập tên danh mục cá nhân (ví dụ: Học tập, Cá nhân...)'
+                  }
                   size="large"
                 />
-              </div>
+              </Form.Item>
 
-              <Button
-                type="primary"
-                htmlType="submit"
-                icon={<PlusOutlined />}
-                loading={loading}
-                size="large"
-                style={{ minWidth: 120 }}
-              >
-                Tạo mới
-              </Button>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+                <div>
+                  <div style={{ fontSize: 14, marginBottom: 8, color: '#595959' }}>Màu sắc</div>
+                  <ColorPicker
+                    value={createColor}
+                    onChange={(c) => setCreateColor(c.toHexString())}
+                    presets={[{ label: 'Màu gợi ý', colors: CATEGORY_PRESET_COLORS }]}
+                    size="large"
+                  />
+                </div>
+
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  icon={<PlusOutlined />}
+                  loading={loading}
+                  size="large"
+                  style={{ minWidth: 120 }}
+                >
+                  Tạo mới
+                </Button>
+              </div>
             </div>
-          </div>
-        </Form>
-      </Card>
+          </Form>
+        </Card>
+      )}
 
       <Card
         title={
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Space size={8}>
               <AppstoreOutlined style={{ color: '#1677ff' }} />
-              <span>Danh sách danh mục</span>
+              <span>
+                {currentTeam
+                  ? `Danh sách danh mục nhóm "${currentTeam.name}"`
+                  : 'Danh sách danh mục cá nhân'}
+              </span>
             </Space>
             <Tag color="blue" style={{ margin: 0 }}>
               {categories.length} danh mục
@@ -287,34 +610,38 @@ export default function CategoryPage({ onChanged }: CategoryPageProps) {
                     </Tag>
                   </Space>
 
-                  <Space size="small">
-                    <Button
-                      size="small"
-                      type="text"
-                      icon={<EditOutlined />}
-                      onClick={() => startEdit(item)}
-                      style={{ color: '#1677ff' }}
-                    >
-                      Sửa
-                    </Button>
-                    <Popconfirm
-                      title="Xoá danh mục"
-                      description={`Bạn có chắc muốn xoá "${item.name}"?`}
-                      onConfirm={() => void confirmDelete(item.id)}
-                      okText="Xoá"
-                      cancelText="Huỷ"
-                      okButtonProps={{ danger: true }}
-                    >
+                  {isOwnerOrAdmin ? (
+                    <Space size="small">
                       <Button
                         size="small"
                         type="text"
-                        danger
-                        icon={<DeleteOutlined />}
+                        icon={<EditOutlined />}
+                        onClick={() => startEdit(item)}
+                        style={{ color: '#1677ff' }}
                       >
-                        Xoá
+                        Sửa
                       </Button>
-                    </Popconfirm>
-                  </Space>
+                      <Popconfirm
+                        title="Xoá danh mục"
+                        description={`Bạn có chắc muốn xoá "${item.name}"?`}
+                        onConfirm={() => void confirmDelete(item.id)}
+                        okText="Xoá"
+                        cancelText="Huỷ"
+                        okButtonProps={{ danger: true }}
+                      >
+                        <Button
+                          size="small"
+                          type="text"
+                          danger
+                          icon={<DeleteOutlined />}
+                        >
+                          Xoá
+                        </Button>
+                      </Popconfirm>
+                    </Space>
+                  ) : (
+                    <Tag style={{ margin: 0 }}>Chỉ xem</Tag>
+                  )}
                 </div>
               </Card>
             )}
@@ -325,53 +652,55 @@ export default function CategoryPage({ onChanged }: CategoryPageProps) {
             dataSource={categories}
             rowKey="id"
             loading={loading}
-            pagination={categories.length > 10 ? { pageSize: 10 } : false}
+            pagination={false}
             locale={{ emptyText: 'Chưa có danh mục nào' }}
           />
         )}
       </Card>
 
       <Modal
-        open={editingCategory !== null}
+        title={
+          currentTeam
+            ? `Chỉnh sửa danh mục nhóm "${currentTeam.name}"`
+            : 'Chỉnh sửa danh mục cá nhân'
+        }
+        open={Boolean(editingCategory)}
         onCancel={() => {
           setEditingCategory(null);
           editForm.resetFields();
         }}
-        title="Chỉnh sửa danh mục"
-        okText="Lưu thay đổi"
-        cancelText="Huỷ"
         onOk={() => editForm.submit()}
         confirmLoading={loading}
+        okText="Lưu thay đổi"
+        cancelText="Huỷ"
         destroyOnHidden
-        width={screens.sm ? 440 : '90%'}
       >
         <Form
           form={editForm}
           layout="vertical"
           onFinish={(values) => void onFinishEdit(values)}
-          style={{ marginTop: 16 }}
         >
           <Form.Item
             name="name"
             label="Tên danh mục"
             rules={[
               { required: true, message: 'Vui lòng nhập tên danh mục' },
-              { min: 2, message: 'Tối thiểu 2 ký tự' },
-              { max: 50, message: 'Tối đa 50 ký tự' },
+              trimmedLengthRule({ label: 'Tên danh mục', min: 2, max: 50 }),
             ]}
           >
-            <Input placeholder="Nhập tên danh mục" size="large" />
+            <Input placeholder="Nhập tên danh mục..." />
           </Form.Item>
 
           <Form.Item label="Màu đại diện">
-            <Space align="center" size={12}>
+            <Space align="center" size={10}>
               <ColorPicker
                 value={editColor}
                 onChange={(c) => setEditColor(c.toHexString())}
                 presets={[{ label: 'Màu gợi ý', colors: CATEGORY_PRESET_COLORS }]}
-                size="large"
               />
-              <Text style={{ fontFamily: 'monospace', fontSize: 14 }}>{editColor}</Text>
+              <Tag color={editColor} style={{ margin: 0 }}>
+                Xem trước
+              </Tag>
             </Space>
           </Form.Item>
         </Form>

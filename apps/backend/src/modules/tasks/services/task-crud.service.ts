@@ -12,6 +12,7 @@ import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { TaskQueryService } from './task-query.service.js';
 import { TaskReorderService } from './task-reorder.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
+import { RealtimeService } from '../../realtime/realtime.service.js';
 import { type Task, Prisma, TaskStatus, TaskPriority } from '@prisma/client';
 
 @Injectable()
@@ -22,6 +23,7 @@ export class TaskCrudService {
     private readonly queryService: TaskQueryService,
     private readonly reorderService: TaskReorderService,
     private readonly notificationEventService: NotificationEventService,
+    private readonly realtimeService: RealtimeService,
   ) {}
 
   private executeInTransaction<T>(
@@ -46,7 +48,7 @@ export class TaskCrudService {
     if (
       date.getUTCFullYear() !== year ||
       date.getUTCMonth() !== month - 1 ||
-      date.getUTCDate() !== day
+      date.getUTCDate() !== day 
     ) {
       throw new BadRequestException('Ngày không hợp lệ trong lịch');
     }
@@ -86,7 +88,7 @@ export class TaskCrudService {
     const initialPriority: TaskPriority = data.priority ? data.priority : TaskPriority.MEDIUM;
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const createdTask = await this.prisma.$transaction(async (tx) => {
         await this.reorderService.lockScope(tx, {
           teamId: data.teamId ?? null,
           userId,
@@ -111,14 +113,27 @@ export class TaskCrudService {
         }
 
         if (data.categoryId) {
-          const category = await tx.category.findFirst({
-            where: {
-              id: data.categoryId,
-              userId,
-            },
-          });
-          if (!category) {
-            throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
+          if (data.teamId) {
+            const category = await tx.category.findFirst({
+              where: {
+                id: data.categoryId,
+                teamId: data.teamId,
+              },
+            });
+            if (!category) {
+              throw new BadRequestException(`Danh mục #${data.categoryId} không thuộc nhóm này`);
+            }
+          } else {
+            const category = await tx.category.findFirst({
+              where: {
+                id: data.categoryId,
+                userId,
+                teamId: null,
+              },
+            });
+            if (!category) {
+              throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
+            }
           }
         }
 
@@ -189,6 +204,22 @@ export class TaskCrudService {
 
         return createdTask;
       });
+
+      void this.realtimeService.emit({
+        type: 'TASK_CREATED',
+        actorId: userId,
+        teamId: createdTask.teamId,
+        targetUserIds: createdTask.teamId
+          ? undefined
+          : [createdTask.userId, ...(createdTask.assigneeId ? [createdTask.assigneeId] : [])],
+        payload: {
+          taskId: createdTask.id,
+          teamId: createdTask.teamId,
+          status: createdTask.status,
+        },
+      });
+
+      return createdTask;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException(`Tiêu đề '${cleanTitle}' đã tồn tại, vui lòng đặt tên khác`);
@@ -215,7 +246,7 @@ export class TaskCrudService {
     }
 
     try {
-      return await this.executeInTransaction(externalTx, async (tx) => {
+      const updatedTask = await this.executeInTransaction(externalTx, async (tx) => {
         const initialTask = await this.queryService.findOne(id, userId, tx);
         if (hasTitle) {
           await this.reorderService.lockScope(tx, {
@@ -299,14 +330,32 @@ export class TaskCrudService {
 
         if (hasCategory) {
           if (data.categoryId) {
-            const category = await tx.category.findFirst({
-              where: {
-                id: data.categoryId,
-                userId: { in: [userId, currentTask.userId] },
-              },
-            });
-            if (!category) {
-              throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
+            const effectiveTeamId = currentTask.teamId;
+            if (effectiveTeamId) {
+              const category = await tx.category.findFirst({
+                where: {
+                  id: data.categoryId,
+                  teamId: effectiveTeamId,
+                },
+              });
+              if (!category) {
+                if (currentTask.categoryId !== data.categoryId) {
+                  throw new BadRequestException(`Danh mục #${data.categoryId} không thuộc nhóm này`);
+                }
+              }
+            } else {
+              const category = await tx.category.findFirst({
+                where: {
+                  id: data.categoryId,
+                  userId: { in: [userId, currentTask.userId] },
+                  teamId: null,
+                },
+              });
+              if (!category) {
+                if (currentTask.categoryId !== data.categoryId) {
+                  throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
+                }
+              }
             }
             updateData.category = { connect: { id: data.categoryId } };
           } else {
@@ -348,6 +397,24 @@ export class TaskCrudService {
 
         return updatedTask;
       });
+
+      if (!externalTx) {
+        void this.realtimeService.emit({
+          type: 'TASK_UPDATED',
+          actorId: userId,
+          teamId: updatedTask.teamId,
+          targetUserIds: updatedTask.teamId
+            ? undefined
+            : [updatedTask.userId, ...(updatedTask.assigneeId ? [updatedTask.assigneeId] : [])],
+          payload: {
+            taskId: updatedTask.id,
+            teamId: updatedTask.teamId,
+            status: updatedTask.status,
+          },
+        });
+      }
+
+      return updatedTask;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException('Tiêu đề công việc đã được sử dụng bởi một công việc khác');
@@ -357,7 +424,7 @@ export class TaskCrudService {
   }
 
   async remove(id: number, userId: number): Promise<{ success: boolean; message: string; deletedTask: Task }> {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const initialTask = await this.queryService.findOne(id, userId, tx);
       await this.reorderService.lockScope(tx, {
         teamId: initialTask.teamId,
@@ -398,5 +465,20 @@ export class TaskCrudService {
         deletedTask,
       };
     });
+
+    void this.realtimeService.emit({
+      type: 'TASK_DELETED',
+      actorId: userId,
+      teamId: result.deletedTask.teamId,
+      targetUserIds: result.deletedTask.teamId
+        ? undefined
+        : [result.deletedTask.userId, ...(result.deletedTask.assigneeId ? [result.deletedTask.assigneeId] : [])],
+      payload: {
+        taskId: id,
+        teamId: result.deletedTask.teamId,
+      },
+    });
+
+    return result;
   }
 }

@@ -3,6 +3,11 @@ import { Card, Form, Input, Button, Typography, message, Space } from 'antd';
 import { MailOutlined, LockOutlined, UserOutlined, CheckSquareOutlined } from '@ant-design/icons';
 import { useAuth } from '../hooks/useAuth';
 import type { LoginPayload, RegisterPayload } from '../types/auth.types';
+import {
+  PASSWORD_MAX_LENGTH,
+  passwordRules,
+  trimmedLengthRule,
+} from '../../../shared/utils/validation.utils';
 
 const { Title, Text, Link } = Typography;
 
@@ -97,7 +102,10 @@ export default function AuthScreen() {
             <Form.Item
               label="Mật khẩu"
               name="password"
-              rules={[{ required: true, message: 'Vui lòng nhập mật khẩu' }]}
+              rules={[
+                { required: true, message: 'Vui lòng nhập mật khẩu' },
+                { max: PASSWORD_MAX_LENGTH, message: `Mật khẩu không được vượt quá ${PASSWORD_MAX_LENGTH} ký tự` },
+              ]}
             >
               <Input.Password prefix={<LockOutlined />} placeholder="Nhập mật khẩu" size="large" />
             </Form.Item>
@@ -115,8 +123,7 @@ export default function AuthScreen() {
               name="name"
               rules={[
                 { required: true, message: 'Vui lòng nhập họ và tên' },
-                { min: 2, message: 'Họ tên phải có ít nhất 2 ký tự' },
-                { max: 50, message: 'Họ tên không được vượt quá 50 ký tự' },
+                trimmedLengthRule({ label: 'Họ tên', min: 2, max: 50 }),
               ]}
             >
               <Input prefix={<UserOutlined />} placeholder="Nguyễn Văn A" size="large" />
@@ -136,12 +143,9 @@ export default function AuthScreen() {
             <Form.Item
               label="Mật khẩu"
               name="password"
-              rules={[
-                { required: true, message: 'Vui lòng nhập mật khẩu' },
-                { min: 8, message: 'Mật khẩu phải có ít nhất 8 ký tự' },
-              ]}
+              rules={passwordRules}
             >
-              <Input.Password prefix={<LockOutlined />} placeholder="Tối thiểu 8 ký tự" size="large" />
+              <Input.Password prefix={<LockOutlined />} placeholder="8-64 ký tự, không chứa khoảng trắng" size="large" />
             </Form.Item>
 
             <Form.Item style={{ marginBottom: 16, marginTop: 24 }}>

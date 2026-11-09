@@ -1,16 +1,28 @@
+import type { IncomingMessage } from 'http';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+
+const apiProxy = {
+  target: 'http://localhost:3000',
+  changeOrigin: true,
+  bypass(req: IncomingMessage) {
+    if (req.method === 'GET' && req.headers.accept?.includes('text/html')) {
+      return '/index.html';
+    }
+  },
+};
 
 export default defineConfig({
   plugins: [react()],
 
   server: {
     proxy: {
-      '/tasks': 'http://localhost:3000',
-      '/categories': 'http://localhost:3000',
-      '/teams': 'http://localhost:3000',
-      '/auth': 'http://localhost:3000',
-      '/notifications': 'http://localhost:3000',
+      '/tasks': apiProxy,
+      '/categories': apiProxy,
+      '/teams': apiProxy,
+      '/auth': apiProxy,
+      '/notifications': apiProxy,
+      '/realtime': apiProxy,
     },
   },
 
@@ -19,7 +31,7 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (/[\\/](react|react-dom|scheduler)[\\/]/.test(id)) {
+            if (/[\\/](react|react-dom|scheduler|react-router|react-router-dom)[\\/]/.test(id)) {
               return 'vendor-react';
             }
             if (id.includes('chart.js') || id.includes('react-chartjs-2')) {

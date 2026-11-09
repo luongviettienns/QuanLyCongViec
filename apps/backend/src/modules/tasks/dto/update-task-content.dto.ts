@@ -1,4 +1,4 @@
-import { IsString, IsOptional, MinLength, MaxLength, IsEnum, IsInt, Matches } from 'class-validator';
+import { IsString, IsOptional, MinLength, MaxLength, IsEnum, IsInt, Matches, Min, ValidateIf } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskPriority } from '@prisma/client';
 
@@ -9,7 +9,8 @@ export class UpdateTaskContentDto {
     minLength: 3,
     maxLength: 100,
   })
-  @IsOptional()
+  // Non-nullable: only `undefined` skips validation, `null` must be rejected (400) instead of crashing the service.
+  @ValidateIf((_, value) => value !== undefined)
   @IsString({ message: 'Tiêu đề công việc phải là chuỗi ký tự' })
   @MinLength(3, { message: 'Tiêu đề công việc phải có ít nhất 3 ký tự' })
   @MaxLength(100, { message: 'Tiêu đề công việc không được vượt quá 100 ký tự' })
@@ -30,7 +31,7 @@ export class UpdateTaskContentDto {
     enum: TaskPriority,
     example: TaskPriority.HIGH,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsEnum(TaskPriority, { message: 'Độ ưu tiên không hợp lệ (LOW, MEDIUM, HIGH)' })
   priority?: TaskPriority;
 
@@ -56,5 +57,6 @@ export class UpdateTaskContentDto {
   })
   @IsOptional()
   @IsInt({ message: 'Mã danh mục phải là số nguyên' })
+  @Min(1, { message: 'Mã danh mục phải là số nguyên dương' })
   categoryId?: number | null;
 }

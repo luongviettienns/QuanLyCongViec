@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsInt } from 'class-validator';
+import { IsNotEmpty, IsInt, Min } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class TransferOwnershipDto {
@@ -8,5 +8,6 @@ export class TransferOwnershipDto {
   })
   @IsNotEmpty({ message: 'Mã chủ nhóm mới không được để trống' })
   @IsInt({ message: 'Mã chủ nhóm mới phải là số nguyên' })
+  @Min(1, { message: 'Mã chủ nhóm mới phải là số nguyên dương' })
   newOwnerId: number;
 }

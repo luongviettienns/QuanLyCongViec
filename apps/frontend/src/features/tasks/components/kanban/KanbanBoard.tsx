@@ -1,15 +1,26 @@
-import { useState, useRef } from 'react';
-import { Alert, Grid, Button } from 'antd';
+import { useState, useRef, useMemo } from 'react';
+import { Alert, Button, message } from 'antd';
 import { DragDropProvider, DragOverlay } from '@dnd-kit/react';
 import { PointerSensor, PointerActivationConstraints, KeyboardSensor } from '@dnd-kit/dom';
 import type { Task, TaskStatus } from '../../types/task.types';
+import type { Team } from '../../../teams/types/team.types';
+import { useAuth } from '../../../auth/hooks/useAuth';
+import { useResponsive } from '../../../../shared/hooks';
+import {
+  getTaskPermissions,
+  canTransitionTask,
+  canReorderTask,
+  type TaskPermissions,
+} from '../../utils/task-permission.utils';
 import { KanbanColumn, type ColumnConfig } from './KanbanColumn';
 import { TaskCardView } from './TaskCardView';
 
 interface Props {
   tasks: Task[];
+  teams?: Team[];
   onReorder: (taskIds: number[], status?: TaskStatus) => Promise<void>;
   onStatusChange?: (taskId: number, newStatus: TaskStatus, newPosition?: number) => Promise<void>;
+  onEdit?: (task: Task) => void;
   isFiltering?: boolean;
 }
 
@@ -19,10 +30,29 @@ const columns: ColumnConfig[] = [
   { id: 'DONE', title: 'Hoàn thành', color: '#52c41a' },
 ];
 
-export default function KanbanBoard({ tasks, onReorder, onStatusChange, isFiltering }: Props) {
+export default function KanbanBoard({
+  tasks,
+  teams = [],
+  onReorder,
+  onStatusChange,
+  onEdit,
+  isFiltering,
+}: Props) {
+  const { user } = useAuth();
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const screens = Grid.useBreakpoint();
+  const screens = useResponsive();
   const columnRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const taskPermissionsMap = useMemo(() => {
+    const map: Record<number, TaskPermissions> = {};
+    for (const t of tasks) {
+      const team = t.teamId ? teams.find((item) => item.id === t.teamId) : null;
+      map[t.id] = getTaskPermissions(user, t, team);
+    }
+    return map;
+  }, [tasks, teams, user]);
+
+  const activeTaskPermissions = activeTask ? taskPermissionsMap[activeTask.id] ?? null : null;
 
   function scrollToColumn(columnId: string) {
     const el = columnRefs.current[columnId];
@@ -132,10 +162,20 @@ export default function KanbanBoard({ tasks, onReorder, onStatusChange, isFilter
 
           if (!targetColumn) return;
 
+          const taskTeam = draggedTask.teamId
+            ? teams.find((item) => item.id === draggedTask.teamId)
+            : null;
+
           if (sourceColumn === targetColumn) {
             if (isFiltering) {
               return;
             }
+
+            if (!canReorderTask(user, draggedTask, taskTeam)) {
+              message.warning('Bạn không có quyền sắp xếp lại công việc này.');
+              return;
+            }
+
             const colTasks = tasks
               .filter((t) => t.status === sourceColumn)
               .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
@@ -152,6 +192,18 @@ export default function KanbanBoard({ tasks, onReorder, onStatusChange, isFilter
               void onReorder(newIds, sourceColumn);
             }, 0);
           } else {
+            // Check status transition permission
+            if (!canTransitionTask(user, draggedTask, targetColumn, taskTeam)) {
+              if (sourceColumn === 'TODO' && targetColumn === 'DONE') {
+                message.warning('Người thực hiện cần chuyển qua "Đang làm" trước khi Hoàn thành.');
+              } else if (sourceColumn === 'DONE') {
+                message.warning('Chỉ người tạo hoặc quản trị viên mới có thể mở lại công việc đã hoàn thành.');
+              } else {
+                message.warning('Bạn không có quyền chuyển công việc này sang trạng thái đã chọn.');
+              }
+              return;
+            }
+
             if (onStatusChange) {
               setTimeout(() => {
                 void onStatusChange(sourceTaskId, targetColumn, targetIndex);
@@ -193,6 +245,10 @@ export default function KanbanBoard({ tasks, onReorder, onStatusChange, isFilter
               domRef={(el) => {
                 columnRefs.current[column.id] = el;
               }}
+              activeTask={activeTask}
+              activeTaskPermissions={activeTaskPermissions}
+              taskPermissionsMap={taskPermissionsMap}
+              onEdit={onEdit}
             />
           ))}
         </div>
@@ -200,7 +256,11 @@ export default function KanbanBoard({ tasks, onReorder, onStatusChange, isFilter
         <DragOverlay dropAnimation={null}>
           {activeTask ? (
             <div style={{ width: 280, cursor: 'grabbing' }}>
-              <TaskCardView task={activeTask} isDragging />
+              <TaskCardView
+                task={activeTask}
+                isDragging
+                permissions={taskPermissionsMap[activeTask.id]}
+              />
             </div>
           ) : null}
         </DragOverlay>

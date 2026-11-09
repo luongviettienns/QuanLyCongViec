@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MaxLength, IsEnum, IsIn, IsInt } from 'class-validator';
+import { IsOptional, IsString, MaxLength, IsEnum, IsIn, IsInt, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskStatus, TaskPriority } from '@prisma/client';
@@ -40,6 +40,7 @@ export class FilterTasksDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'Mã danh mục lọc phải là số nguyên' })
+  @Min(1, { message: 'Mã danh mục lọc phải là số nguyên dương' })
   categoryId?: number;
 
   @ApiPropertyOptional({
@@ -49,6 +50,7 @@ export class FilterTasksDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'Mã nhóm lọc phải là số nguyên' })
+  @Min(1, { message: 'Mã nhóm lọc phải là số nguyên dương' })
   teamId?: number;
 
   @ApiPropertyOptional({
@@ -58,6 +60,7 @@ export class FilterTasksDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'Mã người được phân công lọc phải là số nguyên' })
+  @Min(1, { message: 'Mã người được phân công lọc phải là số nguyên dương' })
   assigneeId?: number;
 
   @ApiPropertyOptional({

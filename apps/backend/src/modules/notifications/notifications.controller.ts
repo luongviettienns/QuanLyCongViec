@@ -6,10 +6,8 @@ import {
   Param,
   Query,
   Body,
-  Headers,
   ParseIntPipe,
   UseGuards,
-  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificationsService } from './services/notifications.service.js';
@@ -17,6 +15,7 @@ import { DeadlineReminderService } from './services/deadline-reminder.service.js
 import { QueryNotificationsDto } from './dto/query-notifications.dto.js';
 import { MarkBulkReadDto } from './dto/mark-notification-read.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { InternalApiKeyGuard } from '../auth/guards/internal-api-key.guard.js';
 import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js';
 
 @ApiTags('Notifications')
@@ -30,14 +29,9 @@ export class NotificationsController {
   ) {}
 
   @ApiOperation({ summary: 'Kích hoạt quét và gửi nhắc nhở deadline' })
+  @UseGuards(InternalApiKeyGuard)
   @Post('reminders/trigger')
-  triggerDeadlineReminders(
-    @Headers('x-internal-key') internalKey?: string,
-  ) {
-    const validKey = process.env.INTERNAL_API_KEY || 'taskflow-internal-secret';
-    if (!internalKey || internalKey !== validKey) {
-      throw new ForbiddenException('Yêu cầu mã xác thực nội bộ hợp lệ để kích hoạt quét nhắc nhở');
-    }
+  triggerDeadlineReminders() {
     return this.deadlineReminderService.checkAndSendReminders();
   }
 
