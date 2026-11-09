@@ -2,11 +2,25 @@ import type {
   Category,
   CreateCategoryPayload,
   UpdateCategoryPayload,
+  CategoryQueryParams,
 } from '../types/category.types';
 import { getAuthHeaders, handleApiResponse } from '../../../shared/api';
 
-export async function getCategories(signal?: AbortSignal): Promise<Category[]> {
-  const response = await fetch('/categories', {
+export async function getCategories(
+  params?: CategoryQueryParams,
+  signal?: AbortSignal,
+): Promise<Category[]> {
+  const query = new URLSearchParams();
+  if (params?.teamId !== undefined && params.teamId !== null) {
+    query.append('teamId', String(params.teamId));
+  }
+  if (params?.scope) {
+    query.append('scope', params.scope);
+  }
+  const queryString = query.toString();
+  const url = queryString ? `/categories?${queryString}` : '/categories';
+
+  const response = await fetch(url, {
     headers: {
       ...getAuthHeaders(),
     },
