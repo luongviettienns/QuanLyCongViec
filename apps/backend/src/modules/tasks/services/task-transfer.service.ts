@@ -11,6 +11,7 @@ import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { TaskQueryService } from './task-query.service.js';
 import { TaskReorderService } from './task-reorder.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
+import { RealtimeService } from '../../realtime/realtime.service.js';
 import { type Task, Prisma } from '@prisma/client';
 
 @Injectable()
@@ -21,6 +22,7 @@ export class TaskTransferService {
     private readonly queryService: TaskQueryService,
     private readonly reorderService: TaskReorderService,
     private readonly notificationEventService: NotificationEventService,
+    private readonly realtimeService: RealtimeService,
   ) {}
 
   private executeInTransaction<T>(
@@ -47,7 +49,7 @@ export class TaskTransferService {
     }
 
     try {
-      return await this.executeInTransaction(externalTx, async (tx) => {
+      const updatedTask = await this.executeInTransaction(externalTx, async (tx) => {
         const initialTask = await this.queryService.findOne(id, userId, tx);
         const targetTeamId = hasTeamId ? (dto.teamId ?? null) : initialTask.teamId;
 
@@ -129,6 +131,31 @@ export class TaskTransferService {
           updateData.team = effectiveTeamId
             ? { connect: { id: effectiveTeamId } }
             : { disconnect: true };
+        }
+
+        if (isTeamChanged && currentTask.categoryId) {
+          if (effectiveTeamId !== null) {
+            const validTeamCat = await tx.category.findFirst({
+              where: {
+                id: currentTask.categoryId,
+                teamId: effectiveTeamId,
+              },
+            });
+            if (!validTeamCat) {
+              updateData.category = { disconnect: true };
+            }
+          } else {
+            const validPersonalCat = await tx.category.findFirst({
+              where: {
+                id: currentTask.categoryId,
+                userId: currentTask.userId,
+                teamId: null,
+              },
+            });
+            if (!validPersonalCat) {
+              updateData.category = { disconnect: true };
+            }
+          }
         }
 
         if (hasAssigneeId || (isTeamChanged && effectiveAssigneeId !== currentTask.assigneeId)) {
@@ -222,6 +249,24 @@ export class TaskTransferService {
 
         return updatedTask;
       });
+
+      if (!externalTx) {
+        void this.realtimeService.emit({
+          type: 'TASK_UPDATED',
+          actorId: userId,
+          teamId: updatedTask.teamId,
+          targetUserIds: updatedTask.teamId
+            ? undefined
+            : [updatedTask.userId, ...(updatedTask.assigneeId ? [updatedTask.assigneeId] : [])],
+          payload: {
+            taskId: updatedTask.id,
+            teamId: updatedTask.teamId,
+            status: updatedTask.status,
+          },
+        });
+      }
+
+      return updatedTask;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException('Tiêu đề công việc đã được sử dụng bởi một công việc khác trong phạm vi này');

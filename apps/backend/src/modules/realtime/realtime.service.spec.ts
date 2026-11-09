@@ -8,6 +8,9 @@ describe('RealtimeService', () => {
 
   beforeEach(() => {
     mockPrisma = {
+      team: {
+        findUnique: vi.fn(),
+      },
       teamMember: {
         findMany: vi.fn(),
       },
@@ -64,10 +67,13 @@ describe('RealtimeService', () => {
   });
 
   it('resolves team members automatically when teamId is provided without targetUserIds', async () => {
-    mockPrisma.teamMember.findMany.mockResolvedValue([
-      { userId: 100 },
-      { userId: 200 },
-    ]);
+    mockPrisma.team.findUnique.mockResolvedValue({
+      ownerId: 50,
+      members: [
+        { userId: 100 },
+        { userId: 200 },
+      ],
+    });
 
     const stream$ = service.subscribe(100);
     const receivedPromise = firstValueFrom(stream$);
@@ -79,13 +85,37 @@ describe('RealtimeService', () => {
       payload: { taskId: 12 },
     });
 
-    expect(mockPrisma.teamMember.findMany).toHaveBeenCalledWith({
-      where: { teamId: 5 },
-      select: { userId: true },
+    expect(mockPrisma.team.findUnique).toHaveBeenCalledWith({
+      where: { id: 5 },
+      select: {
+        ownerId: true,
+        members: { select: { userId: true } },
+      },
     });
 
     const received = await receivedPromise;
     expect(received.type).toBe('TASK_UPDATED');
     expect((received.data as any).payload.taskId).toBe(12);
+  });
+
+  it('does NOT broadcast to non-recipients when targetUserIds is empty and no teamId is provided', async () => {
+    const userUnrelated = 999;
+    const stream$ = service.subscribe(userUnrelated);
+
+    let received = false;
+    const sub = stream$.subscribe(() => {
+      received = true;
+    });
+
+    await service.emit({
+      type: 'TASK_UPDATED',
+      actorId: 1,
+      targetUserIds: [],
+      payload: { taskId: 10 },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(received).toBe(false);
+    sub.unsubscribe();
   });
 });

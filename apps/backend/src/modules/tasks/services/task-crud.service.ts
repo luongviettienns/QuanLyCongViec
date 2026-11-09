@@ -88,7 +88,7 @@ export class TaskCrudService {
     const initialPriority: TaskPriority = data.priority ? data.priority : TaskPriority.MEDIUM;
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const createdTask = await this.prisma.$transaction(async (tx) => {
         await this.reorderService.lockScope(tx, {
           teamId: data.teamId ?? null,
           userId,
@@ -202,22 +202,24 @@ export class TaskCrudService {
           );
         }
 
-        void this.realtimeService.emit({
-          type: 'TASK_CREATED',
-          actorId: userId,
-          teamId: createdTask.teamId,
-          targetUserIds: createdTask.teamId
-            ? undefined
-            : [createdTask.userId, ...(createdTask.assigneeId ? [createdTask.assigneeId] : [])],
-          payload: {
-            taskId: createdTask.id,
-            teamId: createdTask.teamId,
-            status: createdTask.status,
-          },
-        });
-
         return createdTask;
       });
+
+      void this.realtimeService.emit({
+        type: 'TASK_CREATED',
+        actorId: userId,
+        teamId: createdTask.teamId,
+        targetUserIds: createdTask.teamId
+          ? undefined
+          : [createdTask.userId, ...(createdTask.assigneeId ? [createdTask.assigneeId] : [])],
+        payload: {
+          taskId: createdTask.id,
+          teamId: createdTask.teamId,
+          status: createdTask.status,
+        },
+      });
+
+      return createdTask;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException(`Tiêu đề '${cleanTitle}' đã tồn tại, vui lòng đặt tên khác`);
@@ -244,7 +246,7 @@ export class TaskCrudService {
     }
 
     try {
-      return await this.executeInTransaction(externalTx, async (tx) => {
+      const updatedTask = await this.executeInTransaction(externalTx, async (tx) => {
         const initialTask = await this.queryService.findOne(id, userId, tx);
         if (hasTitle) {
           await this.reorderService.lockScope(tx, {
@@ -393,6 +395,10 @@ export class TaskCrudService {
           );
         }
 
+        return updatedTask;
+      });
+
+      if (!externalTx) {
         void this.realtimeService.emit({
           type: 'TASK_UPDATED',
           actorId: userId,
@@ -406,9 +412,9 @@ export class TaskCrudService {
             status: updatedTask.status,
           },
         });
+      }
 
-        return updatedTask;
-      });
+      return updatedTask;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException('Tiêu đề công việc đã được sử dụng bởi một công việc khác');
@@ -418,7 +424,7 @@ export class TaskCrudService {
   }
 
   async remove(id: number, userId: number): Promise<{ success: boolean; message: string; deletedTask: Task }> {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const initialTask = await this.queryService.findOne(id, userId, tx);
       await this.reorderService.lockScope(tx, {
         teamId: initialTask.teamId,
@@ -453,24 +459,26 @@ export class TaskCrudService {
 
       await this.reorderService.reindexColumn(tx, remainingTasksScope, taskToDelete.status, [id]);
 
-      void this.realtimeService.emit({
-        type: 'TASK_DELETED',
-        actorId: userId,
-        teamId: taskToDelete.teamId,
-        targetUserIds: taskToDelete.teamId
-          ? undefined
-          : [taskToDelete.userId, ...(taskToDelete.assigneeId ? [taskToDelete.assigneeId] : [])],
-        payload: {
-          taskId: id,
-          teamId: taskToDelete.teamId,
-        },
-      });
-
       return {
         success: true,
         message: `Đã xoá thành công công việc #${id} - "${taskToDelete.title}"`,
         deletedTask,
       };
     });
+
+    void this.realtimeService.emit({
+      type: 'TASK_DELETED',
+      actorId: userId,
+      teamId: result.deletedTask.teamId,
+      targetUserIds: result.deletedTask.teamId
+        ? undefined
+        : [result.deletedTask.userId, ...(result.deletedTask.assigneeId ? [result.deletedTask.assigneeId] : [])],
+      payload: {
+        taskId: id,
+        teamId: result.deletedTask.teamId,
+      },
+    });
+
+    return result;
   }
 }

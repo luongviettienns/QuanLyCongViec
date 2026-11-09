@@ -17,11 +17,11 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
-  ApiQuery,
 } from '@nestjs/swagger';
 import { CategoriesService } from './categories.service.js';
 import { CreateCategoryDto } from './dto/create-category.dto.js';
 import { UpdateCategoryDto } from './dto/update-category.dto.js';
+import { QueryCategoriesDto } from './dto/query-categories.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js';
 
@@ -34,18 +34,14 @@ export class CategoriesController {
 
   @Get()
   @ApiOperation({ summary: 'Lấy danh sách các danh mục (cá nhân hoặc theo nhóm)' })
-  @ApiQuery({ name: 'teamId', required: false, description: 'Lọc danh mục của nhóm theo ID' })
-  @ApiQuery({ name: 'scope', required: false, description: 'Phạm vi: all (tất cả cá nhân + nhóm) | personal' })
   @ApiResponse({ status: 200, description: 'Danh sách danh mục' })
   async findAll(
     @CurrentUser() user: AuthenticatedUser,
-    @Query('teamId') teamId?: string,
-    @Query('scope') scope?: 'all' | 'personal' | 'team',
+    @Query() query: QueryCategoriesDto,
   ) {
-    const parsedTeamId = teamId ? parseInt(teamId, 10) : undefined;
     return this.categoriesService.findAll(user.id, {
-      teamId: parsedTeamId && !isNaN(parsedTeamId) ? parsedTeamId : undefined,
-      scope,
+      teamId: query.teamId,
+      scope: query.scope,
     });
   }
 

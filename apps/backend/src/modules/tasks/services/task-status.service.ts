@@ -40,7 +40,7 @@ export class TaskStatusService {
     userId: number,
     externalTx?: Prisma.TransactionClient,
   ): Promise<Task> {
-    return this.executeInTransaction(externalTx, async (tx) => {
+    const updatedTask = await this.executeInTransaction(externalTx, async (tx) => {
       const initialTask = await this.queryService.findOne(id, userId, tx);
       await this.reorderService.lockScope(tx, {
         teamId: initialTask.teamId,
@@ -99,21 +99,6 @@ export class TaskStatusService {
             });
           }
         }
-
-        void this.realtimeService.emit({
-          type: 'TASK_STATUS_CHANGED',
-          actorId: userId,
-          teamId: updatedCurrentTask.teamId,
-          targetUserIds: updatedCurrentTask.teamId
-            ? undefined
-            : [updatedCurrentTask.userId, ...(updatedCurrentTask.assigneeId ? [updatedCurrentTask.assigneeId] : [])],
-          payload: {
-            taskId: updatedCurrentTask.id,
-            status: updatedCurrentTask.status,
-            position: updatedCurrentTask.position,
-            teamId: updatedCurrentTask.teamId,
-          },
-        });
 
         return updatedCurrentTask;
       }
@@ -199,22 +184,26 @@ export class TaskStatusService {
         );
       }
 
+      return updatedCurrentTask;
+    });
+
+    if (!externalTx) {
       void this.realtimeService.emit({
         type: 'TASK_STATUS_CHANGED',
         actorId: userId,
-        teamId: updatedCurrentTask.teamId,
-        targetUserIds: updatedCurrentTask.teamId
+        teamId: updatedTask.teamId,
+        targetUserIds: updatedTask.teamId
           ? undefined
-          : [updatedCurrentTask.userId, ...(updatedCurrentTask.assigneeId ? [updatedCurrentTask.assigneeId] : [])],
+          : [updatedTask.userId, ...(updatedTask.assigneeId ? [updatedTask.assigneeId] : [])],
         payload: {
-          taskId: updatedCurrentTask.id,
-          status: updatedCurrentTask.status,
-          position: updatedCurrentTask.position,
-          teamId: updatedCurrentTask.teamId,
+          taskId: updatedTask.id,
+          status: updatedTask.status,
+          position: updatedTask.position,
+          teamId: updatedTask.teamId,
         },
       });
+    }
 
-      return updatedCurrentTask;
-    });
+    return updatedTask;
   }
 }

@@ -5,6 +5,7 @@ import { TaskCrudService } from './services/task-crud.service.js';
 import { TaskWorkflowService } from './services/task-workflow.service.js';
 import { TaskReorderService } from './services/task-reorder.service.js';
 import { TaskStatsService } from './services/task-stats.service.js';
+import { RealtimeService } from '../realtime/realtime.service.js';
 import { CreateTaskDto } from './dto/create-task.dto.js';
 import { UpdateTaskDto } from './dto/update-task.dto.js';
 import { UpdateTaskContentDto } from './dto/update-task-content.dto.js';
@@ -26,6 +27,7 @@ export class TasksService {
     private readonly taskWorkflowService: TaskWorkflowService,
     private readonly taskReorderService: TaskReorderService,
     private readonly taskStatsService: TaskStatsService,
+    private readonly realtimeService: RealtimeService,
   ) {}
 
   findAll(query: FilterTasksDto | undefined, userId: number): Promise<Task[]> {
@@ -56,7 +58,7 @@ export class TasksService {
       throw new BadRequestException('Vui lòng cung cấp ít nhất một thông tin cần cập nhật');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       let updated: Task | undefined;
 
       if (hasContent) {
@@ -109,6 +111,22 @@ export class TasksService {
 
       return updated;
     });
+
+    void this.realtimeService.emit({
+      type: 'TASK_UPDATED',
+      actorId: userId,
+      teamId: result.teamId,
+      targetUserIds: result.teamId
+        ? undefined
+        : [result.userId, ...(result.assigneeId ? [result.assigneeId] : [])],
+      payload: {
+        taskId: result.id,
+        teamId: result.teamId,
+        status: result.status,
+      },
+    });
+
+    return result;
   }
 
   updateContent(id: number, data: UpdateTaskContentDto, userId: number): Promise<Task> {

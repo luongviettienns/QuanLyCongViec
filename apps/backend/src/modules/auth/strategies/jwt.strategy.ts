@@ -20,7 +20,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
         ExtractJwt.fromAuthHeaderAsBearerToken(),
-        (req: any) => (req?.query?.token as string) || null,
+        (req: any) => {
+          // Chỉ cho phép truyền JWT qua URL query cho endpoint SSE /realtime/stream
+          // Các route REST thông thường bắt buộc phải dùng HTTP header Authorization Bearer
+          const path = (req?.baseUrl || '') + (req?.path || req?.url || '');
+          if (path.includes('/realtime/stream')) {
+            return (req?.query?.token as string) || null;
+          }
+          return null;
+        },
       ]),
       ignoreExpiration: false,
       secretOrKey: secret,

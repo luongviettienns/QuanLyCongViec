@@ -155,14 +155,21 @@ export class CategoriesService {
         throw new ConflictException(`Danh mục '${cleanName}' đã tồn tại trong nhóm`);
       }
 
-      return this.prisma.category.create({
-        data: {
-          name: cleanName,
-          color: cleanColor,
-          userId,
-          teamId: data.teamId,
-        },
-      });
+      try {
+        return await this.prisma.category.create({
+          data: {
+            name: cleanName,
+            color: cleanColor,
+            userId,
+            teamId: data.teamId,
+          },
+        });
+      } catch (error: any) {
+        if (error?.code === 'P2002') {
+          throw new ConflictException(`Danh mục '${cleanName}' đã tồn tại trong nhóm`);
+        }
+        throw error;
+      }
     }
 
     // Personal category

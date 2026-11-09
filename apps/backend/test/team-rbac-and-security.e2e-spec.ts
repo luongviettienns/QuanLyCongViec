@@ -1070,5 +1070,56 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
         })
         .expect(404);
     });
+
+    it('rejects invalid teamId query parameter on GET /categories with 400', async () => {
+      await request(app.getHttpServer())
+        .get('/categories?teamId=1abc')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .get('/categories?scope=invalid_scope')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(400);
+    });
+
+    it('clears categoryId when moving team task to personal space', async () => {
+      // 1. Create a task in team 1 with team 1's category
+      const taskRes = await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `Move Task Test ${Date.now()}`,
+          teamId: team1Id,
+          categoryId: teamCategoryId,
+        })
+        .expect(201);
+
+      expect(taskRes.body.categoryId).toBe(teamCategoryId);
+
+      // 2. Move task to personal space (teamId: null), which does not own this team category
+      const patchRes = await request(app.getHttpServer())
+        .patch(`/tasks/${taskRes.body.id}/team`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          teamId: null,
+        })
+        .expect(200);
+
+      expect(patchRes.body.teamId).toBeNull();
+      expect(patchRes.body.categoryId).toBeNull();
+    });
+
+    it('rejects JWT via URL query parameter on standard REST endpoints', async () => {
+      await request(app.getHttpServer())
+        .get(`/tasks?token=${tokenOwner}`)
+        .expect(401);
+    });
+
+    it('rejects /realtime/stream when token is missing', async () => {
+      await request(app.getHttpServer())
+        .get('/realtime/stream')
+        .expect(401);
+    });
   });
 });

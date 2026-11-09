@@ -19,11 +19,16 @@ export class RealtimeService {
       let targetUserIds = event.targetUserIds ? [...event.targetUserIds] : [];
 
       if (event.teamId && targetUserIds.length === 0) {
-        const members = await this.prisma.teamMember.findMany({
-          where: { teamId: event.teamId },
-          select: { userId: true },
+        const team = await this.prisma.team.findUnique({
+          where: { id: event.teamId },
+          select: {
+            ownerId: true,
+            members: { select: { userId: true } },
+          },
         });
-        targetUserIds = members.map((m) => m.userId);
+        if (team) {
+          targetUserIds = [team.ownerId, ...team.members.map((m) => m.userId)];
+        }
       }
 
       const fullEvent: RealtimeBroadcastEvent = {
@@ -47,7 +52,11 @@ export class RealtimeService {
         if (event.targetUserIds && event.targetUserIds.length > 0) {
           return event.targetUserIds.includes(userId);
         }
-        return true;
+        // An toàn: Không bao giờ broadcast cho tất cả người dùng khi không có danh sách người nhận
+        if (event.actorId) {
+          return event.actorId === userId;
+        }
+        return false;
       }),
       map((event) => ({
         type: event.type,
