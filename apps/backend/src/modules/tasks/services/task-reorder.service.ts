@@ -8,6 +8,7 @@ import { PrismaService } from '../../../database/prisma.service.js';
 import { ReorderTasksDto } from '../dto/reorder-tasks.dto.js';
 import { TaskPolicyService, type TaskWithTeamAndMembers } from '../policies/task-policy.service.js';
 import { TaskWorkflowPolicy } from '../policies/task-workflow-policy.service.js';
+import { RealtimeService } from '../../realtime/realtime.service.js';
 import { Prisma, TaskStatus } from '@prisma/client';
 
 export interface BoardLockScope {
@@ -21,6 +22,7 @@ export class TaskReorderService {
     private readonly prisma: PrismaService,
     private readonly policy: TaskPolicyService,
     private readonly workflowPolicy: TaskWorkflowPolicy,
+    private readonly realtimeService: RealtimeService,
   ) {}
 
   private resolveLockKey(scope: BoardLockScope): { namespace: number; key: number } {
@@ -239,6 +241,18 @@ export class TaskReorderService {
           }
         }
       }
+    });
+
+    void this.realtimeService.emit({
+      type: 'TASK_REORDERED',
+      actorId: userId,
+      teamId: dto.teamId,
+      targetUserIds: dto.teamId ? undefined : [userId],
+      payload: {
+        teamId: dto.teamId,
+        status: dto.status,
+        taskIds: dto.taskIds,
+      },
     });
 
     return {

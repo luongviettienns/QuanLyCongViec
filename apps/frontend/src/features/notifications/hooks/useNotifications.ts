@@ -7,6 +7,7 @@ import {
   markAllNotificationsAsRead,
 } from '../api/notifications.api';
 import { useAuth } from '../../auth/hooks/useAuth';
+import { useRealtimeEvent } from '../../realtime';
 
 const POLL_INTERVAL_MS = 45000;
 const PAGE_SIZE = 15;
@@ -35,6 +36,12 @@ export function useNotifications() {
       // Ignore background poll errors
     }
   }, [user]);
+
+  const handleRealtimeNotification = useCallback(() => {
+    void fetchUnreadCount();
+  }, [fetchUnreadCount]);
+
+  useRealtimeEvent('NOTIFICATION_NEW', handleRealtimeNotification);
 
   const loadNotifications = useCallback(
     async (reset = true) => {

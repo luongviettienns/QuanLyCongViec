@@ -11,6 +11,7 @@ export default defineConfig({
       '/teams': 'http://localhost:3000',
       '/auth': 'http://localhost:3000',
       '/notifications': 'http://localhost:3000',
+      '/realtime': 'http://localhost:3000',
     },
   },
 

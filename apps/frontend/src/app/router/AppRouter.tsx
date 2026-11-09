@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState, useCallback, type ReactNode } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Spin } from 'antd';
 import AppLayout from '../layouts/AppLayout';
@@ -6,6 +6,7 @@ import { useAuth } from '../../features/auth/hooks/useAuth';
 import { useTasks } from '../../features/tasks/hooks/useTasks';
 import { getTaskById } from '../../features/tasks/api/tasks.api';
 import type { Task, TaskStatus } from '../../features/tasks/types/task.types';
+import { useRealtimeEvent, type RealtimeEventData } from '../../features/realtime';
 
 import TasksPage from '../../features/tasks/pages/TasksPage';
 import CategoryPage from '../../features/categories/pages/CategoryPage';
@@ -95,6 +96,29 @@ function TaskAppShell() {
     fetchCategories,
     fetchTeams,
   } = useTasks({ enabled: currentNav === 'tasks' });
+
+  const { user } = useAuth();
+
+  const handleRealtimeTaskEvent = useCallback(
+    (event: RealtimeEventData) => {
+      // Bỏ qua sự kiện do chính mình thực hiện vì UI đã cập nhật lạc quan
+      if (event.actorId && event.actorId === user?.id) {
+        return;
+      }
+      if (currentNav === 'tasks') {
+        void refetch();
+      }
+    },
+    [user?.id, currentNav, refetch],
+  );
+
+  useRealtimeEvent('TASK_STATUS_CHANGED', handleRealtimeTaskEvent);
+  useRealtimeEvent('TASK_CREATED', handleRealtimeTaskEvent);
+  useRealtimeEvent('TASK_UPDATED', handleRealtimeTaskEvent);
+  useRealtimeEvent('TASK_DELETED', handleRealtimeTaskEvent);
+  useRealtimeEvent('TASK_REORDERED', handleRealtimeTaskEvent);
+  useRealtimeEvent('TASK_ASSIGNED', handleRealtimeTaskEvent);
+  useRealtimeEvent('TASK_RETURNED', handleRealtimeTaskEvent);
 
   const [modalState, setModalState] = useState<{ open: boolean; task: Task | null }>({
     open: false,

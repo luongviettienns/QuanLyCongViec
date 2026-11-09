@@ -12,6 +12,7 @@ import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { TaskQueryService } from './task-query.service.js';
 import { TaskReorderService } from './task-reorder.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
+import { RealtimeService } from '../../realtime/realtime.service.js';
 import { type Task, Prisma, TaskStatus, TaskPriority } from '@prisma/client';
 
 @Injectable()
@@ -22,6 +23,7 @@ export class TaskCrudService {
     private readonly queryService: TaskQueryService,
     private readonly reorderService: TaskReorderService,
     private readonly notificationEventService: NotificationEventService,
+    private readonly realtimeService: RealtimeService,
   ) {}
 
   private executeInTransaction<T>(
@@ -187,6 +189,20 @@ export class TaskCrudService {
           );
         }
 
+        void this.realtimeService.emit({
+          type: 'TASK_CREATED',
+          actorId: userId,
+          teamId: createdTask.teamId,
+          targetUserIds: createdTask.teamId
+            ? undefined
+            : [createdTask.userId, ...(createdTask.assigneeId ? [createdTask.assigneeId] : [])],
+          payload: {
+            taskId: createdTask.id,
+            teamId: createdTask.teamId,
+            status: createdTask.status,
+          },
+        });
+
         return createdTask;
       });
     } catch (error) {
@@ -346,6 +362,20 @@ export class TaskCrudService {
           );
         }
 
+        void this.realtimeService.emit({
+          type: 'TASK_UPDATED',
+          actorId: userId,
+          teamId: updatedTask.teamId,
+          targetUserIds: updatedTask.teamId
+            ? undefined
+            : [updatedTask.userId, ...(updatedTask.assigneeId ? [updatedTask.assigneeId] : [])],
+          payload: {
+            taskId: updatedTask.id,
+            teamId: updatedTask.teamId,
+            status: updatedTask.status,
+          },
+        });
+
         return updatedTask;
       });
     } catch (error) {
@@ -391,6 +421,19 @@ export class TaskCrudService {
       });
 
       await this.reorderService.reindexColumn(tx, remainingTasksScope, taskToDelete.status, [id]);
+
+      void this.realtimeService.emit({
+        type: 'TASK_DELETED',
+        actorId: userId,
+        teamId: taskToDelete.teamId,
+        targetUserIds: taskToDelete.teamId
+          ? undefined
+          : [taskToDelete.userId, ...(taskToDelete.assigneeId ? [taskToDelete.assigneeId] : [])],
+        payload: {
+          taskId: id,
+          teamId: taskToDelete.teamId,
+        },
+      });
 
       return {
         success: true,

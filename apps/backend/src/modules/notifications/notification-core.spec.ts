@@ -271,8 +271,15 @@ describe('Notification Core Module Unit Tests', () => {
       const mockPrisma = {
         $transaction: vi.fn((cb) => cb(mockTx)),
       } as any;
+      const mockRealtimeService = {
+        emit: vi.fn().mockResolvedValue(undefined),
+      };
 
-      const eventService = new NotificationEventService(mockPrisma, mockRecipientService as any);
+      const eventService = new NotificationEventService(
+        mockPrisma,
+        mockRecipientService as any,
+        mockRealtimeService as any,
+      );
 
       await expect(
         eventService.publish(

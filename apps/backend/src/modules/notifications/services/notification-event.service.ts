@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { NotificationRecipientService } from './notification-recipient.service.js';
 import { renderNotificationTemplate } from '../templates/notification-template.js';
 import type { DomainNotificationEvent } from '../types/notification-event.types.js';
+import { RealtimeService } from '../../realtime/realtime.service.js';
 
 @Injectable()
 export class NotificationEventService {
@@ -12,6 +13,7 @@ export class NotificationEventService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly recipientService: NotificationRecipientService,
+    private readonly realtimeService: RealtimeService,
   ) {}
 
   /**
@@ -79,6 +81,22 @@ export class NotificationEventService {
         data: notificationsData,
         skipDuplicates: true,
       });
+
+      for (const notif of notificationsData) {
+        void this.realtimeService.emit({
+          type: 'NOTIFICATION_NEW',
+          actorId: event.actorId > 0 ? event.actorId : undefined,
+          targetUserIds: [notif.userId],
+          teamId: notif.teamId,
+          payload: {
+            title: notif.title,
+            content: notif.content,
+            taskId: notif.taskId,
+            teamId: notif.teamId,
+            type: notif.type,
+          },
+        });
+      }
     };
 
     if (txClient) {

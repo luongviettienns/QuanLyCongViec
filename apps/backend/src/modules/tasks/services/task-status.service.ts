@@ -9,6 +9,7 @@ import { TaskWorkflowPolicy } from '../policies/task-workflow-policy.service.js'
 import { TaskQueryService } from './task-query.service.js';
 import { TaskReorderService } from './task-reorder.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
+import { RealtimeService } from '../../realtime/realtime.service.js';
 import { type Task, Prisma, TaskStatus } from '@prisma/client';
 
 @Injectable()
@@ -20,6 +21,7 @@ export class TaskStatusService {
     private readonly queryService: TaskQueryService,
     private readonly reorderService: TaskReorderService,
     private readonly notificationEventService: NotificationEventService,
+    private readonly realtimeService: RealtimeService,
   ) {}
 
   private executeInTransaction<T>(
@@ -97,6 +99,21 @@ export class TaskStatusService {
             });
           }
         }
+
+        void this.realtimeService.emit({
+          type: 'TASK_STATUS_CHANGED',
+          actorId: userId,
+          teamId: updatedCurrentTask.teamId,
+          targetUserIds: updatedCurrentTask.teamId
+            ? undefined
+            : [updatedCurrentTask.userId, ...(updatedCurrentTask.assigneeId ? [updatedCurrentTask.assigneeId] : [])],
+          payload: {
+            taskId: updatedCurrentTask.id,
+            status: updatedCurrentTask.status,
+            position: updatedCurrentTask.position,
+            teamId: updatedCurrentTask.teamId,
+          },
+        });
 
         return updatedCurrentTask;
       }
@@ -181,6 +198,21 @@ export class TaskStatusService {
           tx,
         );
       }
+
+      void this.realtimeService.emit({
+        type: 'TASK_STATUS_CHANGED',
+        actorId: userId,
+        teamId: updatedCurrentTask.teamId,
+        targetUserIds: updatedCurrentTask.teamId
+          ? undefined
+          : [updatedCurrentTask.userId, ...(updatedCurrentTask.assigneeId ? [updatedCurrentTask.assigneeId] : [])],
+        payload: {
+          taskId: updatedCurrentTask.id,
+          status: updatedCurrentTask.status,
+          position: updatedCurrentTask.position,
+          teamId: updatedCurrentTask.teamId,
+        },
+      });
 
       return updatedCurrentTask;
     });
