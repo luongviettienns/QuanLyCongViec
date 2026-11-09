@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
 import {
   Row,
   Col,
@@ -19,7 +19,47 @@ import type {
   TaskDeadlinePoint,
 } from '../../tasks/types/task.types';
 import { DashboardStatCards } from '../components/DashboardStatCards';
-import { DashboardCharts } from '../components/DashboardCharts';
+
+const DashboardCharts = lazy(() =>
+  import('../components/DashboardCharts').then((m) => ({ default: m.DashboardCharts })),
+);
+
+function ChartsSkeleton() {
+  return (
+    <>
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        {[1, 2, 3].map((key) => (
+          <Col xs={24} lg={8} key={key}>
+            <Card style={{ borderRadius: 8, height: '100%' }}>
+              <Skeleton.Input active size="small" style={{ width: 140, marginBottom: 16 }} />
+              <div
+                style={{
+                  height: 260,
+                  minHeight: 260,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Skeleton.Node active style={{ width: '100%', height: 220 }} />
+              </div>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
+      <Row gutter={[16, 16]}>
+        {[1, 2].map((key) => (
+          <Col xs={24} lg={12} key={key}>
+            <Card style={{ borderRadius: 8, height: '100%' }}>
+              <Skeleton active paragraph={{ rows: 5 }} />
+            </Card>
+          </Col>
+        ))}
+      </Row>
+    </>
+  );
+}
 
 const { Title, Paragraph } = Typography;
 
@@ -199,29 +239,7 @@ export default function DashboardPage({
               </Col>
             ))}
           </Row>
-
-          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-            {[1, 2, 3].map((key) => (
-              <Col xs={24} lg={8} key={key}>
-                <Card style={{ borderRadius: 8, height: '100%' }}>
-                  <Skeleton.Input active size="small" style={{ width: 140, marginBottom: 16 }} />
-                  <div style={{ height: 260, minHeight: 260, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Skeleton.Node active style={{ width: '100%', height: 220 }} />
-                  </div>
-                </Card>
-              </Col>
-            ))}
-          </Row>
-
-          <Row gutter={[16, 16]}>
-            {[1, 2].map((key) => (
-              <Col xs={24} lg={12} key={key}>
-                <Card style={{ borderRadius: 8, height: '100%' }}>
-                  <Skeleton active paragraph={{ rows: 5 }} />
-                </Card>
-              </Col>
-            ))}
-          </Row>
+          <ChartsSkeleton />
         </>
       ) : (
         <>
@@ -229,10 +247,12 @@ export default function DashboardPage({
             stats={safeStats}
             onNavigateToTasks={onNavigateToTasks}
           />
-          <DashboardCharts
-            stats={safeStats}
-            onNavigateToTasks={onNavigateToTasks}
-          />
+          <Suspense fallback={<ChartsSkeleton />}>
+            <DashboardCharts
+              stats={safeStats}
+              onNavigateToTasks={onNavigateToTasks}
+            />
+          </Suspense>
         </>
       )}
     </div>

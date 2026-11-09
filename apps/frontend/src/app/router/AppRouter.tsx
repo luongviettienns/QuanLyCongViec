@@ -94,7 +94,7 @@ function TaskAppShell() {
     handleStatusMove,
     fetchCategories,
     fetchTeams,
-  } = useTasks();
+  } = useTasks({ enabled: currentNav === 'tasks' });
 
   const [modalState, setModalState] = useState<{ open: boolean; task: Task | null }>({
     open: false,

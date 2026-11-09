@@ -22,10 +22,39 @@ export function useTasks(options?: { enabled?: boolean }) {
     queries.teams,
   );
 
+  const {
+    tasks,
+    categories,
+    teams,
+    loading,
+    setLoading,
+    fetchTasks,
+    fetchCategories,
+    fetchTeams,
+    resetState,
+  } = queries;
+
+  const {
+    searchText,
+    statusFilter,
+    categoryFilter,
+    priorityFilter,
+    teamFilter,
+    scopeFilter,
+    isFiltering,
+    setSearchText,
+    setStatusFilter,
+    setCategoryFilter,
+    setPriorityFilter,
+    setTeamFilter,
+    setScopeFilter,
+    resetFilters,
+  } = filters;
+
   const resetAll = useCallback(() => {
-    queries.resetState();
-    filters.resetFilters();
-  }, [queries, filters]);
+    resetState();
+    resetFilters();
+  }, [resetState, resetFilters]);
 
   useEffect(() => {
     if (!enabled || authLoading) {
@@ -43,11 +72,11 @@ export function useTasks(options?: { enabled?: boolean }) {
         return;
       }
 
-      queries.setLoading(true);
+      setLoading(true);
       await Promise.all([
-        queries.fetchCategories(),
-        queries.fetchTeams(),
-        queries.fetchTasks('', 'ALL', 'ALL', 'ALL', 'ALL', 'all'),
+        fetchCategories(),
+        fetchTeams(),
+        fetchTasks('', 'ALL', 'ALL', 'ALL', 'ALL', 'all'),
       ]);
     }
 
@@ -56,174 +85,266 @@ export function useTasks(options?: { enabled?: boolean }) {
     return () => {
       active = false;
     };
-  }, [enabled, isAuthenticated, authLoading, resetAll, queries]);
+  }, [
+    enabled,
+    isAuthenticated,
+    authLoading,
+    resetAll,
+    fetchCategories,
+    fetchTeams,
+    fetchTasks,
+    setLoading,
+  ]);
 
   const handleSearch = useCallback(
     (value: string) => {
       if (!isAuthenticated) return;
-      filters.setSearchText(value);
-      queries.setLoading(true);
-      void queries.fetchTasks(
+      setSearchText(value);
+      setLoading(true);
+      void fetchTasks(
         value,
-        filters.statusFilter,
-        filters.categoryFilter,
-        filters.priorityFilter,
-        filters.teamFilter,
-        filters.scopeFilter,
+        statusFilter,
+        categoryFilter,
+        priorityFilter,
+        teamFilter,
+        scopeFilter,
       );
     },
-    [isAuthenticated, filters, queries],
+    [
+      isAuthenticated,
+      setSearchText,
+      setLoading,
+      fetchTasks,
+      statusFilter,
+      categoryFilter,
+      priorityFilter,
+      teamFilter,
+      scopeFilter,
+    ],
   );
 
   const handleStatusChange = useCallback(
     (status: StatusFilter) => {
       if (!isAuthenticated) return;
-      filters.setStatusFilter(status);
-      queries.setLoading(true);
-      void queries.fetchTasks(
-        filters.searchText,
+      setStatusFilter(status);
+      setLoading(true);
+      void fetchTasks(
+        searchText,
         status,
-        filters.categoryFilter,
-        filters.priorityFilter,
-        filters.teamFilter,
-        filters.scopeFilter,
+        categoryFilter,
+        priorityFilter,
+        teamFilter,
+        scopeFilter,
       );
     },
-    [isAuthenticated, filters, queries],
+    [
+      isAuthenticated,
+      setStatusFilter,
+      setLoading,
+      fetchTasks,
+      searchText,
+      categoryFilter,
+      priorityFilter,
+      teamFilter,
+      scopeFilter,
+    ],
   );
 
   const handleCategoryChange = useCallback(
     (catId: number | 'ALL') => {
       if (!isAuthenticated) return;
-      filters.setCategoryFilter(catId);
-      queries.setLoading(true);
-      void queries.fetchTasks(
-        filters.searchText,
-        filters.statusFilter,
+      setCategoryFilter(catId);
+      setLoading(true);
+      void fetchTasks(
+        searchText,
+        statusFilter,
         catId,
-        filters.priorityFilter,
-        filters.teamFilter,
-        filters.scopeFilter,
+        priorityFilter,
+        teamFilter,
+        scopeFilter,
       );
     },
-    [isAuthenticated, filters, queries],
+    [
+      isAuthenticated,
+      setCategoryFilter,
+      setLoading,
+      fetchTasks,
+      searchText,
+      statusFilter,
+      priorityFilter,
+      teamFilter,
+      scopeFilter,
+    ],
   );
 
   const handlePriorityChange = useCallback(
     (priority: PriorityFilter) => {
       if (!isAuthenticated) return;
-      filters.setPriorityFilter(priority);
-      queries.setLoading(true);
-      void queries.fetchTasks(
-        filters.searchText,
-        filters.statusFilter,
-        filters.categoryFilter,
+      setPriorityFilter(priority);
+      setLoading(true);
+      void fetchTasks(
+        searchText,
+        statusFilter,
+        categoryFilter,
         priority,
-        filters.teamFilter,
-        filters.scopeFilter,
+        teamFilter,
+        scopeFilter,
       );
     },
-    [isAuthenticated, filters, queries],
+    [
+      isAuthenticated,
+      setPriorityFilter,
+      setLoading,
+      fetchTasks,
+      searchText,
+      statusFilter,
+      categoryFilter,
+      teamFilter,
+      scopeFilter,
+    ],
   );
 
   const handleTeamChange = useCallback(
     (tId: number | 'ALL') => {
       if (!isAuthenticated) return;
-      filters.setTeamFilter(tId);
-      queries.setLoading(true);
-      void queries.fetchTasks(
-        filters.searchText,
-        filters.statusFilter,
-        filters.categoryFilter,
-        filters.priorityFilter,
+      setTeamFilter(tId);
+      setLoading(true);
+      void fetchTasks(
+        searchText,
+        statusFilter,
+        categoryFilter,
+        priorityFilter,
         tId,
-        filters.scopeFilter,
+        scopeFilter,
       );
     },
-    [isAuthenticated, filters, queries],
+    [
+      isAuthenticated,
+      setTeamFilter,
+      setLoading,
+      fetchTasks,
+      searchText,
+      statusFilter,
+      categoryFilter,
+      priorityFilter,
+      scopeFilter,
+    ],
   );
 
   const handleScopeChange = useCallback(
     (scope: 'all' | 'created_by_me' | 'assigned_to_me') => {
       if (!isAuthenticated) return;
-      filters.setScopeFilter(scope);
-      queries.setLoading(true);
-      void queries.fetchTasks(
-        filters.searchText,
-        filters.statusFilter,
-        filters.categoryFilter,
-        filters.priorityFilter,
-        filters.teamFilter,
+      setScopeFilter(scope);
+      setLoading(true);
+      void fetchTasks(
+        searchText,
+        statusFilter,
+        categoryFilter,
+        priorityFilter,
+        teamFilter,
         scope,
       );
     },
-    [isAuthenticated, filters, queries],
+    [
+      isAuthenticated,
+      setScopeFilter,
+      setLoading,
+      fetchTasks,
+      searchText,
+      statusFilter,
+      categoryFilter,
+      priorityFilter,
+      teamFilter,
+    ],
   );
 
   const handleReset = useCallback(() => {
     if (!isAuthenticated) return;
-    filters.resetFilters();
-    queries.setLoading(true);
-    void queries.fetchTasks('', 'ALL', 'ALL', 'ALL', 'ALL', 'all');
-  }, [isAuthenticated, filters, queries]);
+    resetFilters();
+    setLoading(true);
+    void fetchTasks('', 'ALL', 'ALL', 'ALL', 'ALL', 'all');
+  }, [isAuthenticated, resetFilters, setLoading, fetchTasks]);
 
   const refetch = useCallback(async () => {
     if (!isAuthenticated) {
       resetAll();
       return;
     }
-    queries.setLoading(true);
+    setLoading(true);
     await Promise.all([
-      queries.fetchTasks(
-        filters.searchText,
-        filters.statusFilter,
-        filters.categoryFilter,
-        filters.priorityFilter,
-        filters.teamFilter,
-        filters.scopeFilter,
+      fetchTasks(
+        searchText,
+        statusFilter,
+        categoryFilter,
+        priorityFilter,
+        teamFilter,
+        scopeFilter,
       ),
-      queries.fetchCategories(),
-      queries.fetchTeams(),
+      fetchCategories(),
+      fetchTeams(),
     ]);
-  }, [isAuthenticated, resetAll, queries, filters]);
+  }, [
+    isAuthenticated,
+    resetAll,
+    setLoading,
+    fetchTasks,
+    searchText,
+    statusFilter,
+    categoryFilter,
+    priorityFilter,
+    teamFilter,
+    scopeFilter,
+    fetchCategories,
+    fetchTeams,
+  ]);
 
   const handleDelete = useCallback(
     async (id: number) => {
       await mutations.handleDeleteTask(id, async () => {
-        queries.setLoading(true);
-        await queries.fetchTasks(
-          filters.searchText,
-          filters.statusFilter,
-          filters.categoryFilter,
-          filters.priorityFilter,
-          filters.teamFilter,
-          filters.scopeFilter,
+        setLoading(true);
+        await fetchTasks(
+          searchText,
+          statusFilter,
+          categoryFilter,
+          priorityFilter,
+          teamFilter,
+          scopeFilter,
         );
       });
     },
-    [mutations, queries, filters],
+    [
+      mutations,
+      setLoading,
+      fetchTasks,
+      searchText,
+      statusFilter,
+      categoryFilter,
+      priorityFilter,
+      teamFilter,
+      scopeFilter,
+    ],
   );
 
   const handleReorder = useCallback(
     (taskIds: number[], status?: TaskStatus) => {
-      return board.handleReorder(taskIds, status, filters.teamFilter);
+      return board.handleReorder(taskIds, status, teamFilter);
     },
-    [board, filters.teamFilter],
+    [board, teamFilter],
   );
 
   return {
-    tasks: queries.tasks,
-    categories: queries.categories,
-    teams: queries.teams,
-    loading: queries.loading,
-    searchText: filters.searchText,
-    statusFilter: filters.statusFilter,
-    categoryFilter: filters.categoryFilter,
-    priorityFilter: filters.priorityFilter,
-    teamFilter: filters.teamFilter,
-    scopeFilter: filters.scopeFilter,
-    isFiltering: filters.isFiltering,
-    setSearchText: filters.setSearchText,
+    tasks,
+    categories,
+    teams,
+    loading,
+    searchText,
+    statusFilter,
+    categoryFilter,
+    priorityFilter,
+    teamFilter,
+    scopeFilter,
+    isFiltering,
+    setSearchText,
     handleSearch,
     handleStatusChange,
     handleCategoryChange,
@@ -236,7 +357,7 @@ export function useTasks(options?: { enabled?: boolean }) {
     handleReorder,
     handleStatusMove: board.handleStatusMove,
     resetState: resetAll,
-    fetchCategories: queries.fetchCategories,
-    fetchTeams: queries.fetchTeams,
+    fetchCategories,
+    fetchTeams,
   };
 }

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { message } from 'antd';
 import type { Task, StatusFilter, PriorityFilter } from '../types/task.types';
 import type { Category } from '../../categories/types/category.types';
@@ -125,16 +125,28 @@ export function useTaskQueries(isAuthenticated: boolean) {
     }
   }, [isAuthenticated]);
 
-  return {
-    tasks,
-    setTasks,
-    categories,
-    teams,
-    loading,
-    setLoading,
-    fetchTasks,
-    fetchCategories,
-    fetchTeams,
-    resetState,
-  };
+  return useMemo(
+    () => ({
+      tasks,
+      setTasks,
+      categories,
+      teams,
+      loading,
+      setLoading,
+      fetchTasks,
+      fetchCategories,
+      fetchTeams,
+      resetState,
+    }),
+    [
+      tasks,
+      categories,
+      teams,
+      loading,
+      fetchTasks,
+      fetchCategories,
+      fetchTeams,
+      resetState,
+    ],
+  );
 }
