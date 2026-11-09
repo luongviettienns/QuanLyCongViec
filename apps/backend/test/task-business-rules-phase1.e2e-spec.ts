@@ -84,7 +84,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
     // Create team
     const teamRes = await request(app.getHttpServer())
-      .post('/teams')
+      .post('/api/teams')
       .set('Authorization', `Bearer ${tokenOwner}`)
       .send({ name: `Phase1 Hardening Team ${timestamp}` })
       .expect(201);
@@ -92,21 +92,21 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
     // Add admin
     await request(app.getHttpServer())
-      .post(`/teams/${teamId}/members`)
+      .post(`/api/teams/${teamId}/members`)
       .set('Authorization', `Bearer ${tokenOwner}`)
       .send({ email: adminCreds.email, role: 'ADMIN' })
       .expect(201);
 
     // Add member 1
     await request(app.getHttpServer())
-      .post(`/teams/${teamId}/members`)
+      .post(`/api/teams/${teamId}/members`)
       .set('Authorization', `Bearer ${tokenOwner}`)
       .send({ email: member1Creds.email, role: 'MEMBER' })
       .expect(201);
 
     // Add member 2
     await request(app.getHttpServer())
-      .post(`/teams/${teamId}/members`)
+      .post(`/api/teams/${teamId}/members`)
       .set('Authorization', `Bearer ${tokenOwner}`)
       .send({ email: member2Creds.email, role: 'MEMBER' })
       .expect(201);
@@ -123,7 +123,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
     it('creates a personal task and soft deletes it', async () => {
       const createRes = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({ title: taskTitle, description: 'Personal soft delete test' })
         .expect(201);
@@ -131,7 +131,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
       // Soft delete
       const delRes = await request(app.getHttpServer())
-        .delete(`/tasks/${personalTaskId}`)
+        .delete(`/api/tasks/${personalTaskId}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(200);
       expect(delRes.body.success).toBe(true);
@@ -146,7 +146,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
     it('soft deleted task is excluded from findAll, stats, and findOne', async () => {
       // findAll
       const listRes = await request(app.getHttpServer())
-        .get('/tasks')
+        .get('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(200);
       const found = listRes.body.find((t: any) => t.id === personalTaskId);
@@ -154,13 +154,13 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
       // findOne returns 404
       await request(app.getHttpServer())
-        .get(`/tasks/${personalTaskId}`)
+        .get(`/api/tasks/${personalTaskId}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(404);
 
       // stats does not count deleted tasks
       const statsRes = await request(app.getHttpServer())
-        .get('/tasks/stats')
+        .get('/api/tasks/stats')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(200);
       expect(statsRes.body).toBeDefined();
@@ -168,7 +168,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
     it('second delete on already deleted task returns 404 (no double deletion)', async () => {
       await request(app.getHttpServer())
-        .delete(`/tasks/${personalTaskId}`)
+        .delete(`/api/tasks/${personalTaskId}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(404);
     });
@@ -176,7 +176,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
     it('allows creating a new task with the SAME title as the soft-deleted task', async () => {
       // Because soft-deleted task has deletedAt != null, it should NOT collide with new active task
       const newRes = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({ title: taskTitle, description: 'New task with reused title' })
         .expect(201);
@@ -186,7 +186,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
     it('creator can restore a soft-deleted personal task after resolving title conflict', async () => {
       // If we try to restore while title is occupied by active task, it should return 409 Conflict
       await request(app.getHttpServer())
-        .post(`/tasks/${personalTaskId}/restore`)
+        .post(`/api/tasks/${personalTaskId}/restore`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(409);
 
@@ -195,14 +195,14 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
         where: { title: taskTitle, deletedAt: null },
       });
       await request(app.getHttpServer())
-        .patch(`/tasks/${activeTask!.id}`)
+        .patch(`/api/tasks/${activeTask!.id}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({ title: `Renamed Task ${timestamp}` })
         .expect(200);
 
       // Now restore succeeds
       const restoreRes = await request(app.getHttpServer())
-        .post(`/tasks/${personalTaskId}/restore`)
+        .post(`/api/tasks/${personalTaskId}/restore`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(201);
       expect(restoreRes.body.id).toBe(personalTaskId);
@@ -215,7 +215,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
     it('team task soft delete and restore authorization matrix', async () => {
       // Create team task
       const teamTaskRes = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: `Team Soft Delete ${timestamp}`,
@@ -227,25 +227,25 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
       // Soft delete by Admin
       await request(app.getHttpServer())
-        .delete(`/tasks/${teamTaskId}`)
+        .delete(`/api/tasks/${teamTaskId}`)
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .expect(200);
 
       // Regular member attempts restore -> 403 Forbidden
       await request(app.getHttpServer())
-        .post(`/tasks/${teamTaskId}/restore`)
+        .post(`/api/tasks/${teamTaskId}/restore`)
         .set('Authorization', `Bearer ${tokenMember1}`)
         .expect(403);
 
       // Outsider attempts restore -> 404/403
       await request(app.getHttpServer())
-        .post(`/tasks/${teamTaskId}/restore`)
+        .post(`/api/tasks/${teamTaskId}/restore`)
         .set('Authorization', `Bearer ${tokenOutsider}`)
         .expect(404);
 
       // Admin attempts restore -> 201 Created
       const adminRestore = await request(app.getHttpServer())
-        .post(`/tasks/${teamTaskId}/restore`)
+        .post(`/api/tasks/${teamTaskId}/restore`)
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .expect(201);
       expect(adminRestore.body.id).toBe(teamTaskId);
@@ -257,7 +257,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
     beforeAll(async () => {
       const res = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: `Done Lock Task ${timestamp}`,
@@ -270,7 +270,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
       // Move to DONE
       await request(app.getHttpServer())
-        .patch(`/tasks/${doneTaskId}/status`)
+        .patch(`/api/tasks/${doneTaskId}/status`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({ status: 'DONE' })
         .expect(200);
@@ -278,7 +278,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
     it('rejects editing content of a DONE task (400)', async () => {
       const res = await request(app.getHttpServer())
-        .patch(`/tasks/${doneTaskId}`)
+        .patch(`/api/tasks/${doneTaskId}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({ description: 'Attempt edit on done task' })
         .expect(400);
@@ -287,7 +287,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
     it('rejects changing assignee of a DONE task even for Owner (400)', async () => {
       const res = await request(app.getHttpServer())
-        .patch(`/tasks/${doneTaskId}/assignee`)
+        .patch(`/api/tasks/${doneTaskId}/assignee`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({ assigneeId: member2Id })
         .expect(400);
@@ -296,7 +296,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
     it('rejects returnTask on a DONE task (400)', async () => {
       const res = await request(app.getHttpServer())
-        .patch(`/tasks/${doneTaskId}/return`)
+        .patch(`/api/tasks/${doneTaskId}/return`)
         .set('Authorization', `Bearer ${tokenMember1}`)
         .send({ reason: 'Cannot complete this done task' })
         .expect(400);
@@ -305,7 +305,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
     it('forbids Assignee from reopening a DONE task (403)', async () => {
       await request(app.getHttpServer())
-        .patch(`/tasks/${doneTaskId}/status`)
+        .patch(`/api/tasks/${doneTaskId}/status`)
         .set('Authorization', `Bearer ${tokenMember1}`)
         .send({ status: 'IN_PROGRESS' })
         .expect(403);
@@ -313,7 +313,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
     it('forbids Regular Member from reopening a DONE task (403)', async () => {
       await request(app.getHttpServer())
-        .patch(`/tasks/${doneTaskId}/status`)
+        .patch(`/api/tasks/${doneTaskId}/status`)
         .set('Authorization', `Bearer ${tokenMember2}`)
         .send({ status: 'TODO' })
         .expect(403);
@@ -321,7 +321,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
     it('allows Team Admin / Owner to reopen a DONE task', async () => {
       const res = await request(app.getHttpServer())
-        .patch(`/tasks/${doneTaskId}/status`)
+        .patch(`/api/tasks/${doneTaskId}/status`)
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .send({ status: 'IN_PROGRESS' })
         .expect(200);
@@ -342,7 +342,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
     beforeAll(async () => {
       // Register a temporary member who will be removed
       const rTemp = await request(app.getHttpServer())
-        .post('/auth/register')
+        .post('/api/auth/register')
         .send({
           name: 'Leaving Member',
           email: `leaving_${timestamp}@taskflow.test`,
@@ -354,7 +354,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
       // Create a dedicated team
       const tRes = await request(app.getHttpServer())
-        .post('/teams')
+        .post('/api/teams')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({ name: `Leaving Member Team ${timestamp}` })
         .expect(201);
@@ -362,7 +362,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
       // Add temp member to team
       const mRes = await request(app.getHttpServer())
-        .post(`/teams/${leaveTeamId}/members`)
+        .post(`/api/teams/${leaveTeamId}/members`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({ email: `leaving_${timestamp}@taskflow.test`, role: 'MEMBER' })
         .expect(201);
@@ -371,7 +371,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
       // Create 3 tasks assigned to this temp member:
       // 1. TODO task
       const t1 = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: `Temp Member TODO ${timestamp}`,
@@ -384,7 +384,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
       // 2. IN_PROGRESS task
       const t2 = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: `Temp Member In Progress ${timestamp}`,
@@ -397,7 +397,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
       // 3. DONE task
       const t3 = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: `Temp Member Done ${timestamp}`,
@@ -412,7 +412,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
     it('removes member from team and enforces business rules on all tasks atomically', async () => {
       // Owner removes the member
       await request(app.getHttpServer())
-        .delete(`/teams/${leaveTeamId}/members/${tempMemberMembershipId}`)
+        .delete(`/api/teams/${leaveTeamId}/members/${tempMemberMembershipId}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(200);
 
@@ -433,7 +433,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
       // Verify removed member can no longer view or access team tasks
       await request(app.getHttpServer())
-        .get(`/tasks/${todoTaskId}`)
+        .get(`/api/tasks/${todoTaskId}`)
         .set('Authorization', `Bearer ${tempMemberToken}`)
         .expect(404);
     });
@@ -442,7 +442,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
       // Task 3 was DONE with assignee tempMemberUserId (who is now removed from team)
       // When Owner reopens task 3 to TODO:
       const reopened = await request(app.getHttpServer())
-        .patch(`/tasks/${doneTaskId}/status`)
+        .patch(`/api/tasks/${doneTaskId}/status`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({ status: 'TODO' })
         .expect(200);
@@ -459,14 +459,14 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
     beforeAll(async () => {
       const resA = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({ title: `Board Task A ${timestamp}`, teamId, status: 'TODO' })
         .expect(201);
       tA = resA.body.id;
 
       const resB = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({ title: `Board Task B ${timestamp}`, teamId, status: 'TODO' })
         .expect(201);
@@ -475,7 +475,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
     it('forbids regular member from reordering shared team board (403)', async () => {
       await request(app.getHttpServer())
-        .patch('/tasks/reorder')
+        .patch('/api/tasks/reorder')
         .set('Authorization', `Bearer ${tokenMember1}`)
         .send({ teamId, taskIds: [tB, tA], status: 'TODO' })
         .expect(403);
@@ -483,7 +483,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
     it('allows Admin and Owner to reorder shared team board (200)', async () => {
       const adminRes = await request(app.getHttpServer())
-        .patch('/tasks/reorder')
+        .patch('/api/tasks/reorder')
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .send({ teamId, taskIds: [tB, tA], status: 'TODO' })
         .expect(200);
@@ -497,11 +497,11 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
       const [res1, res2] = await Promise.all([
         request(app.getHttpServer())
-          .post('/tasks')
+          .post('/api/tasks')
           .set('Authorization', `Bearer ${tokenOwner}`)
           .send({ title: sharedTitle, teamId }),
         request(app.getHttpServer())
-          .post('/tasks')
+          .post('/api/tasks')
           .set('Authorization', `Bearer ${tokenAdmin}`)
           .send({ title: sharedTitle, teamId }),
       ]);
@@ -512,7 +512,7 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
     it('concurrent delete vs update: delete succeeds, update receives 404 (no 500 error)', async () => {
       const task = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({ title: `Race Delete Task ${timestamp}`, teamId })
         .expect(201);
@@ -521,10 +521,10 @@ describe('Phase 1 — Task Business Logic & Authorization Hardening (e2e)', () =
 
       const [delRes, updateRes] = await Promise.all([
         request(app.getHttpServer())
-          .delete(`/tasks/${taskId}`)
+          .delete(`/api/tasks/${taskId}`)
           .set('Authorization', `Bearer ${tokenOwner}`),
         request(app.getHttpServer())
-          .patch(`/tasks/${taskId}`)
+          .patch(`/api/tasks/${taskId}`)
           .set('Authorization', `Bearer ${tokenAdmin}`)
           .send({ description: 'Concurrent update' }),
       ]);

@@ -36,33 +36,33 @@ describe('Input validation edge cases (e2e)', () => {
     prisma = app.get(PrismaService);
 
     const owner = await http()
-      .post('/auth/register')
+      .post('/api/auth/register')
       .send({ email: `iv_owner_${ts}@test.local`, name: 'IV Owner', password: 'StrongPass123!' })
       .expect(201);
     tokenOwner = owner.body.accessToken;
     ownerId = owner.body.user.id;
 
     const member = await http()
-      .post('/auth/register')
+      .post('/api/auth/register')
       .send({ email: `iv_member_${ts}@test.local`, name: 'IV Member', password: 'StrongPass123!' })
       .expect(201);
     memberId = member.body.user.id;
 
-    const team = await auth(http().post('/teams')).send({ name: `IV Team ${ts}` }).expect(201);
+    const team = await auth(http().post('/api/teams')).send({ name: `IV Team ${ts}` }).expect(201);
     teamId = team.body.id;
-    await auth(http().post(`/teams/${teamId}/members`))
+    await auth(http().post(`/api/teams/${teamId}/members`))
       .send({ email: `iv_member_${ts}@test.local`, role: 'MEMBER' })
       .expect(201);
 
-    const personal = await auth(http().post('/tasks')).send({ title: `IV personal ${ts}` }).expect(201);
+    const personal = await auth(http().post('/api/tasks')).send({ title: `IV personal ${ts}` }).expect(201);
     personalTaskId = personal.body.id;
 
-    const teamTask = await auth(http().post('/tasks'))
+    const teamTask = await auth(http().post('/api/tasks'))
       .send({ title: `IV team task ${ts}`, teamId, assigneeId: memberId })
       .expect(201);
     teamTaskId = teamTask.body.id;
 
-    const cat = await auth(http().post('/categories'))
+    const cat = await auth(http().post('/api/categories'))
       .send({ name: `IV Cat ${ts}`, color: '#1890ff' })
       .expect(201);
     categoryId = cat.body.id;
@@ -80,12 +80,12 @@ describe('Input validation edge cases (e2e)', () => {
       ['PATCH /tasks/:id priority', 'patch', { priority: null }],
       ['PUT /tasks/:id status', 'put', { status: null }],
     ] as const)('%s with %j -> 400', async (_label, method, body) => {
-      const res = await auth(http()[method](`/tasks/${personalTaskId}`)).send(body);
+      const res = await auth(http()[method](`/api/tasks/${personalTaskId}`)).send(body);
       expect(res.status).toBe(400);
     });
 
     it('nullable fields still accept null (description, dates, category)', async () => {
-      const res = await auth(http().patch(`/tasks/${personalTaskId}`)).send({
+      const res = await auth(http().patch(`/api/tasks/${personalTaskId}`)).send({
         description: null,
         startDate: null,
         dueDate: null,
@@ -95,26 +95,26 @@ describe('Input validation edge cases (e2e)', () => {
     });
 
     it('PUT /categories/:id with name:null or color:null -> 400', async () => {
-      await auth(http().put(`/categories/${categoryId}`)).send({ name: null }).expect(400);
-      await auth(http().put(`/categories/${categoryId}`)).send({ color: null }).expect(400);
+      await auth(http().put(`/api/categories/${categoryId}`)).send({ name: null }).expect(400);
+      await auth(http().put(`/api/categories/${categoryId}`)).send({ color: null }).expect(400);
     });
   });
 
   describe('P1.2 - assignee endpoint: {} is not an unassign request', () => {
     it('PATCH /tasks/:id/assignee with {} -> 400 and assignee is preserved', async () => {
-      await auth(http().patch(`/tasks/${teamTaskId}/assignee`)).send({}).expect(400);
+      await auth(http().patch(`/api/tasks/${teamTaskId}/assignee`)).send({}).expect(400);
       const task = await prisma.task.findUnique({ where: { id: teamTaskId } });
       expect(task?.assigneeId).toBe(memberId);
     });
 
     it('PUT /tasks/:id with only unrelated content never touches the assignee', async () => {
-      await auth(http().put(`/tasks/${teamTaskId}`)).send({ priority: 'HIGH' }).expect(200);
+      await auth(http().put(`/api/tasks/${teamTaskId}`)).send({ priority: 'HIGH' }).expect(200);
       const task = await prisma.task.findUnique({ where: { id: teamTaskId } });
       expect(task?.assigneeId).toBe(memberId);
     });
 
     it('PATCH /tasks/:id/assignee with {assigneeId:null} explicitly unassigns', async () => {
-      await auth(http().patch(`/tasks/${teamTaskId}/assignee`)).send({ assigneeId: null }).expect(200);
+      await auth(http().patch(`/api/tasks/${teamTaskId}/assignee`)).send({ assigneeId: null }).expect(200);
       const task = await prisma.task.findUnique({ where: { id: teamTaskId } });
       expect(task?.assigneeId).toBeNull();
     });
@@ -122,20 +122,20 @@ describe('Input validation edge cases (e2e)', () => {
 
   describe('P1.3 - whitespace-only team name must be rejected', () => {
     it('POST /teams with spaces-only name -> 400', async () => {
-      await auth(http().post('/teams')).send({ name: '     ' }).expect(400);
+      await auth(http().post('/api/teams')).send({ name: '     ' }).expect(400);
     });
 
     it('POST /teams trims surrounding whitespace before persisting', async () => {
-      const res = await auth(http().post('/teams')).send({ name: `  Trim Team ${ts}  ` }).expect(201);
+      const res = await auth(http().post('/api/teams')).send({ name: `  Trim Team ${ts}  ` }).expect(201);
       expect(res.body.name).toBe(`Trim Team ${ts}`);
     });
 
     it('POST /teams whose trimmed name is shorter than 2 chars -> 400', async () => {
-      await auth(http().post('/teams')).send({ name: '  a  ' }).expect(400);
+      await auth(http().post('/api/teams')).send({ name: '  a  ' }).expect(400);
     });
 
     it('PATCH /teams/:id with spaces-only name -> 400 and name unchanged', async () => {
-      await auth(http().patch(`/teams/${teamId}`)).send({ name: '     ' }).expect(400);
+      await auth(http().patch(`/api/teams/${teamId}`)).send({ name: '     ' }).expect(400);
       const team = await prisma.team.findUnique({ where: { id: teamId } });
       expect(team?.name).toBe(`IV Team ${ts}`);
     });
@@ -143,34 +143,34 @@ describe('Input validation edge cases (e2e)', () => {
 
   describe('P2.6 - ids must be positive integers', () => {
     it.each([0, -1])('PATCH /tasks/reorder with taskIds [%i] -> 400', async (badId) => {
-      await auth(http().patch('/tasks/reorder')).send({ taskIds: [badId] }).expect(400);
+      await auth(http().patch('/api/tasks/reorder')).send({ taskIds: [badId] }).expect(400);
     });
 
     it.each([0, -1])('PATCH /teams/:id/transfer-ownership newOwnerId %i -> 400', async (badId) => {
-      await auth(http().patch(`/teams/${teamId}/transfer-ownership`)).send({ newOwnerId: badId }).expect(400);
+      await auth(http().patch(`/api/teams/${teamId}/transfer-ownership`)).send({ newOwnerId: badId }).expect(400);
     });
 
     it.each([0, -1])('POST /tasks with categoryId/teamId/assigneeId %i -> 400', async (badId) => {
-      await auth(http().post('/tasks')).send({ title: `IV bad ${badId}`, categoryId: badId }).expect(400);
-      await auth(http().post('/tasks')).send({ title: `IV bad ${badId}`, teamId: badId }).expect(400);
-      await auth(http().post('/tasks')).send({ title: `IV bad ${badId}`, assigneeId: badId }).expect(400);
+      await auth(http().post('/api/tasks')).send({ title: `IV bad ${badId}`, categoryId: badId }).expect(400);
+      await auth(http().post('/api/tasks')).send({ title: `IV bad ${badId}`, teamId: badId }).expect(400);
+      await auth(http().post('/api/tasks')).send({ title: `IV bad ${badId}`, assigneeId: badId }).expect(400);
     });
 
     it('PATCH /tasks/:id/assignee and /team with 0 -> 400', async () => {
-      await auth(http().patch(`/tasks/${teamTaskId}/assignee`)).send({ assigneeId: 0 }).expect(400);
-      await auth(http().patch(`/tasks/${teamTaskId}/team`)).send({ teamId: 0 }).expect(400);
-      await auth(http().patch(`/tasks/${teamTaskId}/team`)).send({ assigneeId: -5 }).expect(400);
+      await auth(http().patch(`/api/tasks/${teamTaskId}/assignee`)).send({ assigneeId: 0 }).expect(400);
+      await auth(http().patch(`/api/tasks/${teamTaskId}/team`)).send({ teamId: 0 }).expect(400);
+      await auth(http().patch(`/api/tasks/${teamTaskId}/team`)).send({ assigneeId: -5 }).expect(400);
     });
 
     it('PUT /tasks/:id with teamId/categoryId/assigneeId 0 -> 400', async () => {
-      await auth(http().put(`/tasks/${personalTaskId}`)).send({ categoryId: 0 }).expect(400);
-      await auth(http().put(`/tasks/${personalTaskId}`)).send({ teamId: 0 }).expect(400);
-      await auth(http().put(`/tasks/${personalTaskId}`)).send({ assigneeId: 0 }).expect(400);
+      await auth(http().put(`/api/tasks/${personalTaskId}`)).send({ categoryId: 0 }).expect(400);
+      await auth(http().put(`/api/tasks/${personalTaskId}`)).send({ teamId: 0 }).expect(400);
+      await auth(http().put(`/api/tasks/${personalTaskId}`)).send({ assigneeId: 0 }).expect(400);
     });
 
     it('GET /tasks?categoryId=0 and teamId=-1 -> 400', async () => {
-      await auth(http().get('/tasks?categoryId=0')).expect(400);
-      await auth(http().get('/tasks?teamId=-1')).expect(400);
+      await auth(http().get('/api/tasks?categoryId=0')).expect(400);
+      await auth(http().get('/api/tasks?teamId=-1')).expect(400);
     });
 
     it('owner id is still valid sanity check', () => {

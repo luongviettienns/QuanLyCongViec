@@ -14,18 +14,5 @@ export function configureTestApp(app: INestApplication<App>): INestApplication<A
     }),
   );
 
-  // Backward compatibility middleware for test suites during migration to /api
-  app.use((req: any, _res: any, next: () => void) => {
-    if (
-      req.url &&
-      req.url !== '/' &&
-      !req.url.startsWith('/health') &&
-      !req.url.startsWith('/api')
-    ) {
-      req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
-    }
-    next();
-  });
-
   return app;
 }

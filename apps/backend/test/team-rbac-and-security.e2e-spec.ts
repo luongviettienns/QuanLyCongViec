@@ -70,35 +70,35 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
     prisma = app.get(PrismaService);
 
     const regOwner = await request(app.getHttpServer())
-      .post('/auth/register')
+      .post('/api/auth/register')
       .send(userOwnerCredentials)
       .expect(201);
     tokenOwner = regOwner.body.accessToken;
     ownerId = regOwner.body.user.id;
 
     const regAdmin = await request(app.getHttpServer())
-      .post('/auth/register')
+      .post('/api/auth/register')
       .send(userAdminCredentials)
       .expect(201);
     tokenAdmin = regAdmin.body.accessToken;
     adminId = regAdmin.body.user.id;
 
     const regMember = await request(app.getHttpServer())
-      .post('/auth/register')
+      .post('/api/auth/register')
       .send(userMemberCredentials)
       .expect(201);
     tokenMember = regMember.body.accessToken;
     memberId = regMember.body.user.id;
 
     const regOtherMember = await request(app.getHttpServer())
-      .post('/auth/register')
+      .post('/api/auth/register')
       .send(userOtherMemberCredentials)
       .expect(201);
     tokenOtherMember = regOtherMember.body.accessToken;
     otherMemberId = regOtherMember.body.user.id;
 
     const regOutsider = await request(app.getHttpServer())
-      .post('/auth/register')
+      .post('/api/auth/register')
       .send(userOutsiderCredentials)
       .expect(201);
     tokenOutsider = regOutsider.body.accessToken;
@@ -111,7 +111,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
   describe('1. Team creation & role architecture', () => {
     it('creates a team successfully where creator is owner and role is ADMIN', async () => {
       const res = await request(app.getHttpServer())
-        .post('/teams')
+        .post('/api/teams')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           name: 'Core Engineering Team',
@@ -146,7 +146,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
   describe('2. Team management matrix', () => {
     it('allows Owner to add a member with default role MEMBER', async () => {
       const res = await request(app.getHttpServer())
-        .post(`/teams/${team1Id}/members`)
+        .post(`/api/teams/${team1Id}/members`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           email: userMemberCredentials.email,
@@ -160,7 +160,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('allows Owner to add another member as ADMIN directly', async () => {
       const res = await request(app.getHttpServer())
-        .post(`/teams/${team1Id}/members`)
+        .post(`/api/teams/${team1Id}/members`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           email: userAdminCredentials.email,
@@ -175,7 +175,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('allows Admin to add a MEMBER to the team', async () => {
       const res = await request(app.getHttpServer())
-        .post(`/teams/${team1Id}/members`)
+        .post(`/api/teams/${team1Id}/members`)
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .send({
           email: userOtherMemberCredentials.email,
@@ -191,7 +191,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
     it('forbids non-owner Admin from appointing an ADMIN', async () => {
       const tempUserEmail = `tempadmin_${Date.now()}@taskflow.test`;
       await request(app.getHttpServer())
-        .post('/auth/register')
+        .post('/api/auth/register')
         .send({
           name: 'Temp',
           email: tempUserEmail,
@@ -200,7 +200,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
         .expect(201);
 
       await request(app.getHttpServer())
-        .post(`/teams/${team1Id}/members`)
+        .post(`/api/teams/${team1Id}/members`)
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .send({
           email: tempUserEmail,
@@ -211,7 +211,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('allows Owner to promote Member to ADMIN', async () => {
       const res = await request(app.getHttpServer())
-        .patch(`/teams/${team1Id}/members/${memberMembershipId}`)
+        .patch(`/api/teams/${team1Id}/members/${memberMembershipId}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           role: 'ADMIN',
@@ -223,7 +223,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('forbids non-owner Admin from changing member role', async () => {
       await request(app.getHttpServer())
-        .patch(`/teams/${team1Id}/members/${otherMemberMembershipId}`)
+        .patch(`/api/teams/${team1Id}/members/${otherMemberMembershipId}`)
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .send({
           role: 'ADMIN',
@@ -233,7 +233,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('allows Owner to demote an ADMIN back to MEMBER', async () => {
       const res = await request(app.getHttpServer())
-        .patch(`/teams/${team1Id}/members/${memberMembershipId}`)
+        .patch(`/api/teams/${team1Id}/members/${memberMembershipId}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           role: 'MEMBER',
@@ -245,14 +245,14 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('forbids non-owner Admin from disbanding the team', async () => {
       await request(app.getHttpServer())
-        .delete(`/teams/${team1Id}`)
+        .delete(`/api/teams/${team1Id}`)
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .expect(403);
     });
 
     it('forbids non-owner Admin from transferring ownership', async () => {
       await request(app.getHttpServer())
-        .patch(`/teams/${team1Id}/transfer-ownership`)
+        .patch(`/api/teams/${team1Id}/transfer-ownership`)
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .send({
           newOwnerId: memberId,
@@ -266,7 +266,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       });
 
       await request(app.getHttpServer())
-        .delete(`/teams/${team1Id}/members/${ownerMember?.id}`)
+        .delete(`/api/teams/${team1Id}/members/${ownerMember?.id}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(400);
     });
@@ -277,26 +277,26 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       });
 
       await request(app.getHttpServer())
-        .delete(`/teams/${team1Id}/members/${ownerMember?.id}`)
+        .delete(`/api/teams/${team1Id}/members/${ownerMember?.id}`)
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .expect(400);
     });
 
     it('forbids Member from deleting another Member', async () => {
       await request(app.getHttpServer())
-        .delete(`/teams/${team1Id}/members/${otherMemberMembershipId}`)
+        .delete(`/api/teams/${team1Id}/members/${otherMemberMembershipId}`)
         .set('Authorization', `Bearer ${tokenMember}`)
         .expect(403);
     });
 
     it('allows Admin to delete a MEMBER', async () => {
       await request(app.getHttpServer())
-        .delete(`/teams/${team1Id}/members/${otherMemberMembershipId}`)
+        .delete(`/api/teams/${team1Id}/members/${otherMemberMembershipId}`)
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .expect(200);
 
       const addBack = await request(app.getHttpServer())
-        .post(`/teams/${team1Id}/members`)
+        .post(`/api/teams/${team1Id}/members`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           email: userOtherMemberCredentials.email,
@@ -308,12 +308,12 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('allows Owner to delete an ADMIN', async () => {
       await request(app.getHttpServer())
-        .delete(`/teams/${team1Id}/members/${adminMembershipId}`)
+        .delete(`/api/teams/${team1Id}/members/${adminMembershipId}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(200);
 
       const reAddAdmin = await request(app.getHttpServer())
-        .post(`/teams/${team1Id}/members`)
+        .post(`/api/teams/${team1Id}/members`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           email: userAdminCredentials.email,
@@ -325,7 +325,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('allows Owner to transfer ownership to another member in a transaction', async () => {
       const transferRes = await request(app.getHttpServer())
-        .patch(`/teams/${team1Id}/transfer-ownership`)
+        .patch(`/api/teams/${team1Id}/transfer-ownership`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           newOwnerId: adminId,
@@ -345,7 +345,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       expect(newOwnerMember?.role).toBe('ADMIN');
 
       await request(app.getHttpServer())
-        .patch(`/teams/${team1Id}/transfer-ownership`)
+        .patch(`/api/teams/${team1Id}/transfer-ownership`)
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .send({
           newOwnerId: ownerId,
@@ -357,7 +357,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
   describe('3. Task authorization matrix', () => {
     it('allows Creator to create a task in the team', async () => {
       const res = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: 'Implement Authentication Flow',
@@ -379,7 +379,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('forbids other member (not admin, creator, or assignee) from editing task content', async () => {
       await request(app.getHttpServer())
-        .patch(`/tasks/${teamTaskId}`)
+        .patch(`/api/tasks/${teamTaskId}`)
         .set('Authorization', `Bearer ${tokenOtherMember}`)
         .send({
           title: 'Hacked Title by Other Member',
@@ -389,7 +389,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('forbids other member from changing task status', async () => {
       await request(app.getHttpServer())
-        .patch(`/tasks/${teamTaskId}/status`)
+        .patch(`/api/tasks/${teamTaskId}/status`)
         .set('Authorization', `Bearer ${tokenOtherMember}`)
         .send({
           status: 'IN_PROGRESS',
@@ -399,7 +399,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('forbids other member from reassigning task', async () => {
       await request(app.getHttpServer())
-        .patch(`/tasks/${teamTaskId}/assignee`)
+        .patch(`/api/tasks/${teamTaskId}/assignee`)
         .set('Authorization', `Bearer ${tokenOtherMember}`)
         .send({
           assigneeId: otherMemberId,
@@ -409,14 +409,14 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('forbids other member from deleting task', async () => {
       await request(app.getHttpServer())
-        .delete(`/tasks/${teamTaskId}`)
+        .delete(`/api/tasks/${teamTaskId}`)
         .set('Authorization', `Bearer ${tokenOtherMember}`)
         .expect(403);
     });
 
     it('forbids Assignee from editing task content', async () => {
       await request(app.getHttpServer())
-        .patch(`/tasks/${teamTaskId}`)
+        .patch(`/api/tasks/${teamTaskId}`)
         .set('Authorization', `Bearer ${tokenMember}`)
         .send({
           title: 'Title Changed by Assignee',
@@ -426,7 +426,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('allows Assignee to advance status from TODO to IN_PROGRESS to DONE', async () => {
       const inProgRes = await request(app.getHttpServer())
-        .patch(`/tasks/${teamTaskId}/status`)
+        .patch(`/api/tasks/${teamTaskId}/status`)
         .set('Authorization', `Bearer ${tokenMember}`)
         .send({
           status: 'IN_PROGRESS',
@@ -435,7 +435,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       expect(inProgRes.body.status).toBe('IN_PROGRESS');
 
       const doneRes = await request(app.getHttpServer())
-        .patch(`/tasks/${teamTaskId}/status`)
+        .patch(`/api/tasks/${teamTaskId}/status`)
         .set('Authorization', `Bearer ${tokenMember}`)
         .send({
           status: 'DONE',
@@ -446,7 +446,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('forbids Assignee from reopening a DONE task', async () => {
       await request(app.getHttpServer())
-        .patch(`/tasks/${teamTaskId}/status`)
+        .patch(`/api/tasks/${teamTaskId}/status`)
         .set('Authorization', `Bearer ${tokenMember}`)
         .send({
           status: 'TODO',
@@ -456,7 +456,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('allows Creator to reopen a DONE task', async () => {
       const res = await request(app.getHttpServer())
-        .patch(`/tasks/${teamTaskId}/status`)
+        .patch(`/api/tasks/${teamTaskId}/status`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           status: 'TODO',
@@ -467,7 +467,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('allows Team Admin to reopen a DONE task', async () => {
       await request(app.getHttpServer())
-        .patch(`/tasks/${teamTaskId}/status`)
+        .patch(`/api/tasks/${teamTaskId}/status`)
         .set('Authorization', `Bearer ${tokenMember}`)
         .send({
           status: 'IN_PROGRESS',
@@ -475,7 +475,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
         .expect(200);
 
       await request(app.getHttpServer())
-        .patch(`/tasks/${teamTaskId}/status`)
+        .patch(`/api/tasks/${teamTaskId}/status`)
         .set('Authorization', `Bearer ${tokenMember}`)
         .send({
           status: 'DONE',
@@ -483,7 +483,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
         .expect(200);
 
       const res = await request(app.getHttpServer())
-        .patch(`/tasks/${teamTaskId}/status`)
+        .patch(`/api/tasks/${teamTaskId}/status`)
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .send({
           status: 'IN_PROGRESS',
@@ -494,7 +494,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('allows Assignee to return task to Creator', async () => {
       const res = await request(app.getHttpServer())
-        .patch(`/tasks/${teamTaskId}/return`)
+        .patch(`/api/tasks/${teamTaskId}/return`)
         .set('Authorization', `Bearer ${tokenMember}`)
         .send({
           reason: 'I need clarification from creator',
@@ -506,7 +506,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('rejects return task on a personal task with 400 Bad Request', async () => {
       const personalTask = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: 'My Solo Personal Task',
@@ -514,7 +514,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
         .expect(201);
 
       await request(app.getHttpServer())
-        .patch(`/tasks/${personalTask.body.id}/return`)
+        .patch(`/api/tasks/${personalTask.body.id}/return`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({})
         .expect(400);
@@ -522,7 +522,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('sets assigneeId to null and status to TODO when returning task after creator left team', async () => {
       const memberCreatedTask = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOtherMember}`)
         .send({
           title: 'Task By Departed Member',
@@ -532,12 +532,12 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
         .expect(201);
 
       await request(app.getHttpServer())
-        .delete(`/teams/${team1Id}/members/${otherMemberMembershipId}`)
+        .delete(`/api/teams/${team1Id}/members/${otherMemberMembershipId}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(200);
 
       const returnRes = await request(app.getHttpServer())
-        .patch(`/tasks/${memberCreatedTask.body.id}/return`)
+        .patch(`/api/tasks/${memberCreatedTask.body.id}/return`)
         .set('Authorization', `Bearer ${tokenMember}`)
         .send({
           reason: 'Returning task but creator already left',
@@ -555,7 +555,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     beforeAll(async () => {
       const task1 = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: 'Reorder Item Alpha',
@@ -567,7 +567,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       t1Id = task1.body.id;
 
       const task2 = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: 'Reorder Item Beta',
@@ -582,7 +582,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
     it('restricts board reorder to team managers (forbids regular member, allows owner/admin)', async () => {
       // Regular member receives 403 Forbidden
       await request(app.getHttpServer())
-        .patch('/tasks/reorder')
+        .patch('/api/tasks/reorder')
         .set('Authorization', `Bearer ${tokenMember}`)
         .send({
           teamId: team1Id,
@@ -593,7 +593,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
       // Owner receives 200 OK
       const res = await request(app.getHttpServer())
-        .patch('/tasks/reorder')
+        .patch('/api/tasks/reorder')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           teamId: team1Id,
@@ -607,7 +607,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('forbids member without permission from moving another member task to DONE across columns', async () => {
       await request(app.getHttpServer())
-        .patch('/tasks/reorder')
+        .patch('/api/tasks/reorder')
         .set('Authorization', `Bearer ${tokenMember}`)
         .send({
           teamId: team1Id,
@@ -619,7 +619,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('forbids assignee from dragging their DONE task back to TODO across columns', async () => {
       await request(app.getHttpServer())
-        .patch(`/tasks/${t2Id}/status`)
+        .patch(`/api/tasks/${t2Id}/status`)
         .set('Authorization', `Bearer ${tokenMember}`)
         .send({
           status: 'IN_PROGRESS',
@@ -627,7 +627,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
         .expect(200);
 
       await request(app.getHttpServer())
-        .patch(`/tasks/${t2Id}/status`)
+        .patch(`/api/tasks/${t2Id}/status`)
         .set('Authorization', `Bearer ${tokenMember}`)
         .send({
           status: 'DONE',
@@ -635,7 +635,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
         .expect(200);
 
       await request(app.getHttpServer())
-        .patch('/tasks/reorder')
+        .patch('/api/tasks/reorder')
         .set('Authorization', `Bearer ${tokenMember}`)
         .send({
           teamId: team1Id,
@@ -647,7 +647,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('allows Admin to reorder any task across any column', async () => {
       const res = await request(app.getHttpServer())
-        .patch('/tasks/reorder')
+        .patch('/api/tasks/reorder')
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .send({
           teamId: team1Id,
@@ -663,21 +663,21 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
   describe('5. Data isolation & 404 for non-members', () => {
     it('returns 404 when non-member requests team details', async () => {
       await request(app.getHttpServer())
-        .get(`/teams/${team1Id}`)
+        .get(`/api/teams/${team1Id}`)
         .set('Authorization', `Bearer ${tokenOutsider}`)
         .expect(404);
     });
 
     it('returns 404 when non-member requests task belonging to private team', async () => {
       await request(app.getHttpServer())
-        .get(`/tasks/${teamTaskId}`)
+        .get(`/api/tasks/${teamTaskId}`)
         .set('Authorization', `Bearer ${tokenOutsider}`)
         .expect(404);
     });
 
     it('returns 404 when non-member filters tasks by foreign teamId', async () => {
       await request(app.getHttpServer())
-        .get(`/tasks?teamId=${team1Id}`)
+        .get(`/api/tasks?teamId=${team1Id}`)
         .set('Authorization', `Bearer ${tokenOutsider}`)
         .expect(404);
     });
@@ -687,13 +687,13 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
     it('allows User A to create a personal task and rejects exact duplicate with 409', async () => {
       const title = `Unique Personal ${timestamp}`;
       await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({ title })
         .expect(201);
 
       await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({ title })
         .expect(409);
@@ -702,7 +702,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
     it('allows User B to create personal task with same title as User A', async () => {
       const title = `Unique Personal ${timestamp}`;
       await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOutsider}`)
         .send({ title })
         .expect(201);
@@ -711,7 +711,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
     it('allows Team 1 to create a task and rejects duplicate in Team 1 with 409', async () => {
       const title = `Unique Team Task ${timestamp}`;
       await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title,
@@ -720,7 +720,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
         .expect(201);
 
       await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title,
@@ -732,7 +732,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
     it('rejects case-insensitive duplicate in same team with 409', async () => {
       const title = `unique team task ${timestamp}`;
       await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .send({
           title,
@@ -743,7 +743,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('allows Team 2 to create task with same title as Team 1', async () => {
       const team2Res = await request(app.getHttpServer())
-        .post('/teams')
+        .post('/api/teams')
         .set('Authorization', `Bearer ${tokenOutsider}`)
         .send({
           name: 'Second Company Team',
@@ -753,7 +753,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
       const title = `Unique Team Task ${timestamp}`;
       await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOutsider}`)
         .send({
           title,
@@ -766,7 +766,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
   describe('7. Dashboard & stats calculation', () => {
     it('accurately counts tasks assigned to user without duplicate counts', async () => {
       await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenMember}`)
         .send({
           title: `Solo Assigned ${timestamp}`,
@@ -775,7 +775,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
         .expect(201);
 
       const statsRes = await request(app.getHttpServer())
-        .get('/tasks/stats')
+        .get('/api/tasks/stats')
         .set('Authorization', `Bearer ${tokenMember}`)
         .expect(200);
 
@@ -785,7 +785,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('returns team scoped stats without mixing personal tasks', async () => {
       const teamStatsRes = await request(app.getHttpServer())
-        .get(`/tasks/stats?teamId=${team1Id}`)
+        .get(`/api/tasks/stats?teamId=${team1Id}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(200);
 
@@ -799,7 +799,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('returns 404 when non-member requests team stats', async () => {
       await request(app.getHttpServer())
-        .get(`/tasks/stats?teamId=${team1Id}`)
+        .get(`/api/tasks/stats?teamId=${team1Id}`)
         .set('Authorization', `Bearer ${tokenOutsider}`)
         .expect(404);
     });
@@ -807,7 +807,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
     it('excludes team tasks from findAll and stats after creator has left team', async () => {
       const leaverEmail = `leaver_${Date.now()}@taskflow.test`;
       const leaverReg = await request(app.getHttpServer())
-        .post('/auth/register')
+        .post('/api/auth/register')
         .send({
           name: 'Team Leaver',
           email: leaverEmail,
@@ -817,7 +817,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       const leaverToken = leaverReg.body.accessToken;
 
       const addRes = await request(app.getHttpServer())
-        .post(`/teams/${team1Id}/members`)
+        .post(`/api/teams/${team1Id}/members`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           email: leaverEmail,
@@ -827,7 +827,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       const leaverMemberId = addRes.body.id;
 
       const teamTaskRes = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${leaverToken}`)
         .send({
           title: `Leaver Team Task ${Date.now()}`,
@@ -837,7 +837,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       const taskCreatedByLeaverId = teamTaskRes.body.id;
 
       const personalTaskRes = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${leaverToken}`)
         .send({
           title: `Leaver Personal Task ${Date.now()}`,
@@ -846,12 +846,12 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       const personalTaskId = personalTaskRes.body.id;
 
       await request(app.getHttpServer())
-        .delete(`/teams/${team1Id}/members/${leaverMemberId}`)
+        .delete(`/api/teams/${team1Id}/members/${leaverMemberId}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(200);
 
       const allTasksRes = await request(app.getHttpServer())
-        .get('/tasks')
+        .get('/api/tasks')
         .set('Authorization', `Bearer ${leaverToken}`)
         .expect(200);
       const allTaskIds = allTasksRes.body.map((t: { id: number }) => t.id);
@@ -859,7 +859,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       expect(allTaskIds).not.toContain(taskCreatedByLeaverId);
 
       const createdTasksRes = await request(app.getHttpServer())
-        .get('/tasks?scope=created_by_me')
+        .get('/api/tasks?scope=created_by_me')
         .set('Authorization', `Bearer ${leaverToken}`)
         .expect(200);
       const createdTaskIds = createdTasksRes.body.map((t: { id: number }) => t.id);
@@ -867,7 +867,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       expect(createdTaskIds).not.toContain(taskCreatedByLeaverId);
 
       const leaverStatsRes = await request(app.getHttpServer())
-        .get('/tasks/stats')
+        .get('/api/tasks/stats')
         .set('Authorization', `Bearer ${leaverToken}`)
         .expect(200);
       expect(leaverStatsRes.body.total).toBe(1);
@@ -879,7 +879,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     beforeAll(async () => {
       const taskRes = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: `Movable Task ${Date.now()}`,
@@ -892,7 +892,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('rejects moving task to another team with assignee who is not member of target team', async () => {
       const teamBRes = await request(app.getHttpServer())
-        .post('/teams')
+        .post('/api/teams')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           name: `Team B Target ${Date.now()}`,
@@ -901,7 +901,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       const teamBId = teamBRes.body.id;
 
       await request(app.getHttpServer())
-        .put(`/tasks/${transferTaskId}`)
+        .put(`/api/tasks/${transferTaskId}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           teamId: teamBId,
@@ -912,7 +912,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('auto-clears non-member assignee when transferring task to another team without assignee param', async () => {
       const teamCRes = await request(app.getHttpServer())
-        .post('/teams')
+        .post('/api/teams')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           name: `Team C Target ${Date.now()}`,
@@ -921,7 +921,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       const teamCId = teamCRes.body.id;
 
       const movedRes = await request(app.getHttpServer())
-        .put(`/tasks/${transferTaskId}`)
+        .put(`/api/tasks/${transferTaskId}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           teamId: teamCId,
@@ -934,7 +934,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('rejects converting team task to personal task with another user as assignee', async () => {
       await request(app.getHttpServer())
-        .put(`/tasks/${transferTaskId}`)
+        .put(`/api/tasks/${transferTaskId}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           teamId: null,
@@ -945,7 +945,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('auto-clears assignee when converting team task to personal task without assignee param', async () => {
       const movedPersonal = await request(app.getHttpServer())
-        .put(`/tasks/${transferTaskId}`)
+        .put(`/api/tasks/${transferTaskId}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           teamId: null,
@@ -958,7 +958,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('allows dedicated PATCH /tasks/:id/team endpoint to move task to another team', async () => {
       const teamDRes = await request(app.getHttpServer())
-        .post('/teams')
+        .post('/api/teams')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           name: `Team D Target ${Date.now()}`,
@@ -967,7 +967,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       const teamDId = teamDRes.body.id;
 
       const patchTeamRes = await request(app.getHttpServer())
-        .patch(`/tasks/${transferTaskId}/team`)
+        .patch(`/api/tasks/${transferTaskId}/team`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           teamId: teamDId,
@@ -985,7 +985,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('allows team admin/owner to create a team category', async () => {
       const res = await request(app.getHttpServer())
-        .post('/categories')
+        .post('/api/categories')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           name: `Team Bug ${Date.now()}`,
@@ -1001,7 +1001,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('forbids normal team member from creating team category', async () => {
       await request(app.getHttpServer())
-        .post('/categories')
+        .post('/api/categories')
         .set('Authorization', `Bearer ${tokenMember}`)
         .send({
           name: `Member Cat ${Date.now()}`,
@@ -1013,7 +1013,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('allows all team members to view team categories via GET /categories?teamId=', async () => {
       const res = await request(app.getHttpServer())
-        .get(`/categories?teamId=${team1Id}`)
+        .get(`/api/categories?teamId=${team1Id}`)
         .set('Authorization', `Bearer ${tokenMember}`)
         .expect(200);
 
@@ -1024,7 +1024,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('creates personal category with teamId null', async () => {
       const res = await request(app.getHttpServer())
-        .post('/categories')
+        .post('/api/categories')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           name: `Personal Notes ${Date.now()}`,
@@ -1038,7 +1038,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('allows creating team task with valid team category', async () => {
       const res = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: `Team Task With Category ${Date.now()}`,
@@ -1054,7 +1054,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('rejects creating team task with personal category (must use team category)', async () => {
       const res = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: `Invalid Scope Task ${Date.now()}`,
@@ -1068,7 +1068,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('rejects creating personal task with team category', async () => {
       await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: `Invalid Personal Task ${Date.now()}`,
@@ -1079,12 +1079,12 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('rejects invalid teamId query parameter on GET /categories with 400', async () => {
       await request(app.getHttpServer())
-        .get('/categories?teamId=1abc')
+        .get('/api/categories?teamId=1abc')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(400);
 
       await request(app.getHttpServer())
-        .get('/categories?scope=invalid_scope')
+        .get('/api/categories?scope=invalid_scope')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(400);
     });
@@ -1092,7 +1092,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
     it('clears categoryId when moving team task to personal space', async () => {
       // 1. Create a task in team 1 with team 1's category
       const taskRes = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: `Move Task Test ${Date.now()}`,
@@ -1105,7 +1105,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
       // 2. Move task to personal space (teamId: null), which does not own this team category
       const patchRes = await request(app.getHttpServer())
-        .patch(`/tasks/${taskRes.body.id}/team`)
+        .patch(`/api/tasks/${taskRes.body.id}/team`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           teamId: null,
@@ -1119,7 +1119,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
     it('allows updating teamId and categoryId in the same PATCH /tasks/:id request when category belongs to target team', async () => {
       // 1. Create a target team owned by Owner
       const targetTeamRes = await request(app.getHttpServer())
-        .post('/teams')
+        .post('/api/teams')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           name: `Target Team Alpha ${Date.now()}`,
@@ -1129,7 +1129,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
       // 2. Create a category in targetTeam
       const targetTeamCatRes = await request(app.getHttpServer())
-        .post('/categories')
+        .post('/api/categories')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           name: `Alpha Feature ${Date.now()}`,
@@ -1141,7 +1141,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
       // 3. Create task in team1 with team1's category
       const taskRes = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: `Move Team And Category Task ${Date.now()}`,
@@ -1152,7 +1152,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
       // 4. Move task to targetTeam AND set targetTeam's category in the same request
       const patchRes = await request(app.getHttpServer())
-        .patch(`/tasks/${taskRes.body.id}`)
+        .patch(`/api/tasks/${taskRes.body.id}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           teamId: targetTeamId,
@@ -1167,7 +1167,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
     it('rejects updating teamId and categoryId in the same request if category does not belong to target team', async () => {
       // 1. Create target team
       const targetTeamRes = await request(app.getHttpServer())
-        .post('/teams')
+        .post('/api/teams')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           name: `Target Team Beta ${Date.now()}`,
@@ -1177,7 +1177,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
       // 2. Create task in team1 with team1's category
       const taskRes = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: `Invalid Target Cat Task ${Date.now()}`,
@@ -1188,7 +1188,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
       // 3. Try moving to targetTeam while keeping team1's category (which does NOT belong to targetTeam)
       const patchRes = await request(app.getHttpServer())
-        .patch(`/tasks/${taskRes.body.id}`)
+        .patch(`/api/tasks/${taskRes.body.id}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           teamId: targetTeamId,
@@ -1200,7 +1200,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
       // Verify task in DB was rolled back and is unchanged
       const checkRes = await request(app.getHttpServer())
-        .get(`/tasks/${taskRes.body.id}`)
+        .get(`/api/tasks/${taskRes.body.id}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(200);
 
@@ -1211,7 +1211,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
     it('allows moving team task to personal space and setting personal category in the same request', async () => {
       // 1. Create task in team1 with team1's category
       const taskRes = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: `Move To Personal Task ${Date.now()}`,
@@ -1222,7 +1222,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
       // 2. Move to personal space (teamId: null) and assign personal category in the same request
       const patchRes = await request(app.getHttpServer())
-        .patch(`/tasks/${taskRes.body.id}`)
+        .patch(`/api/tasks/${taskRes.body.id}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           teamId: null,
@@ -1237,7 +1237,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
     it('rejects moving team task to personal space if category is a team category', async () => {
       // 1. Create task in team1
       const taskRes = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           title: `Personal With Team Cat Task ${Date.now()}`,
@@ -1247,7 +1247,7 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
       // 2. Try moving to personal while assigning team1's category
       await request(app.getHttpServer())
-        .patch(`/tasks/${taskRes.body.id}`)
+        .patch(`/api/tasks/${taskRes.body.id}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           teamId: null,
@@ -1258,13 +1258,13 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
 
     it('rejects JWT via URL query parameter on standard REST endpoints', async () => {
       await request(app.getHttpServer())
-        .get(`/tasks?token=${tokenOwner}`)
+        .get(`/api/tasks?token=${tokenOwner}`)
         .expect(401);
     });
 
     it('rejects /realtime/stream when token is missing', async () => {
       await request(app.getHttpServer())
-        .get('/realtime/stream')
+        .get('/api/realtime/stream')
         .expect(401);
     });
   });

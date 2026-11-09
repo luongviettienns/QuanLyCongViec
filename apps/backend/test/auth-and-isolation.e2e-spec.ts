@@ -49,7 +49,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
   describe('Registration & Login Validation', () => {
     it('rejects registration when fields are invalid', async () => {
       await request(app.getHttpServer())
-        .post('/auth/register')
+        .post('/api/auth/register')
         .send({
           name: 'A',
           email: 'not-an-email',
@@ -60,7 +60,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('successfully registers User A and returns user and token without password', async () => {
       const response = await request(app.getHttpServer())
-        .post('/auth/register')
+        .post('/api/auth/register')
         .send(userACredentials)
         .expect(201);
 
@@ -76,7 +76,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('successfully registers User B', async () => {
       const response = await request(app.getHttpServer())
-        .post('/auth/register')
+        .post('/api/auth/register')
         .send(userBCredentials)
         .expect(201);
 
@@ -86,14 +86,14 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('rejects duplicate email registration with 409 Conflict', async () => {
       await request(app.getHttpServer())
-        .post('/auth/register')
+        .post('/api/auth/register')
         .send(userACredentials)
         .expect(409);
     });
 
     it('fails login with wrong password', async () => {
       await request(app.getHttpServer())
-        .post('/auth/login')
+        .post('/api/auth/login')
         .send({
           email: userACredentials.email,
           password: 'WrongPassword123!',
@@ -103,7 +103,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('fails login with non-existent email', async () => {
       await request(app.getHttpServer())
-        .post('/auth/login')
+        .post('/api/auth/login')
         .send({
           email: `nonexistent_${timestamp}@taskflow.test`,
           password: 'Password123!',
@@ -113,7 +113,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('successfully logs in User A with valid credentials', async () => {
       const response = await request(app.getHttpServer())
-        .post('/auth/login')
+        .post('/api/auth/login')
         .send({
           email: userACredentials.email,
           password: userACredentials.password,
@@ -128,7 +128,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
   describe('Profile & JWT Enforcement', () => {
     it('returns profile for valid JWT token on GET /auth/me', async () => {
       const response = await request(app.getHttpServer())
-        .get('/auth/me')
+        .get('/api/auth/me')
         .set('Authorization', `Bearer ${tokenA}`)
         .expect(200);
 
@@ -139,33 +139,33 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('rejects GET /auth/me without token with 401', async () => {
       await request(app.getHttpServer())
-        .get('/auth/me')
+        .get('/api/auth/me')
         .expect(401);
     });
 
     it('rejects GET /auth/me with invalid token with 401', async () => {
       await request(app.getHttpServer())
-        .get('/auth/me')
+        .get('/api/auth/me')
         .set('Authorization', 'Bearer invalid.token.payload')
         .expect(401);
     });
 
     it('rejects GET /tasks without token with 401', async () => {
       await request(app.getHttpServer())
-        .get('/tasks')
+        .get('/api/tasks')
         .expect(401);
     });
 
     it('rejects POST /tasks without token with 401', async () => {
       await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .send({ title: 'Unauthorized Task' })
         .expect(401);
     });
 
     it('rejects GET /categories without token with 401', async () => {
       await request(app.getHttpServer())
-        .get('/categories')
+        .get('/api/categories')
         .expect(401);
     });
 
@@ -177,12 +177,12 @@ describe('Authentication and Data Isolation (e2e)', () => {
       );
 
       await request(app.getHttpServer())
-        .get('/tasks')
+        .get('/api/tasks')
         .set('Authorization', `Bearer ${expiredToken}`)
         .expect(401);
 
       await request(app.getHttpServer())
-        .get('/auth/me')
+        .get('/api/auth/me')
         .set('Authorization', `Bearer ${expiredToken}`)
         .expect(401);
     });
@@ -191,7 +191,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
   describe('A/B User Data Isolation', () => {
     it('creates Category A for User A and Category B for User B', async () => {
       const resA = await request(app.getHttpServer())
-        .post('/categories')
+        .post('/api/categories')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({ name: `Category A ${timestamp}`, color: '#1890ff' })
         .expect(201);
@@ -199,7 +199,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
       catAId = resA.body.id;
 
       const resB = await request(app.getHttpServer())
-        .post('/categories')
+        .post('/api/categories')
         .set('Authorization', `Bearer ${tokenB}`)
         .send({ name: `Category B ${timestamp}`, color: '#52c41a' })
         .expect(201);
@@ -213,7 +213,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
     it('P2.1: enforces case-insensitive unique category name per user (409 Conflict)', async () => {
       // Trying lowercase version of Category A:
       await request(app.getHttpServer())
-        .post('/categories')
+        .post('/api/categories')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({ name: `category a ${timestamp}`, color: '#1890ff' })
         .expect(409);
@@ -232,7 +232,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('isolates categories so User A cannot see User B categories and vice versa', async () => {
       const resA = await request(app.getHttpServer())
-        .get('/categories')
+        .get('/api/categories')
         .set('Authorization', `Bearer ${tokenA}`)
         .expect(200);
 
@@ -241,7 +241,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
       expect(categoryIdsA).not.toContain(catBId);
 
       const resB = await request(app.getHttpServer())
-        .get('/categories')
+        .get('/api/categories')
         .set('Authorization', `Bearer ${tokenB}`)
         .expect(200);
 
@@ -252,7 +252,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('creates Task A for User A and Task B for User B', async () => {
       const resA = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({
           title: `Task A ${timestamp}`,
@@ -265,7 +265,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
       taskAId = resA.body.id;
 
       const resB = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenB}`)
         .send({
           title: `Task B ${timestamp}`,
@@ -283,7 +283,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('isolates tasks so User A cannot see User B tasks and vice versa', async () => {
       const resA = await request(app.getHttpServer())
-        .get('/tasks')
+        .get('/api/tasks')
         .set('Authorization', `Bearer ${tokenA}`)
         .expect(200);
 
@@ -292,7 +292,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
       expect(taskIdsA).not.toContain(taskBId);
 
       const resB = await request(app.getHttpServer())
-        .get('/tasks')
+        .get('/api/tasks')
         .set('Authorization', `Bearer ${tokenB}`)
         .expect(200);
 
@@ -305,14 +305,14 @@ describe('Authentication and Data Isolation (e2e)', () => {
   describe('Security & Cross-User Rejection', () => {
     it('denies User B from reading User A task via GET /tasks/:id (404)', async () => {
       await request(app.getHttpServer())
-        .get(`/tasks/${taskAId}`)
+        .get(`/api/tasks/${taskAId}`)
         .set('Authorization', `Bearer ${tokenB}`)
         .expect(404);
     });
 
     it('denies User B from updating User A task via PUT /tasks/:id (404)', async () => {
       await request(app.getHttpServer())
-        .put(`/tasks/${taskAId}`)
+        .put(`/api/tasks/${taskAId}`)
         .set('Authorization', `Bearer ${tokenB}`)
         .send({ title: 'Hacked Title By User B' })
         .expect(404);
@@ -320,14 +320,14 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('denies User B from deleting User A task via DELETE /tasks/:id (404)', async () => {
       await request(app.getHttpServer())
-        .delete(`/tasks/${taskAId}`)
+        .delete(`/api/tasks/${taskAId}`)
         .set('Authorization', `Bearer ${tokenB}`)
         .expect(404);
     });
 
     it('prevents User B from creating a task referencing User A category', async () => {
       await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenB}`)
         .send({
           title: `Hijack Category ${timestamp}`,
@@ -338,7 +338,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('rejects task creation when client injects a userId field', async () => {
       await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({
           title: `Injected Task ${timestamp}`,
@@ -349,14 +349,14 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('denies User B from reading User A category via GET /categories/:id (404)', async () => {
       await request(app.getHttpServer())
-        .get(`/categories/${catAId}`)
+        .get(`/api/categories/${catAId}`)
         .set('Authorization', `Bearer ${tokenB}`)
         .expect(404);
     });
 
     it('denies User B from updating User A category via PUT /categories/:id (404)', async () => {
       await request(app.getHttpServer())
-        .put(`/categories/${catAId}`)
+        .put(`/api/categories/${catAId}`)
         .set('Authorization', `Bearer ${tokenB}`)
         .send({ name: `Hacked Category ${timestamp}` })
         .expect(404);
@@ -364,14 +364,14 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('denies User B from deleting User A category via DELETE /categories/:id (404)', async () => {
       await request(app.getHttpServer())
-        .delete(`/categories/${catAId}`)
+        .delete(`/api/categories/${catAId}`)
         .set('Authorization', `Bearer ${tokenB}`)
         .expect(404);
     });
 
     it('P1.3: does not automatically regenerate default categories when user deletes all categories', async () => {
       const tempUserRes = await request(app.getHttpServer())
-        .post('/auth/register')
+        .post('/api/auth/register')
         .send({
           email: `cat_delete_${timestamp}@taskflow.test`,
           name: 'Category Deleter',
@@ -383,7 +383,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
       // Initially has 3 default categories created during registration
       const initialCats = await request(app.getHttpServer())
-        .get('/categories')
+        .get('/api/categories')
         .set('Authorization', `Bearer ${tempToken}`)
         .expect(200);
 
@@ -392,14 +392,14 @@ describe('Authentication and Data Isolation (e2e)', () => {
       // Delete all 3 categories
       for (const cat of initialCats.body) {
         await request(app.getHttpServer())
-          .delete(`/categories/${cat.id}`)
+          .delete(`/api/categories/${cat.id}`)
           .set('Authorization', `Bearer ${tempToken}`)
           .expect(200);
       }
 
       // GET /categories again -> MUST be empty [] and NOT auto-recreated
       const afterDeleteCats = await request(app.getHttpServer())
-        .get('/categories')
+        .get('/api/categories')
         .set('Authorization', `Bearer ${tempToken}`)
         .expect(200);
 
@@ -408,7 +408,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('filters tasks by matching title case-insensitively via GET /tasks?search=...', async () => {
       const res = await request(app.getHttpServer())
-        .get(`/tasks?search=${encodeURIComponent('task a')}`)
+        .get(`/api/tasks?search=${encodeURIComponent('task a')}`)
         .set('Authorization', `Bearer ${tokenA}`)
         .expect(200);
 
@@ -419,7 +419,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('does not match tasks when search term only appears in description', async () => {
       const res = await request(app.getHttpServer())
-        .get('/tasks?search=Description%20A')
+        .get('/api/tasks?search=Description%20A')
         .set('Authorization', `Bearer ${tokenA}`)
         .expect(200);
 
@@ -429,7 +429,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('returns empty list when search term does not match any title', async () => {
       const res = await request(app.getHttpServer())
-        .get('/tasks?search=NonExistentTaskTitleXYZ999')
+        .get('/api/tasks?search=NonExistentTaskTitleXYZ999')
         .set('Authorization', `Bearer ${tokenA}`)
         .expect(200);
 
@@ -439,7 +439,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('filters tasks by priority via GET /tasks?priority=HIGH', async () => {
       const res = await request(app.getHttpServer())
-        .get('/tasks?priority=HIGH')
+        .get('/api/tasks?priority=HIGH')
         .set('Authorization', `Bearer ${tokenA}`)
         .expect(200);
 
@@ -452,13 +452,13 @@ describe('Authentication and Data Isolation (e2e)', () => {
   describe('Task Statistics (GET /tasks/stats)', () => {
     it('rejects unauthenticated request to /tasks/stats with 401', async () => {
       await request(app.getHttpServer())
-        .get('/tasks/stats')
+        .get('/api/tasks/stats')
         .expect(401);
     });
 
     it('returns aggregated statistics and isolates data per user', async () => {
       const resA = await request(app.getHttpServer())
-        .get('/tasks/stats')
+        .get('/api/tasks/stats')
         .set('Authorization', `Bearer ${tokenA}`)
         .expect(200);
 
@@ -480,7 +480,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
       expect(typeof resA.body.completionRate).toBe('number');
 
       const resB = await request(app.getHttpServer())
-        .get('/tasks/stats')
+        .get('/api/tasks/stats')
         .set('Authorization', `Bearer ${tokenB}`)
         .expect(200);
 
@@ -492,7 +492,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
   describe('Task Date Management (YYYY-MM-DD)', () => {
     it('creates a task with valid YYYY-MM-DD startDate and dueDate', async () => {
       const res = await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({
           title: `Date Task ${Date.now()}`,
@@ -507,7 +507,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('rejects task creation with non YYYY-MM-DD date format', async () => {
       await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({
           title: `Invalid Format Date ${Date.now()}`,
@@ -518,7 +518,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('rejects task creation with invalid calendar date', async () => {
       await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({
           title: `Invalid Calendar Date ${Date.now()}`,
@@ -529,7 +529,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
     it('rejects task creation when startDate > dueDate', async () => {
       await request(app.getHttpServer())
-        .post('/tasks')
+        .post('/api/tasks')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({
           title: `Inverted Date Task ${Date.now()}`,
