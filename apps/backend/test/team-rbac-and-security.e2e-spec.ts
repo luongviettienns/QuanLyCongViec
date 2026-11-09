@@ -972,4 +972,103 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       expect(patchTeamRes.body.assigneeId).toBeNull();
     });
   });
+
+  describe('Team Categories (GitHub-Style Labels) and Task Scoping', () => {
+    let teamCategoryId = 0;
+    let personalCategoryId = 0;
+
+    it('allows team admin/owner to create a team category', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/categories')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          name: `Team Bug ${Date.now()}`,
+          color: '#ff4d4f',
+          teamId: team1Id,
+        })
+        .expect(201);
+
+      expect(res.body.teamId).toBe(team1Id);
+      expect(res.body.name).toContain('Team Bug');
+      teamCategoryId = res.body.id;
+    });
+
+    it('forbids normal team member from creating team category', async () => {
+      await request(app.getHttpServer())
+        .post('/categories')
+        .set('Authorization', `Bearer ${tokenMember}`)
+        .send({
+          name: `Member Cat ${Date.now()}`,
+          color: '#52c41a',
+          teamId: team1Id,
+        })
+        .expect(403);
+    });
+
+    it('allows all team members to view team categories via GET /categories?teamId=', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/categories?teamId=${team1Id}`)
+        .set('Authorization', `Bearer ${tokenMember}`)
+        .expect(200);
+
+      expect(Array.isArray(res.body)).toBe(true);
+      const catIds = res.body.map((c: { id: number }) => c.id);
+      expect(catIds).toContain(teamCategoryId);
+    });
+
+    it('creates personal category with teamId null', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/categories')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          name: `Personal Notes ${Date.now()}`,
+          color: '#1890ff',
+        })
+        .expect(201);
+
+      expect(res.body.teamId).toBeNull();
+      personalCategoryId = res.body.id;
+    });
+
+    it('allows creating team task with valid team category', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `Team Task With Category ${Date.now()}`,
+          teamId: team1Id,
+          categoryId: teamCategoryId,
+        })
+        .expect(201);
+
+      expect(res.body.teamId).toBe(team1Id);
+      expect(res.body.categoryId).toBe(teamCategoryId);
+      expect(res.body.category.name).toContain('Team Bug');
+    });
+
+    it('rejects creating team task with personal category (must use team category)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `Invalid Scope Task ${Date.now()}`,
+          teamId: team1Id,
+          categoryId: personalCategoryId,
+        })
+        .expect(400);
+
+      expect(res.body.message).toContain('không thuộc nhóm này');
+    });
+
+    it('rejects creating personal task with team category', async () => {
+      await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `Invalid Personal Task ${Date.now()}`,
+          categoryId: teamCategoryId,
+        })
+        .expect(404);
+    });
+  });
 });

@@ -113,14 +113,27 @@ export class TaskCrudService {
         }
 
         if (data.categoryId) {
-          const category = await tx.category.findFirst({
-            where: {
-              id: data.categoryId,
-              userId,
-            },
-          });
-          if (!category) {
-            throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
+          if (data.teamId) {
+            const category = await tx.category.findFirst({
+              where: {
+                id: data.categoryId,
+                teamId: data.teamId,
+              },
+            });
+            if (!category) {
+              throw new BadRequestException(`Danh mục #${data.categoryId} không thuộc nhóm này`);
+            }
+          } else {
+            const category = await tx.category.findFirst({
+              where: {
+                id: data.categoryId,
+                userId,
+                teamId: null,
+              },
+            });
+            if (!category) {
+              throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
+            }
           }
         }
 
@@ -315,14 +328,32 @@ export class TaskCrudService {
 
         if (hasCategory) {
           if (data.categoryId) {
-            const category = await tx.category.findFirst({
-              where: {
-                id: data.categoryId,
-                userId: { in: [userId, currentTask.userId] },
-              },
-            });
-            if (!category) {
-              throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
+            const effectiveTeamId = currentTask.teamId;
+            if (effectiveTeamId) {
+              const category = await tx.category.findFirst({
+                where: {
+                  id: data.categoryId,
+                  teamId: effectiveTeamId,
+                },
+              });
+              if (!category) {
+                if (currentTask.categoryId !== data.categoryId) {
+                  throw new BadRequestException(`Danh mục #${data.categoryId} không thuộc nhóm này`);
+                }
+              }
+            } else {
+              const category = await tx.category.findFirst({
+                where: {
+                  id: data.categoryId,
+                  userId: { in: [userId, currentTask.userId] },
+                  teamId: null,
+                },
+              });
+              if (!category) {
+                if (currentTask.categoryId !== data.categoryId) {
+                  throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
+                }
+              }
             }
             updateData.category = { connect: { id: data.categoryId } };
           } else {
