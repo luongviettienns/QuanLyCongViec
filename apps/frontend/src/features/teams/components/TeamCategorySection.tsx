@@ -15,6 +15,7 @@ import {
 } from 'antd';
 import { PlusOutlined, TagsOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { Category, CreateCategoryPayload } from '../../categories/types/category.types';
+import { CATEGORY_PRESET_COLORS } from '../../categories/types/category.types';
 import {
   getCategories,
   createCategory,
@@ -81,17 +82,18 @@ export function TeamCategorySection({ teamId, canManage }: TeamCategorySectionPr
   async function handleSubmit(values: { name: string }) {
     try {
       setSubmitting(true);
+      const normalizedColor = color ? (color.startsWith('#') ? color : `#${color}`) : '#1890ff';
       if (editingCategory) {
         const updated = await updateCategory(editingCategory.id, {
           name: values.name.trim(),
-          color,
+          color: normalizedColor,
         });
         setCategories((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
         message.success(`Đã cập nhật danh mục "${updated.name}"`);
       } else {
         const payload: CreateCategoryPayload = {
           name: values.name.trim(),
-          color,
+          color: normalizedColor,
           teamId,
         };
         const created = await createCategory(payload);
@@ -231,7 +233,8 @@ export function TeamCategorySection({ teamId, canManage }: TeamCategorySectionPr
             <Space align="center" size={10}>
               <ColorPicker
                 value={color}
-                onChange={(_, hex) => setColor(hex)}
+                onChange={(c) => setColor(c.toHexString())}
+                presets={[{ label: 'Màu gợi ý', colors: CATEGORY_PRESET_COLORS }]}
                 showText
               />
               <Tag color={color} style={{ margin: 0, fontSize: 13 }}>

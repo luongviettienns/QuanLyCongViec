@@ -1,4 +1,5 @@
 import { IsNotEmpty, IsString, IsOptional, IsInt, MinLength, MaxLength, Matches } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateCategoryDto {
@@ -19,7 +20,13 @@ export class CreateCategoryDto {
   })
   @IsOptional()
   @IsString({ message: 'Mã màu phải là chuỗi ký tự' })
-  @Matches(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, {
+  @Transform(({ value }: { value: unknown }) => {
+    if (typeof value !== 'string') return value;
+    const trimmed = value.trim();
+    if (!trimmed) return trimmed;
+    return trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+  })
+  @Matches(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/, {
     message: 'Mã màu phải là mã HEX hợp lệ (ví dụ: #1890ff hoặc #fff)',
   })
   color?: string;

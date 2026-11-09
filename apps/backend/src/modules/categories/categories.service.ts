@@ -125,7 +125,9 @@ export class CategoriesService {
       throw new BadRequestException('Tên danh mục phải có ít nhất 2 ký tự');
     }
 
-    const cleanColor = data.color ? data.color.trim() : '#1890ff';
+    const cleanColor = data.color
+      ? (data.color.trim().startsWith('#') ? data.color.trim() : `#${data.color.trim()}`)
+      : '#1890ff';
 
     if (data.teamId !== undefined && data.teamId !== null) {
       const team = await this.prisma.team.findUnique({
@@ -256,7 +258,8 @@ export class CategoriesService {
     }
 
     if (data.color !== undefined) {
-      updateData.color = data.color.trim();
+      const trimmed = data.color.trim();
+      updateData.color = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
     }
 
     try {
