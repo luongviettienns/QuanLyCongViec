@@ -63,6 +63,7 @@ export class TaskReorderService {
       where: {
         ...scopeWhere,
         status,
+        deletedAt: null,
         ...(excludeIds.length > 0 ? { NOT: { id: { in: excludeIds } } } : {}),
       },
       orderBy: [
@@ -91,6 +92,7 @@ export class TaskReorderService {
       where: {
         ...scopeWhere,
         status,
+        deletedAt: null,
         ...(excludeIds.length > 0 ? { NOT: { id: { in: excludeIds } } } : {}),
       },
     });
@@ -127,6 +129,7 @@ export class TaskReorderService {
         where: {
           id: { in: dto.taskIds },
           ...scopeWhere,
+          deletedAt: null,
         },
         include: {
           team: {
@@ -175,6 +178,7 @@ export class TaskReorderService {
           where: {
             ...scopeWhere,
             status: targetStatus,
+            deletedAt: null,
             NOT: { id: { in: dto.taskIds } },
           },
           orderBy: [
@@ -216,6 +220,7 @@ export class TaskReorderService {
           where: {
             ...scopeWhere,
             status: firstStatus,
+            deletedAt: null,
             NOT: { id: { in: dto.taskIds } },
           },
           orderBy: [

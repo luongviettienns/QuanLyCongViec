@@ -102,7 +102,8 @@ export class TaskStatsService {
           COUNT(*) FILTER (WHERE "Priority" = 'MEDIUM')::bigint AS "priorityMedium",
           COUNT(*) FILTER (WHERE "Priority" = 'HIGH')::bigint AS "priorityHigh"
         FROM "Task"
-        WHERE ${whereSql};
+        WHERE (${whereSql})
+          AND "deletedAt" IS NULL;
       `,
       this.prisma.$queryRaw<
         Array<{
@@ -114,7 +115,8 @@ export class TaskStatsService {
           to_char("dueDate", 'YYYY-MM-DD') AS date,
           COUNT(*)::bigint AS count
         FROM "Task"
-        WHERE ${whereSql}
+        WHERE (${whereSql})
+          AND "deletedAt" IS NULL
           AND status != 'DONE'
           AND "dueDate" IS NOT NULL
           AND "dueDate" >= ${todayDate}::date

@@ -107,7 +107,7 @@ describe('Task Permission Utils', () => {
   });
 
   describe('Team Tasks: Assignee Role', () => {
-    it('Assignee on TODO can reorder in TODO and move to IN_PROGRESS, but cannot skip to DONE', () => {
+    it('Assignee on TODO cannot reorder team board, but CAN drag/transition to IN_PROGRESS', () => {
       const task: Task = {
         id: 2,
         title: 'Task 2',
@@ -118,14 +118,14 @@ describe('Task Permission Utils', () => {
       };
 
       const perms = getTaskPermissions(currentUser, task, mockTeam);
-      assert.equal(perms.canReorder, true);
-      assert.equal(perms.canDrag, true);
+      assert.equal(perms.canReorder, false); // Team board priority is managed by Owner/Admin
+      assert.equal(perms.canDrag, true); // But can drag because they can transition to IN_PROGRESS
       assert.equal(canTransitionTask(currentUser, task, 'IN_PROGRESS', mockTeam), true);
       assert.equal(canTransitionTask(currentUser, task, 'DONE', mockTeam), false);
       assert.deepEqual(perms.allowedNextStatuses, ['IN_PROGRESS']);
     });
 
-    it('Assignee on IN_PROGRESS can reorder and move to DONE, but cannot move back to TODO', () => {
+    it('Assignee on IN_PROGRESS cannot reorder team board, but CAN drag/transition to DONE', () => {
       const task: Task = {
         id: 3,
         title: 'Task 3',
@@ -136,14 +136,14 @@ describe('Task Permission Utils', () => {
       };
 
       const perms = getTaskPermissions(currentUser, task, mockTeam);
-      assert.equal(perms.canReorder, true);
+      assert.equal(perms.canReorder, false);
       assert.equal(perms.canDrag, true);
       assert.equal(canTransitionTask(currentUser, task, 'DONE', mockTeam), true);
       assert.equal(canTransitionTask(currentUser, task, 'TODO', mockTeam), false);
       assert.deepEqual(perms.allowedNextStatuses, ['DONE']);
     });
 
-    it('Assignee on DONE can reorder inside DONE column, but cannot reopen to TODO/IN_PROGRESS', () => {
+    it('Assignee on DONE cannot reorder, cannot reopen, and cannot drag', () => {
       const task: Task = {
         id: 4,
         title: 'Task 4',
@@ -154,19 +154,19 @@ describe('Task Permission Utils', () => {
       };
 
       const perms = getTaskPermissions(currentUser, task, mockTeam);
-      // Can reorder within the same column (per backend TaskPolicyService.canReorder)
-      assert.equal(perms.canReorder, true);
-      assert.equal(perms.canDrag, true);
-      // Cannot transition across columns (cannot reopen)
+      assert.equal(perms.canReorder, false);
+      assert.equal(perms.canDrag, false);
       assert.equal(canTransitionTask(currentUser, task, 'TODO', mockTeam), false);
       assert.equal(canTransitionTask(currentUser, task, 'IN_PROGRESS', mockTeam), false);
       assert.equal(perms.canChangeStatus, false);
       assert.deepEqual(perms.allowedNextStatuses, []);
+      assert.equal(perms.canEditContent, false);
+      assert.equal(perms.canChangeAssignee, false);
     });
   });
 
   describe('Team Tasks: Regular Member (Neither Creator nor Assignee)', () => {
-    it('Regular Member CAN reorder within column, but CANNOT transition to other columns, edit or delete', () => {
+    it('Regular Member CANNOT reorder team board, CANNOT transition, edit, or delete', () => {
       const task: Task = {
         id: 5,
         title: 'Task 5',
@@ -177,15 +177,12 @@ describe('Task Permission Utils', () => {
       };
 
       const perms = getTaskPermissions(currentUser, task, mockTeam);
-      // Backend allows any team member to reorder in column:
-      assert.equal(perms.canReorder, true);
-      assert.equal(perms.canDrag, true);
-      // But strictly forbids cross-column status transitions:
+      assert.equal(perms.canReorder, false);
+      assert.equal(perms.canDrag, false);
       assert.equal(perms.canChangeStatus, false);
       assert.deepEqual(perms.allowedNextStatuses, []);
       assert.equal(canTransitionTask(currentUser, task, 'IN_PROGRESS', mockTeam), false);
       assert.equal(canTransitionTask(currentUser, task, 'DONE', mockTeam), false);
-      // Content editing and deletion are forbidden:
       assert.equal(perms.canEditContent, false);
       assert.equal(perms.canDelete, false);
     });
@@ -213,7 +210,7 @@ describe('Task Permission Utils', () => {
   });
 
   describe('Team Tasks: Creator Role', () => {
-    it('Creator can transition task anywhere, reopen DONE tasks, and reorder', () => {
+    it('Creator in team CAN transition task and reopen DONE, but cannot reorder unless Admin/Owner', () => {
       const task: Task = {
         id: 6,
         title: 'Task 6',
@@ -224,12 +221,13 @@ describe('Task Permission Utils', () => {
       };
 
       const perms = getTaskPermissions(currentUser, task, mockTeam);
-      assert.equal(perms.canDrag, true);
-      assert.equal(perms.canReorder, true);
-      assert.equal(perms.canEditContent, true);
+      assert.equal(perms.canDrag, true); // can drag because allowedNextStatuses > 0 (can reopen)
+      assert.equal(perms.canReorder, false); // regular member creator cannot reorder team board
       assert.equal(perms.canDelete, true);
       assert.equal(canTransitionTask(currentUser, task, 'IN_PROGRESS', mockTeam), true);
       assert.equal(canTransitionTask(currentUser, task, 'TODO', mockTeam), true);
+      // Editing content on DONE is locked until reopened:
+      assert.equal(perms.canEditContent, false);
     });
   });
 
@@ -237,7 +235,7 @@ describe('Task Permission Utils', () => {
     const adminUser: User = { ...currentUser, id: 200 };
     const ownerUser: User = { ...currentUser, id: 100 };
 
-    it('Admin can transition any task to any status including reopening DONE', () => {
+    it('Admin and Owner CAN reorder team board, delete, and reopen DONE tasks', () => {
       const task: Task = {
         id: 7,
         title: 'Task 7',
@@ -250,13 +248,13 @@ describe('Task Permission Utils', () => {
       const adminPerms = getTaskPermissions(adminUser, task, mockTeam);
       assert.equal(adminPerms.canDrag, true);
       assert.equal(adminPerms.canReorder, true);
-      assert.equal(adminPerms.canEditContent, true);
+      assert.equal(adminPerms.canDelete, true);
       assert.equal(canTransitionTask(adminUser, task, 'IN_PROGRESS', mockTeam), true);
 
       const ownerPerms = getTaskPermissions(ownerUser, task, mockTeam);
       assert.equal(ownerPerms.canDrag, true);
       assert.equal(ownerPerms.canReorder, true);
-      assert.equal(ownerPerms.canEditContent, true);
+      assert.equal(ownerPerms.canDelete, true);
       assert.equal(canTransitionTask(ownerUser, task, 'TODO', mockTeam), true);
     });
   });

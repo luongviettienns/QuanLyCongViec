@@ -62,6 +62,7 @@ export class TaskQueryService {
 
     const where: Prisma.TaskWhereInput = {
       ...baseWhere,
+      deletedAt: null,
     };
 
     if (query?.assigneeId) {
@@ -110,13 +111,17 @@ export class TaskQueryService {
     id: number,
     userId: number,
     tx: Prisma.TransactionClient = this.prisma,
+    options?: { includeDeleted?: boolean },
   ): Promise<TaskWithTeamAndMembers> {
     if (isNaN(id) || id <= 0) {
       throw new BadRequestException('Mã công việc (ID) phải là số nguyên dương hợp lệ');
     }
 
-    const task = await tx.task.findUnique({
-      where: { id },
+    const task = await tx.task.findFirst({
+      where: {
+        id,
+        ...(options?.includeDeleted ? {} : { deletedAt: null }),
+      },
       include: {
         category: true,
         assignee: {

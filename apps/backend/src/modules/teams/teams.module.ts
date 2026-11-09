@@ -5,9 +5,10 @@ import { TeamPolicyService } from './policies/team-policy.service.js';
 import { TeamMembershipService } from './services/team-membership.service.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
+import { TaskModule } from '../tasks/task.module.js';
 
 @Module({
-  imports: [AuthModule, NotificationsModule],
+  imports: [AuthModule, NotificationsModule, TaskModule],
   controllers: [TeamsController],
   providers: [TeamsService, TeamPolicyService, TeamMembershipService],
   exports: [TeamsService, TeamPolicyService, TeamMembershipService],

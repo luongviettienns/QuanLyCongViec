@@ -84,7 +84,19 @@ export class TasksService {
         );
       }
 
-      // Bước 2: Cập nhật nội dung (tiêu đề, mô tả, ưu tiên, ngày tháng, và categoryId)
+      // Bước 2: Cập nhật trạng thái mở lại nếu chuyển từ DONE sang TODO/IN_PROGRESS
+      // Điều này đảm bảo công việc được mở khóa trước khi cập nhật nội dung
+      const isReopening = hasStatus && data.status !== undefined && data.status !== 'DONE';
+      if (isReopening) {
+        updated = await this.taskWorkflowService.updateStatus(
+          id,
+          { status: data.status! },
+          userId,
+          tx,
+        );
+      }
+
+      // Bước 3: Cập nhật nội dung (tiêu đề, mô tả, ưu tiên, ngày tháng, và categoryId)
       // CategoryId ở đây sẽ được kiểm tra tính hợp lệ đối với Team đích (đã cập nhật ở Bước 1).
       if (hasContent) {
         updated = await this.taskCrudService.updateContent(
@@ -102,8 +114,8 @@ export class TasksService {
         );
       }
 
-      // Bước 3: Cập nhật trạng thái quy trình (nếu có)
-      if (hasStatus && data.status !== undefined) {
+      // Bước 4: Cập nhật trạng thái hoàn thành DONE (nếu có yêu cầu chuyển sang DONE)
+      if (hasStatus && data.status !== undefined && !isReopening) {
         updated = await this.taskWorkflowService.updateStatus(
           id,
           { status: data.status },
@@ -142,6 +154,10 @@ export class TasksService {
 
   remove(id: number, userId: number): Promise<{ success: boolean; message: string; deletedTask: Task }> {
     return this.taskCrudService.remove(id, userId);
+  }
+
+  restore(id: number, userId: number): Promise<Task> {
+    return this.taskCrudService.restore(id, userId);
   }
 
   updateStatus(id: number, data: UpdateTaskStatusDto, userId: number): Promise<Task> {

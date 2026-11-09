@@ -52,6 +52,7 @@ model User {
 
   createdTasks           Task[]         @relation("CreatedTasks")
   assignedTasks          Task[]         @relation("AssignedTasks")
+  deletedTasks           Task[]         @relation("DeletedTasks")
 
   ownedTeams             Team[]         @relation("TeamOwner")
   teamMembers            TeamMember[]
@@ -147,10 +148,14 @@ model Task {
 
   notifications Notification[]
 
+  deletedAt     DateTime?
+  deletedById   Int?
+  deletedBy     User?          @relation("DeletedTasks", fields: [deletedById], references: [id], onDelete: SetNull)
+
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
-  @@unique([teamId, title])
+  @@index([deletedAt])
   @@index([userId, status, position])
   @@index([teamId, status])
   @@index([assigneeId, status])

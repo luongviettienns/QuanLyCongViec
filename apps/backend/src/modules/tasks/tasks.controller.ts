@@ -144,4 +144,13 @@ export class TasksController {
   ) {
     return this.tasksService.remove(id, user.id);
   }
+
+  @ApiOperation({ summary: 'Khôi phục công việc đã xoá mềm' })
+  @Post(':id/restore')
+  restore(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasksService.restore(id, user.id);
+  }
 }

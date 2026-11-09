@@ -585,10 +585,22 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       t2Id = task2.body.id;
     });
 
-    it('allows any team member to reorder tasks within the same column', async () => {
-      const res = await request(app.getHttpServer())
+    it('restricts board reorder to team managers (forbids regular member, allows owner/admin)', async () => {
+      // Regular member receives 403 Forbidden
+      await request(app.getHttpServer())
         .patch('/tasks/reorder')
         .set('Authorization', `Bearer ${tokenMember}`)
+        .send({
+          teamId: team1Id,
+          taskIds: [t2Id, t1Id],
+          status: 'TODO',
+        })
+        .expect(403);
+
+      // Owner receives 200 OK
+      const res = await request(app.getHttpServer())
+        .patch('/tasks/reorder')
+        .set('Authorization', `Bearer ${tokenOwner}`)
         .send({
           teamId: team1Id,
           taskIds: [t2Id, t1Id],
