@@ -200,6 +200,7 @@ function TaskAppShell() {
       onNavigateNotification={handleNotificationNavigate}
     >
       <Routes>
+        <Route index element={<Navigate to="/dashboard" replace />} />
         <Route
           path="dashboard"
           element={
