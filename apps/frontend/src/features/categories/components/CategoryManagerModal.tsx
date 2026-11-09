@@ -11,9 +11,9 @@ import {
   Popconfirm,
   Typography,
   Card,
-  Grid,
   type TableColumnsType,
 } from 'antd';
+import { useResponsive } from '../../../shared/hooks';
 import {
   PlusOutlined,
   EditOutlined,
@@ -49,7 +49,7 @@ export default function CategoryManagerModal({
     handleDelete,
   } = useCategories();
 
-  const screens = Grid.useBreakpoint();
+  const screens = useResponsive();
   const [createForm] = Form.useForm<{ name: string; color: string }>();
   const [editForm] = Form.useForm<{ name: string; color: string }>();
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);

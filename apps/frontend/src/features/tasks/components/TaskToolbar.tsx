@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Input, Select, Button, Space, Grid, Segmented, Tag } from 'antd';
+import { Input, Select, Button, Space, Segmented, Tag } from 'antd';
 import {
   SearchOutlined,
   AppstoreOutlined,
@@ -12,6 +12,7 @@ import {
 import type { StatusFilter, PriorityFilter } from '../types/task.types';
 import type { Category } from '../../categories/types/category.types';
 import type { Team } from '../../teams/types/team.types';
+import { useResponsive } from '../../../shared/hooks';
 
 interface TaskToolbarProps {
   searchText: string;
@@ -51,8 +52,7 @@ export default function TaskToolbar({
   onReset,
 }: TaskToolbarProps) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const screens = Grid.useBreakpoint();
-  const isMobile = !screens.sm;
+  const { isMobile } = useResponsive();
 
   const activeFilterCount =
     (searchText.trim() ? 1 : 0) +

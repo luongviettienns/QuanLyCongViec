@@ -9,8 +9,8 @@ import {
   Tag,
   Alert,
   message,
-  Grid,
 } from 'antd';
+import { useResponsive } from '../../../shared/hooks';
 import type { Task, TaskFormValues } from '../types/task.types';
 import type { Category } from '../../categories/types/category.types';
 import type { Team } from '../../teams/types/team.types';
@@ -42,7 +42,7 @@ export default function TaskFormModal({
   const { user } = useAuth();
   const [form] = Form.useForm<TaskFormValues>();
   const [saving, setSaving] = useState(false);
-  const screens = Grid.useBreakpoint();
+  const screens = useResponsive();
 
   const selectedTeamId = Form.useWatch('teamId', form);
   const currentTeam = teams.find((t) => t.id === selectedTeamId);

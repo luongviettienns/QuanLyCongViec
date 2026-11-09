@@ -1,4 +1,4 @@
-import { Table, Tag, Button, Popconfirm, Space, Grid, List, Card, Tooltip } from 'antd';
+import { Table, Tag, Button, Popconfirm, Space, List, Card, Tooltip } from 'antd';
 import { EditOutlined, DeleteOutlined, UserOutlined, EyeOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import { TASK_PRIORITY_CONFIG, type Task } from '../../types/task.types';
@@ -7,6 +7,7 @@ import type { Team } from '../../../teams/types/team.types';
 import { useAuth } from '../../../auth/hooks/useAuth';
 import { getTaskPermissions } from '../../utils/task-permission.utils';
 import { formatDate, checkIsOverdue } from '../../../../shared/utils/date.utils';
+import { useResponsive } from '../../../../shared/hooks';
 
 interface TaskTableProps {
   tasks: Task[];
@@ -24,7 +25,7 @@ export default function TaskTable({
   onDelete,
 }: TaskTableProps) {
   const { user } = useAuth();
-  const screens = Grid.useBreakpoint();
+  const screens = useResponsive();
 
   function getPerms(task: Task) {
     const team = task.teamId ? teams.find((t) => t.id === task.teamId) : null;

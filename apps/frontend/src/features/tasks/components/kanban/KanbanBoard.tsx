@@ -1,10 +1,11 @@
 import { useState, useRef, useMemo } from 'react';
-import { Alert, Grid, Button, message } from 'antd';
+import { Alert, Button, message } from 'antd';
 import { DragDropProvider, DragOverlay } from '@dnd-kit/react';
 import { PointerSensor, PointerActivationConstraints, KeyboardSensor } from '@dnd-kit/dom';
 import type { Task, TaskStatus } from '../../types/task.types';
 import type { Team } from '../../../teams/types/team.types';
 import { useAuth } from '../../../auth/hooks/useAuth';
+import { useResponsive } from '../../../../shared/hooks';
 import {
   getTaskPermissions,
   canTransitionTask,
@@ -39,7 +40,7 @@ export default function KanbanBoard({
 }: Props) {
   const { user } = useAuth();
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const screens = Grid.useBreakpoint();
+  const screens = useResponsive();
   const columnRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const taskPermissionsMap = useMemo(() => {
