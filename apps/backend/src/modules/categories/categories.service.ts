@@ -14,20 +14,6 @@ export class CategoriesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(userId: number): Promise<Category[]> {
-    const count = await this.prisma.category.count({
-      where: { userId },
-    });
-
-    if (count === 0) {
-      await this.prisma.category.createMany({
-        data: [
-          { name: 'Công việc', color: '#1890ff', userId },
-          { name: 'Học tập', color: '#52c41a', userId },
-          { name: 'Cá nhân', color: '#fa8c16', userId },
-        ],
-      });
-    }
-
     return this.prisma.category.findMany({
       where: { userId },
       orderBy: { createdAt: 'asc' },
@@ -76,13 +62,20 @@ export class CategoriesService {
 
     const cleanColor = data.color ? data.color.trim() : '#1890ff';
 
-    return this.prisma.category.create({
-      data: {
-        name: cleanName,
-        color: cleanColor,
-        userId,
-      },
-    });
+    try {
+      return await this.prisma.category.create({
+        data: {
+          name: cleanName,
+          color: cleanColor,
+          userId,
+        },
+      });
+    } catch (error: any) {
+      if (error?.code === 'P2002') {
+        throw new ConflictException(`Danh mục '${cleanName}' đã tồn tại`);
+      }
+      throw error;
+    }
   }
 
   async update(id: number, data: UpdateCategoryDto, userId: number): Promise<Category> {
@@ -118,10 +111,17 @@ export class CategoriesService {
       updateData.color = data.color.trim();
     }
 
-    return this.prisma.category.update({
-      where: { id },
-      data: updateData,
-    });
+    try {
+      return await this.prisma.category.update({
+        where: { id },
+        data: updateData,
+      });
+    } catch (error: any) {
+      if (error?.code === 'P2002') {
+        throw new ConflictException(`Danh mục '${data.name?.trim()}' đã tồn tại`);
+      }
+      throw error;
+    }
   }
 
   async remove(id: number, userId: number): Promise<{ success: boolean; message: string; deletedCategory: Category }> {

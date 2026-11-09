@@ -4,25 +4,28 @@ import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { AppModule } from '../src/app.module.js';
+import { PrismaService } from '../src/database/prisma.service.js';
 
 describe('Authentication and Data Isolation (e2e)', () => {
   let app: INestApplication<App>;
+  let prisma: PrismaService;
   const timestamp = Date.now();
 
   const userACredentials = {
     name: 'User A',
-    email: `usera_${timestamp}@taskflow.test`,
+    email: `auth_usera_${timestamp}@taskflow.test`,
     password: 'Password123!',
   };
 
   const userBCredentials = {
     name: 'User B',
-    email: `userb_${timestamp}@taskflow.test`,
+    email: `auth_userb_${timestamp}@taskflow.test`,
     password: 'Password123!',
   };
 
   let tokenA = '';
   let tokenB = '';
+  let userAId = 0;
   let catAId = 0;
   let catBId = 0;
   let taskAId = 0;
@@ -42,6 +45,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
       }),
     );
     await app.init();
+    prisma = app.get(PrismaService);
   });
 
   afterAll(async () => {
@@ -73,6 +77,7 @@ describe('Authentication and Data Isolation (e2e)', () => {
       expect(response.body.user.password).toBeUndefined();
 
       tokenA = response.body.accessToken;
+      userAId = response.body.user.id;
     });
 
     it('successfully registers User B', async () => {
@@ -209,6 +214,26 @@ describe('Authentication and Data Isolation (e2e)', () => {
 
       expect(catAId).toBeDefined();
       expect(catBId).toBeDefined();
+    });
+
+    it('P2.1: enforces case-insensitive unique category name per user (409 Conflict)', async () => {
+      // Trying lowercase version of Category A:
+      await request(app.getHttpServer())
+        .post('/categories')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ name: `category a ${timestamp}`, color: '#1890ff' })
+        .expect(409);
+
+      // Direct Prisma insert to verify PostgreSQL unique index on (userId, lower(name))
+      await expect(
+        prisma.category.create({
+          data: {
+            name: `CATEGORY A ${timestamp}`,
+            userId: userAId,
+            color: '#1890ff',
+          },
+        }),
+      ).rejects.toThrow();
     });
 
     it('isolates categories so User A cannot see User B categories and vice versa', async () => {
@@ -348,6 +373,176 @@ describe('Authentication and Data Isolation (e2e)', () => {
         .delete(`/categories/${catAId}`)
         .set('Authorization', `Bearer ${tokenB}`)
         .expect(404);
+    });
+
+    it('P1.3: does not automatically regenerate default categories when user deletes all categories', async () => {
+      const tempUserRes = await request(app.getHttpServer())
+        .post('/auth/register')
+        .send({
+          email: `cat_delete_${timestamp}@taskflow.test`,
+          name: 'Category Deleter',
+          password: 'Password123!',
+        })
+        .expect(201);
+
+      const tempToken = tempUserRes.body.accessToken;
+
+      // Initially has 3 default categories created during registration
+      const initialCats = await request(app.getHttpServer())
+        .get('/categories')
+        .set('Authorization', `Bearer ${tempToken}`)
+        .expect(200);
+
+      expect(initialCats.body.length).toBe(3);
+
+      // Delete all 3 categories
+      for (const cat of initialCats.body) {
+        await request(app.getHttpServer())
+          .delete(`/categories/${cat.id}`)
+          .set('Authorization', `Bearer ${tempToken}`)
+          .expect(200);
+      }
+
+      // GET /categories again -> MUST be empty [] and NOT auto-recreated
+      const afterDeleteCats = await request(app.getHttpServer())
+        .get('/categories')
+        .set('Authorization', `Bearer ${tempToken}`)
+        .expect(200);
+
+      expect(afterDeleteCats.body).toEqual([]);
+    });
+
+    it('filters tasks by matching title case-insensitively via GET /tasks?search=...', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/tasks?search=${encodeURIComponent('task a')}`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBeGreaterThanOrEqual(1);
+      expect(res.body.some((t: { id: number; title: string }) => t.id === taskAId)).toBe(true);
+    });
+
+    it('does not match tasks when search term only appears in description', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/tasks?search=Description%20A')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.some((t: { id: number }) => t.id === taskAId)).toBe(false);
+    });
+
+    it('returns empty list when search term does not match any title', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/tasks?search=NonExistentTaskTitleXYZ999')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBe(0);
+    });
+
+    it('filters tasks by priority via GET /tasks?priority=HIGH', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/tasks?priority=HIGH')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBeGreaterThanOrEqual(1);
+      expect(res.body.every((t: { priority: string }) => t.priority === 'HIGH')).toBe(true);
+    });
+  });
+
+  describe('Task Statistics (GET /tasks/stats)', () => {
+    it('rejects unauthenticated request to /tasks/stats with 401', async () => {
+      await request(app.getHttpServer())
+        .get('/tasks/stats')
+        .expect(401);
+    });
+
+    it('returns aggregated statistics and isolates data per user', async () => {
+      const resA = await request(app.getHttpServer())
+        .get('/tasks/stats')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+
+      expect(resA.body).toHaveProperty('total');
+      expect(resA.body).toHaveProperty('todo');
+      expect(resA.body).toHaveProperty('inProgress');
+      expect(resA.body).toHaveProperty('done');
+      expect(resA.body).toHaveProperty('overdue');
+      expect(resA.body).toHaveProperty('dueSoon');
+      expect(resA.body).toHaveProperty('completionRate');
+      expect(resA.body).toHaveProperty('byPriority');
+      expect(resA.body.byPriority).toHaveProperty('low');
+      expect(resA.body.byPriority).toHaveProperty('medium');
+      expect(resA.body.byPriority).toHaveProperty('high');
+      expect(resA.body).toHaveProperty('upcomingDeadlines');
+      expect(Array.isArray(resA.body.upcomingDeadlines)).toBe(true);
+      expect(resA.body.upcomingDeadlines.length).toBe(7);
+      expect(typeof resA.body.total).toBe('number');
+      expect(typeof resA.body.completionRate).toBe('number');
+
+      const resB = await request(app.getHttpServer())
+        .get('/tasks/stats')
+        .set('Authorization', `Bearer ${tokenB}`)
+        .expect(200);
+
+      expect(resB.body).toHaveProperty('total');
+      expect(typeof resB.body.total).toBe('number');
+    });
+  });
+
+  describe('Task Date Management (YYYY-MM-DD)', () => {
+    it('creates a task with valid YYYY-MM-DD startDate and dueDate', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({
+          title: `Date Task ${Date.now()}`,
+          startDate: '2026-11-10',
+          dueDate: '2026-11-20',
+        })
+        .expect(201);
+
+      expect(res.body.startDate).toMatch(/^2026-11-10/);
+      expect(res.body.dueDate).toMatch(/^2026-11-20/);
+    });
+
+    it('rejects task creation with non YYYY-MM-DD date format', async () => {
+      await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({
+          title: `Invalid Format Date ${Date.now()}`,
+          startDate: '10/11/2026',
+        })
+        .expect(400);
+    });
+
+    it('rejects task creation with invalid calendar date', async () => {
+      await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({
+          title: `Invalid Calendar Date ${Date.now()}`,
+          startDate: '2026-02-31',
+        })
+        .expect(400);
+    });
+
+    it('rejects task creation when startDate > dueDate', async () => {
+      await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({
+          title: `Inverted Date Task ${Date.now()}`,
+          startDate: '2026-11-25',
+          dueDate: '2026-11-20',
+        })
+        .expect(400);
     });
   });
 });

@@ -1,484 +1,145 @@
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service.js';
+import { TaskQueryService } from './services/task-query.service.js';
+import { TaskCrudService } from './services/task-crud.service.js';
+import { TaskWorkflowService } from './services/task-workflow.service.js';
+import { TaskReorderService } from './services/task-reorder.service.js';
+import { TaskStatsService } from './services/task-stats.service.js';
 import { CreateTaskDto } from './dto/create-task.dto.js';
 import { UpdateTaskDto } from './dto/update-task.dto.js';
+import { UpdateTaskContentDto } from './dto/update-task-content.dto.js';
+import { UpdateTaskStatusDto } from './dto/update-task-status.dto.js';
+import { UpdateTaskAssigneeDto } from './dto/update-task-assignee.dto.js';
+import { ReturnTaskDto } from './dto/return-task.dto.js';
+import { MoveTaskTeamDto } from './dto/move-task-team.dto.js';
 import { ReorderTasksDto } from './dto/reorder-tasks.dto.js';
 import { FilterTasksDto } from './dto/filter-tasks.dto.js';
-import type { Task, Prisma } from '@prisma/client';
+import type { TaskWithTeamAndMembers } from './policies/task-policy.service.js';
+import type { Task } from '@prisma/client';
 
 @Injectable()
 export class TasksService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly taskQueryService: TaskQueryService,
+    private readonly taskCrudService: TaskCrudService,
+    private readonly taskWorkflowService: TaskWorkflowService,
+    private readonly taskReorderService: TaskReorderService,
+    private readonly taskStatsService: TaskStatsService,
+  ) {}
 
-  async findAll(query?: FilterTasksDto, userId = 1): Promise<Task[]> {
-    const where: Prisma.TaskWhereInput = {
-      userId,
-    };
-
-    if (query?.search) {
-      const keyword = query.search.trim();
-      if (keyword.length > 0) {
-        where.OR = [
-          {
-            title: {
-              contains: keyword,
-              mode: 'insensitive',
-            },
-          },
-          {
-            description: {
-              contains: keyword,
-              mode: 'insensitive',
-            },
-          },
-        ];
-      }
-    }
- 
-    if (query?.status) {
-      where.status = query.status;
-    }
-
-    if (query?.priority) {
-      where.priority = query.priority;
-    }
-
-    return this.prisma.task.findMany({
-      where,
-      include: {
-        category: true,
-      },
-      orderBy: [
-        { status: 'asc' },
-        { position: 'asc' },
-        { createdAt: 'desc' },
-      ],
-    });
+  findAll(query: FilterTasksDto | undefined, userId: number): Promise<Task[]> {
+    return this.taskQueryService.findAll(query, userId);
   }
 
-  async findOne(id: number, userId = 1): Promise<Task> {
-    if (isNaN(id) || id <= 0) {
-      throw new BadRequestException('Mã công việc (ID) phải là số nguyên dương hợp lệ');
-    }
-
-    const task = await this.prisma.task.findFirst({
-      where: { id: id, userId },
-      include: {
-        category: true,
-      },
-    });
-
-    if (!task) {
-      throw new NotFoundException(`Không tìm thấy công việc với mã #${id}`);
-    }
-
-    return task;
+  findOne(id: number, userId: number): Promise<TaskWithTeamAndMembers> {
+    return this.taskQueryService.findOne(id, userId);
   }
 
-  async create(data: CreateTaskDto, userId: number): Promise<Task> {
-    const cleanTitle = data.title.trim();
-
-    if (cleanTitle.length < 3) {
-      throw new BadRequestException('Tiêu đề công việc phải có ít nhất 3 ký tự (không tính khoảng trắng thừa)');
-    }
-
-    const existingTask = await this.prisma.task.findFirst({
-      where: {
-        userId,
-        title: {
-          equals: cleanTitle,
-          mode: 'insensitive',
-        },
-      },
-    });
-
-    if (existingTask) {
-      throw new ConflictException(`Tiêu đề '${cleanTitle}' đã tồn tại, vui lòng đặt tên khác`);
-    }
-
-    let cleanDescription: string | null = null;
-    if (data.description) {
-      const trimmed = data.description.trim();
-      if (trimmed.length > 0) {
-        cleanDescription = trimmed;
-      }
-    }
-
-    let parsedStartDate: Date | null = null;
-    if (data.startDate) {
-      parsedStartDate = new Date(data.startDate);
-      if (isNaN(parsedStartDate.getTime())) {
-        throw new BadRequestException('Ngày bắt đầu không hợp lệ');
-      }
-    }
-
-    let parsedDueDate: Date | null = null;
-    if (data.dueDate) {
-      parsedDueDate = new Date(data.dueDate);
-      if (isNaN(parsedDueDate.getTime())) {
-        throw new BadRequestException('Hạn chót không hợp lệ');
-      }
-    }
-
-    if (parsedStartDate && parsedDueDate && parsedStartDate > parsedDueDate) {
-      throw new BadRequestException('Ngày bắt đầu không được lớn hơn hạn chót (deadline)');
-    }
-
-    const initialStatus = data.status ? data.status : 'TODO';
-    const initialPriority = data.priority ? data.priority : 'MEDIUM';
-
-    if (data.categoryId) {
-      const category = await this.prisma.category.findFirst({
-        where: {
-          id: data.categoryId,
-          userId,
-        },
-      });
-      if (!category) {
-        throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
-      }
-    }
-
-    const currentCount = await this.prisma.task.count({
-      where: { userId, status: initialStatus },
-    });
-
-    const newTask = await this.prisma.task.create({
-      data: {
-        userId,
-        title: cleanTitle,
-        description: cleanDescription,
-        status: initialStatus,
-        priority: initialPriority,
-        categoryId: data.categoryId ? data.categoryId : null,
-        position: currentCount,
-        startDate: parsedStartDate,
-        dueDate: parsedDueDate,
-      },
-      include: {
-        category: true,
-      },
-    });
-
-    return newTask;
+  create(data: CreateTaskDto, userId: number): Promise<Task> {
+    return this.taskCrudService.create(data, userId);
   }
 
-  async update(id: number, data: UpdateTaskDto, userId = 1): Promise<Task> {
-    const currentTask = await this.findOne(id, userId);
-
-    const hasTitle = data.title !== undefined;
-    const hasDescription = data.description !== undefined;
+  async update(id: number, data: UpdateTaskDto, userId: number): Promise<Task> {
+    const hasContent =
+      data.title !== undefined ||
+      data.description !== undefined ||
+      data.priority !== undefined ||
+      data.startDate !== undefined ||
+      data.dueDate !== undefined ||
+      data.categoryId !== undefined;
+    const hasTeam = data.teamId !== undefined;
+    const hasAssignee = data.assigneeId !== undefined;
     const hasStatus = data.status !== undefined;
-    const hasStartDate = data.startDate !== undefined;
-    const hasDueDate = data.dueDate !== undefined;
-    const hasPriority = data.priority !== undefined;
-    const hasCategory = data.categoryId !== undefined;
 
-    if (!hasTitle && !hasDescription && !hasStatus && !hasStartDate && !hasDueDate && !hasPriority && !hasCategory) {
+    if (!hasContent && !hasTeam && !hasAssignee && !hasStatus) {
       throw new BadRequestException('Vui lòng cung cấp ít nhất một thông tin cần cập nhật');
     }
 
-    const updateData: {
-      title?: string;
-      description?: string | null;
-      status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
-      position?: number;
-      startDate?: Date | null;
-      dueDate?: Date | null;
-      priority?: 'LOW' | 'MEDIUM' | 'HIGH';
-      categoryId?: number | null;
-    } = {};
+    return this.prisma.$transaction(async (tx) => {
+      let updated: Task | undefined;
 
-    let parsedStartDate: Date | null = null;
-    if (hasStartDate) {
-      if (data.startDate === null || data.startDate === '') {
-        updateData.startDate = null;
-      } else if (data.startDate) {
-        parsedStartDate = new Date(data.startDate);
-        if (isNaN(parsedStartDate.getTime())) {
-          throw new BadRequestException('Ngày bắt đầu không hợp lệ');
-        }
-        updateData.startDate = parsedStartDate;
-      }
-    }
-
-    let parsedDueDate: Date | null = null;
-    if (hasDueDate) {
-      if (data.dueDate === null || data.dueDate === '') {
-        updateData.dueDate = null;
-      } else if (data.dueDate) {
-        parsedDueDate = new Date(data.dueDate);
-        if (isNaN(parsedDueDate.getTime())) {
-          throw new BadRequestException('Hạn chót không hợp lệ');
-        }
-        updateData.dueDate = parsedDueDate;
-      }
-    }
-
-    const effectiveStartDate = hasStartDate ? parsedStartDate : currentTask.startDate;
-    const effectiveDueDate = hasDueDate ? parsedDueDate : currentTask.dueDate;
-
-    if (effectiveStartDate && effectiveDueDate && effectiveStartDate > effectiveDueDate) {
-      throw new BadRequestException('Ngày bắt đầu không được lớn hơn hạn chót (deadline)');
-    }
-
-    if (hasTitle && data.title !== undefined) {
-      const cleanTitle = data.title.trim();
-
-      if (cleanTitle.length < 3) {
-        throw new BadRequestException('Tiêu đề công việc mới phải có ít nhất 3 ký tự');
-      }
-
-      const duplicateTask = await this.prisma.task.findFirst({
-        where: {
-          userId: currentTask.userId,
-          title: {
-            equals: cleanTitle,
-            mode: 'insensitive',
+      if (hasContent) {
+        updated = await this.taskCrudService.updateContent(
+          id,
+          {
+            title: data.title,
+            description: data.description,
+            priority: data.priority,
+            startDate: data.startDate,
+            dueDate: data.dueDate,
+            categoryId: data.categoryId,
           },
-          NOT: {
-            id: id,
-          },
-        },
-      });
-
-      if (duplicateTask) {
-        throw new ConflictException(`Tiêu đề '${cleanTitle}' đã được sử dụng bởi một công việc khác`);
-      }
-
-      updateData.title = cleanTitle;
-    }
-
-    if (hasDescription && data.description !== undefined) {
-      const trimmedDesc = data.description.trim();
-      updateData.description = trimmedDesc.length > 0 ? trimmedDesc : null;
-    }
-
-    if (hasPriority && data.priority !== undefined) {
-      updateData.priority = data.priority;
-    }
-
-    if (hasCategory) {
-      if (data.categoryId) {
-        const category = await this.prisma.category.findFirst({
-          where: {
-            id: data.categoryId,
-            userId: currentTask.userId,
-          },
-        });
-        if (!category) {
-          throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
-        }
-        updateData.categoryId = data.categoryId;
-      } else {
-        updateData.categoryId = null;
-      }
-    }
-
-    const isStatusChanged = hasStatus && data.status !== undefined && data.status !== currentTask.status;
-
-    if (isStatusChanged && data.status !== undefined) {
-      const newStatus = data.status;
-
-      const newColCount = await this.prisma.task.count({
-        where: { userId: currentTask.userId, status: newStatus },
-      });
-
-      updateData.status = newStatus;
-      updateData.position = newColCount;
-
-      const remainingOldTasks = await this.prisma.task.findMany({
-        where: {
-          userId: currentTask.userId,
-          status: currentTask.status,
-          NOT: { id: id },
-        },
-        orderBy: [
-          { position: 'asc' },
-          { createdAt: 'desc' },
-        ],
-      });
-
-      const reindexOldColOps = remainingOldTasks.map((t, index) =>
-        this.prisma.task.update({
-          where: { id: t.id },
-          data: { position: index },
-        }),
-      );
-
-      const [updatedTask] = await this.prisma.$transaction([
-        this.prisma.task.update({
-          where: { id: id },
-          data: updateData,
-          include: {
-            category: true,
-          },
-        }),
-        ...reindexOldColOps,
-      ]);
-
-      return updatedTask;
-    }
-
-    if (hasStatus && data.status !== undefined) {
-      updateData.status = data.status;
-    }
-
-    const updatedTask = await this.prisma.task.update({
-      where: { id: id },
-      data: updateData,
-      include: {
-        category: true,
-      },
-    });
-
-    return updatedTask;
-  }
-
-  async remove(id: number, userId = 1): Promise<{ success: boolean; message: string; deletedTask: Task }> {
-    const taskToDelete = await this.findOne(id, userId);
-
-    const remainingTasks = await this.prisma.task.findMany({
-      where: {
-        userId: taskToDelete.userId,
-        status: taskToDelete.status,
-        NOT: { id: id },
-      },
-      orderBy: [
-        { position: 'asc' },
-        { createdAt: 'desc' },
-      ],
-    });
-
-    const reindexOps = remainingTasks.map((t, index) =>
-      this.prisma.task.update({
-        where: { id: t.id },
-        data: { position: index },
-      }),
-    );
-
-    const [deletedTask] = await this.prisma.$transaction([
-      this.prisma.task.delete({
-        where: { id: id },
-      }),
-      ...reindexOps,
-    ]);
-
-    return {
-      success: true,
-      message: `Đã xoá thành công công việc #${id} - "${taskToDelete.title}"`,
-      deletedTask: deletedTask,
-    };
-  }
-
-  async reorder(dto: ReorderTasksDto, userId = 1): Promise<{ success: boolean; message: string }> {
-    if (!dto.taskIds || dto.taskIds.length === 0) {
-      throw new BadRequestException('Danh sách ID công việc không được để trống');
-    }
-
-    const uniqueIdSet = new Set(dto.taskIds);
-    if (uniqueIdSet.size !== dto.taskIds.length) {
-      throw new BadRequestException('Danh sách ID công việc có phần tử trùng lặp');
-    }
-
-    const tasksToUpdate = await this.prisma.task.findMany({
-      where: {
-        id: { in: dto.taskIds },
-        userId,
-      },
-    });
-
-    if (tasksToUpdate.length !== dto.taskIds.length) {
-      throw new NotFoundException('Một hoặc nhiều công việc trong danh sách không tồn tại hoặc không thuộc quyền quản lý của bạn');
-    }
-
-    if (dto.status) {
-      const targetStatus = dto.status;
-
-      const oldColumns = new Set<'TODO' | 'IN_PROGRESS' | 'DONE'>();
-      for (const t of tasksToUpdate) {
-        if (t.status !== targetStatus) {
-          oldColumns.add(t.status);
-        }
-      }
-
-      const oldColReindexOps = [];
-      for (const oldCol of oldColumns) {
-        const remainingInOldCol = await this.prisma.task.findMany({
-          where: {
-            userId,
-            status: oldCol,
-            NOT: { id: { in: dto.taskIds } },
-          },
-          orderBy: [
-            { position: 'asc' },
-            { createdAt: 'desc' },
-          ],
-        });
-
-        for (let i = 0; i < remainingInOldCol.length; i++) {
-          oldColReindexOps.push(
-            this.prisma.task.update({
-              where: { id: remainingInOldCol[i].id },
-              data: { position: i },
-            }),
-          );
-        }
-      }
-
-      const unmentionedInTarget = await this.prisma.task.findMany({
-        where: {
           userId,
-          status: targetStatus,
-          NOT: { id: { in: dto.taskIds } },
-        },
-        orderBy: [
-          { position: 'asc' },
-          { createdAt: 'desc' },
-        ],
-      });
+          tx,
+        );
+      }
 
-      const unmentionedOps = unmentionedInTarget.map((t, idx) =>
-        this.prisma.task.update({
-          where: { id: t.id },
-          data: { position: dto.taskIds.length + idx },
-        }),
-      );
-
-      const targetOps = dto.taskIds.map((taskId, newPosition) =>
-        this.prisma.task.update({
-          where: { id: taskId },
-          data: {
-            position: newPosition,
-            status: targetStatus,
+      if (hasTeam) {
+        updated = await this.taskWorkflowService.moveTeam(
+          id,
+          {
+            teamId: data.teamId,
+            assigneeId: data.assigneeId,
           },
-        }),
-      );
+          userId,
+          tx,
+        );
+      } else if (hasAssignee) {
+        updated = await this.taskWorkflowService.updateAssignee(
+          id,
+          { assigneeId: data.assigneeId },
+          userId,
+          tx,
+        );
+      }
 
-      await this.prisma.$transaction([
-        ...oldColReindexOps,
-        ...targetOps,
-        ...unmentionedOps,
-      ]);
-    } else {
-      const targetOps = dto.taskIds.map((taskId, newPosition) =>
-        this.prisma.task.update({
-          where: { id: taskId },
-          data: { position: newPosition },
-        }),
-      );
+      if (hasStatus && data.status !== undefined) {
+        updated = await this.taskWorkflowService.updateStatus(
+          id,
+          { status: data.status },
+          userId,
+          tx,
+        );
+      }
 
-      await this.prisma.$transaction(targetOps);
-    }
+      if (!updated) {
+        return this.taskQueryService.findOne(id, userId, tx);
+      }
 
-    return {
-      success: true,
-      message: 'Cập nhật thứ tự công việc vào database thành công',
-    };
+      return updated;
+    });
+  }
+
+  updateContent(id: number, data: UpdateTaskContentDto, userId: number): Promise<Task> {
+    return this.taskCrudService.updateContent(id, data, userId);
+  }
+
+  remove(id: number, userId: number): Promise<{ success: boolean; message: string; deletedTask: Task }> {
+    return this.taskCrudService.remove(id, userId);
+  }
+
+  updateStatus(id: number, data: UpdateTaskStatusDto, userId: number): Promise<Task> {
+    return this.taskWorkflowService.updateStatus(id, data, userId);
+  }
+
+  updateAssignee(id: number, data: UpdateTaskAssigneeDto, userId: number): Promise<Task> {
+    return this.taskWorkflowService.updateAssignee(id, data, userId);
+  }
+
+  returnTask(id: number, data: ReturnTaskDto, userId: number): Promise<Task> {
+    return this.taskWorkflowService.returnTask(id, data, userId);
+  }
+
+  moveTeam(id: number, dto: MoveTaskTeamDto, userId: number): Promise<Task> {
+    return this.taskWorkflowService.moveTeam(id, dto, userId);
+  }
+
+  reorder(dto: ReorderTasksDto, userId: number): Promise<{ success: boolean; message: string }> {
+    return this.taskReorderService.reorder(dto, userId);
+  }
+
+  getStats(userId: number, query?: FilterTasksDto) {
+    return this.taskStatsService.getStats(userId, query);
   }
 }

@@ -36,3 +36,20 @@ lerna-debug.log*
 *.sw?
 .DS_Store
 Thumbs.db
+
+# Documentation
+docs/
+
+# Postman & YAML configs
+.postman/
+postman/
+*.yaml
+
+# Spreadsheets & Test cases
+*.xlsx
+
+# Custom E2E test suites
+*-cases.e2e-spec.ts
+
+# Progress tracking
+PROJECT_PROGRESS.md
