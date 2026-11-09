@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsOptional, MinLength, MaxLength, Matches } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsInt, MinLength, MaxLength, Matches } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateCategoryDto {
@@ -23,4 +23,12 @@ export class CreateCategoryDto {
     message: 'Mã màu phải là mã HEX hợp lệ (ví dụ: #1890ff hoặc #fff)',
   })
   color?: string;
+
+  @ApiPropertyOptional({
+    description: 'Mã nhóm làm việc (nếu là danh mục của nhóm, để trống nếu là cá nhân)',
+    example: 1,
+  })
+  @IsOptional()
+  @IsInt({ message: 'Mã nhóm phải là số nguyên' })
+  teamId?: number;
 }

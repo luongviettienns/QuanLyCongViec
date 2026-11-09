@@ -10,12 +10,14 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { CategoriesService } from './categories.service.js';
 import { CreateCategoryDto } from './dto/create-category.dto.js';
@@ -31,10 +33,20 @@ export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Lấy danh sách tất cả các danh mục' })
+  @ApiOperation({ summary: 'Lấy danh sách các danh mục (cá nhân hoặc theo nhóm)' })
+  @ApiQuery({ name: 'teamId', required: false, description: 'Lọc danh mục của nhóm theo ID' })
+  @ApiQuery({ name: 'scope', required: false, description: 'Phạm vi: all (tất cả cá nhân + nhóm) | personal' })
   @ApiResponse({ status: 200, description: 'Danh sách danh mục' })
-  async findAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.categoriesService.findAll(user.id);
+  async findAll(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('teamId') teamId?: string,
+    @Query('scope') scope?: 'all' | 'personal' | 'team',
+  ) {
+    const parsedTeamId = teamId ? parseInt(teamId, 10) : undefined;
+    return this.categoriesService.findAll(user.id, {
+      teamId: parsedTeamId && !isNaN(parsedTeamId) ? parsedTeamId : undefined,
+      scope,
+    });
   }
 
   @Get(':id')
