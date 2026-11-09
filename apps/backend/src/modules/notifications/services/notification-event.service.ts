@@ -55,18 +55,27 @@ export class NotificationEventService {
       // 3. Render template
       const { title, content } = renderNotificationTemplate(event, actorName);
 
-      // 4. Determine entity links
-      const taskId = 'taskId' in event ? event.taskId : null;
+      // 4. Determine entity links safely against concurrent task deletion
+      let validTaskId = 'taskId' in event ? event.taskId : null;
+      if (validTaskId && tx.task?.findUnique) {
+        const taskExists = await tx.task.findUnique({
+          where: { id: validTaskId },
+          select: { id: true },
+        });
+        if (!taskExists) {
+          validTaskId = null;
+        }
+      }
       const teamId = 'teamId' in event ? event.teamId : null;
 
       // 5. Prepare notification records for all recipients
       const notificationsData = recipientIds.map((recipientId) => {
         let eventKey: string;
         if (event.type === 'TASK_DEADLINE_SOON' || event.type === 'TASK_OVERDUE') {
-          eventKey = `${event.type}:${recipientId}:${taskId}:${event.dueDate}`;
+          eventKey = `${event.type}:${recipientId}:${validTaskId}:${event.dueDate}`;
         } else {
           const eventTimestamp = event.timestamp || Date.now();
-          eventKey = `${event.type}:${recipientId}:${taskId ?? teamId ?? 'global'}:${eventTimestamp}`;
+          eventKey = `${event.type}:${recipientId}:${validTaskId ?? teamId ?? 'global'}:${eventTimestamp}`;
         }
 
         return {
@@ -75,7 +84,7 @@ export class NotificationEventService {
           type: event.type,
           title,
           content,
-          taskId,
+          taskId: validTaskId,
           teamId,
           eventKey,
           isRead: false,

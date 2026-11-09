@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Card,
   Table,
@@ -23,6 +23,11 @@ import {
   DeleteOutlined,
   TagsOutlined,
   AppstoreOutlined,
+  UserOutlined,
+  TeamOutlined,
+  CrownOutlined,
+  SafetyCertificateOutlined,
+  LockOutlined,
 } from '@ant-design/icons';
 import { useCategories } from '../hooks/useCategories';
 import { trimmedLengthRule } from '../../../shared/utils/validation.utils';
@@ -83,15 +88,183 @@ export default function CategoryPage({ onChanged }: CategoryPageProps) {
       ? teams.find((t) => t.id === selectedContext)
       : null;
 
+  const isOwner = Boolean(currentTeam && currentTeam.ownerId === user?.id);
   const isOwnerOrAdmin =
     selectedContext === 'personal' ||
     Boolean(
       currentTeam &&
-        (currentTeam.ownerId === user?.id ||
+        (isOwner ||
           currentTeam.members?.some(
             (m) => m.userId === user?.id && m.role === 'ADMIN',
           )),
     );
+
+  const contextOptions = useMemo(() => {
+    return [
+      {
+        label: (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              color: '#8c8c8c',
+              letterSpacing: '0.5px',
+            }}
+          >
+            Không gian cá nhân
+          </span>
+        ),
+        options: [
+          {
+            value: 'personal' as const,
+            title: 'Danh mục cá nhân',
+            label: (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '3px 0',
+                }}
+              >
+                <Space size={10}>
+                  <div
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 6,
+                      background: '#e6f4ff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#1677ff',
+                      fontSize: 14,
+                    }}
+                  >
+                    <UserOutlined />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: '#1f1f1f', lineHeight: 1.3 }}>
+                      Danh mục cá nhân
+                    </div>
+                    <div style={{ fontSize: 11, color: '#8c8c8c', lineHeight: 1.2 }}>
+                      Riêng tư · Dành riêng cho bạn
+                    </div>
+                  </div>
+                </Space>
+                <Tag bordered={false} color="blue" style={{ margin: 0, fontSize: 11 }}>
+                  Cá nhân
+                </Tag>
+              </div>
+            ),
+          },
+        ],
+      },
+      ...(teams.length > 0
+        ? [
+            {
+              label: (
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    color: '#8c8c8c',
+                    letterSpacing: '0.5px',
+                  }}
+                >
+                  Nhóm làm việc ({teams.length})
+                </span>
+              ),
+              options: teams.map((t) => {
+                const isTeamOwner = t.ownerId === user?.id;
+                const isTeamAdmin = t.members?.some((m) => m.userId === user?.id && m.role === 'ADMIN');
+                return {
+                  value: t.id,
+                  title: t.name,
+                  label: (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '3px 0',
+                      }}
+                    >
+                      <Space size={10}>
+                        <div
+                          style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 6,
+                            background: isTeamOwner ? '#fffbe6' : isTeamAdmin ? '#f0f5ff' : '#f5f5f5',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: isTeamOwner ? '#d48806' : isTeamAdmin ? '#1d39c4' : '#595959',
+                            fontSize: 14,
+                          }}
+                        >
+                          <TeamOutlined />
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13, color: '#1f1f1f', lineHeight: 1.3 }}>
+                            {t.name}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#8c8c8c', lineHeight: 1.2 }}>
+                            {t.members?.length || 1} thành viên
+                          </div>
+                        </div>
+                      </Space>
+                      <Tag
+                        bordered={false}
+                        color={isTeamOwner ? 'gold' : isTeamAdmin ? 'geekblue' : 'default'}
+                        style={{ margin: 0, fontSize: 11 }}
+                      >
+                        {isTeamOwner ? 'Chủ sở hữu' : isTeamAdmin ? 'Quản trị viên' : 'Thành viên'}
+                      </Tag>
+                    </div>
+                  ),
+                };
+              }),
+            },
+          ]
+        : []),
+    ];
+  }, [teams, user?.id]);
+
+  function renderSelectedLabel(props: { label?: React.ReactNode; value: string | number }) {
+    if (props.value === 'personal') {
+      return (
+        <Space size={8} style={{ fontWeight: 600, fontSize: 13 }}>
+          <UserOutlined style={{ color: '#1677ff' }} />
+          <span>Danh mục cá nhân</span>
+          <Tag bordered={false} color="blue" style={{ margin: 0, fontSize: 11, padding: '0 6px', lineHeight: '18px' }}>
+            Cá nhân
+          </Tag>
+        </Space>
+      );
+    }
+    const teamId = typeof props.value === 'number' ? props.value : Number(props.value);
+    const team = teams.find((t) => t.id === teamId);
+    if (!team) return props.label;
+    const isTeamOwner = team.ownerId === user?.id;
+    const isTeamAdmin = team.members?.some((m) => m.userId === user?.id && m.role === 'ADMIN');
+    return (
+      <Space size={8} style={{ fontWeight: 600, fontSize: 13 }}>
+        <TeamOutlined style={{ color: isTeamOwner ? '#d48806' : '#1677ff' }} />
+        <span>{team.name}</span>
+        <Tag
+          bordered={false}
+          color={isTeamOwner ? 'gold' : isTeamAdmin ? 'geekblue' : 'default'}
+          style={{ margin: 0, fontSize: 11, padding: '0 6px', lineHeight: '18px' }}
+        >
+          {isTeamOwner ? 'Chủ sở hữu' : isTeamAdmin ? 'Quản trị' : 'Thành viên'}
+        </Tag>
+      </Space>
+    );
+  }
 
   function handleContextChange(value: 'personal' | number) {
     setSelectedContext(value);
@@ -228,21 +401,82 @@ export default function CategoryPage({ onChanged }: CategoryPageProps) {
         </Paragraph>
       </div>
 
-      <div style={{ marginBottom: 20 }}>
-        <Space orientation={screens.sm ? 'horizontal' : 'vertical'} size={12} style={{ width: '100%' }}>
-          <Text strong>Phạm vi danh mục:</Text>
+      {/* Workspace Context Switcher Header */}
+      <div
+        style={{
+          background: '#ffffff',
+          borderRadius: 10,
+          border: '1px solid #e8e8e8',
+          padding: '14px 18px',
+          marginBottom: 20,
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 12,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', flex: 1 }}>
+          <Space size={8} align="center">
+            <AppstoreOutlined style={{ color: '#1677ff', fontSize: 16 }} />
+            <Text strong style={{ fontSize: 14, color: '#262626' }}>
+              Phạm vi quản lý:
+            </Text>
+          </Space>
+
           <Select<'personal' | number>
             value={selectedContext}
             onChange={handleContextChange}
-            style={{ width: screens.sm ? 280 : '100%' }}
-            options={[
-              { value: 'personal', label: '👤 Danh mục cá nhân' },
-              ...teams.map((t) => ({
-                value: t.id,
-                label: `👥 Nhóm: ${t.name}`,
-              })),
-            ]}
+            style={{ minWidth: 280, maxWidth: screens.sm ? 400 : '100%', flex: screens.sm ? undefined : 1 }}
+            size="middle"
+            popupMatchSelectWidth={screens.sm ? 380 : true}
+            showSearch
+            filterOption={(input, option) =>
+              Boolean(option?.title?.toLowerCase().includes(input.toLowerCase()))
+            }
+            labelRender={renderSelectedLabel}
+            options={contextOptions}
           />
+        </div>
+
+        {/* Status Pill on the Right */}
+        <Space size={8} wrap>
+          {selectedContext === 'personal' ? (
+            <Tag color="blue" bordered={false} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6 }}>
+              <UserOutlined style={{ marginRight: 6 }} />
+              {categories.length} danh mục cá nhân
+            </Tag>
+          ) : (
+            <>
+              <Tag
+                color={isOwner ? 'gold' : isOwnerOrAdmin ? 'geekblue' : 'default'}
+                bordered={false}
+                style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6 }}
+              >
+                {isOwner ? (
+                  <>
+                    <CrownOutlined style={{ marginRight: 6 }} />
+                    Chủ sở hữu nhóm
+                  </>
+                ) : isOwnerOrAdmin ? (
+                  <>
+                    <SafetyCertificateOutlined style={{ marginRight: 6 }} />
+                    Quản trị viên
+                  </>
+                ) : (
+                  <>
+                    <LockOutlined style={{ marginRight: 6 }} />
+                    Thành viên (Chỉ đọc)
+                  </>
+                )}
+              </Tag>
+              <Tag color="cyan" bordered={false} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6 }}>
+                <TeamOutlined style={{ marginRight: 6 }} />
+                {categories.length} danh mục nhóm
+              </Tag>
+            </>
+          )}
         </Space>
       </div>
 
