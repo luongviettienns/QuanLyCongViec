@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import { Input, Select, Button, Space, Segmented, Tag } from 'antd';
 import {
   SearchOutlined,
@@ -62,6 +62,14 @@ export default function TaskToolbar({
     (priorityFilter !== 'ALL' ? 1 : 0) +
     (categoryFilter !== 'ALL' ? 1 : 0);
 
+  const toolbarCategories = useMemo(() => {
+    if (!categories) return [];
+    if (teamFilter !== 'ALL') {
+      return categories.filter((c) => c.teamId === teamFilter);
+    }
+    return categories;
+  }, [categories, teamFilter]);
+
   function handleInputChange(val: string) {
     onSearchChange(val);
 
@@ -107,6 +115,9 @@ export default function TaskToolbar({
       clearTimeout(timerRef.current);
     }
     onTeamChange?.(tId);
+    if (categoryFilter !== 'ALL') {
+      onCategoryChange?.('ALL');
+    }
   }
 
   function handleScopeChange(sc: 'all' | 'created_by_me' | 'assigned_to_me') {
@@ -256,7 +267,7 @@ export default function TaskToolbar({
             style={{ width: isMobile ? '100%' : 165 }}
             options={[
               { value: 'ALL', label: 'Tất cả danh mục' },
-              ...categories.map((cat) => ({
+              ...toolbarCategories.map((cat) => ({
                 value: cat.id,
                 label: (
                   <Space size={6} align="center">
@@ -269,7 +280,10 @@ export default function TaskToolbar({
                         backgroundColor: cat.color,
                       }}
                     />
-                    <span>{cat.name}</span>
+                    <span>
+                      {cat.name}
+                      {teamFilter === 'ALL' && cat.team?.name ? ` (${cat.team.name})` : ''}
+                    </span>
                   </Space>
                 ),
               })),

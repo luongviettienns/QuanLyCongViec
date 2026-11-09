@@ -93,7 +93,7 @@ export function useTaskQueries(isAuthenticated: boolean) {
     }
 
     try {
-      const data = await getCategories();
+      const data = await getCategories({ scope: 'all' });
       setCategories(data);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {

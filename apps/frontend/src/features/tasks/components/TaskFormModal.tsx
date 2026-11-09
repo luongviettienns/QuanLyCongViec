@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import dayjs from 'dayjs';
 import {
   Modal,
@@ -50,6 +50,24 @@ export default function TaskFormModal({
     value: m.userId,
     label: `${m.user?.name} (${m.user?.email})`,
   })) ?? [];
+
+  const scopedCategories = useMemo(() => {
+    let filtered = categories.filter((c) => {
+      if (selectedTeamId) {
+        return c.teamId === selectedTeamId;
+      }
+      return !c.teamId;
+    });
+
+    if (task?.category && !filtered.some((c) => c.id === task.category!.id)) {
+      const sameScope = (task.teamId ?? null) === (selectedTeamId ?? null);
+      if (sameScope) {
+        filtered = [task.category, ...filtered];
+      }
+    }
+
+    return filtered;
+  }, [categories, selectedTeamId, task]);
 
   const taskTeam = task?.teamId ? teams.find((t) => t.id === task.teamId) : null;
   const permissions = task ? getTaskPermissions(user, task, taskTeam) : null;
@@ -229,7 +247,10 @@ export default function TaskFormModal({
               allowClear
               disabled={!canEditContent}
               placeholder="Chọn nhóm (hoặc để trống nếu cá nhân)"
-              onChange={() => form.setFieldValue('assigneeId', null)}
+              onChange={() => {
+                form.setFieldValue('assigneeId', null);
+                form.setFieldValue('categoryId', null);
+              }}
               options={teams.map((t) => ({
                 value: t.id,
                 label: t.name,
@@ -323,12 +344,19 @@ export default function TaskFormModal({
           <Select
             allowClear
             disabled={!canEditContent}
-            placeholder="Chọn danh mục (tuỳ chọn)"
-            options={categories.map((c) => ({
+            placeholder={
+              selectedTeamId
+                ? 'Chọn danh mục của nhóm (tuỳ chọn)'
+                : 'Chọn danh mục cá nhân (tuỳ chọn)'
+            }
+            options={scopedCategories.map((c) => ({
               value: c.id,
               label: (
                 <Tag color={c.color} style={{ margin: 0 }}>
                   {c.name}
+                  {c.id === task?.category?.id && !categories.some((x) => x.id === c.id)
+                    ? ' (Từ người tạo)'
+                    : ''}
                 </Tag>
               ),
             }))}
