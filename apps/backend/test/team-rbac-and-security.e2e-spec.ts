@@ -1110,6 +1110,146 @@ describe('Team RBAC, Task Authorization and Security Matrix (e2e)', () => {
       expect(patchRes.body.categoryId).toBeNull();
     });
 
+    it('allows updating teamId and categoryId in the same PATCH /tasks/:id request when category belongs to target team', async () => {
+      // 1. Create a target team owned by Owner
+      const targetTeamRes = await request(app.getHttpServer())
+        .post('/teams')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          name: `Target Team Alpha ${Date.now()}`,
+        })
+        .expect(201);
+      const targetTeamId = targetTeamRes.body.id;
+
+      // 2. Create a category in targetTeam
+      const targetTeamCatRes = await request(app.getHttpServer())
+        .post('/categories')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          name: `Alpha Feature ${Date.now()}`,
+          color: '#52c41a',
+          teamId: targetTeamId,
+        })
+        .expect(201);
+      const targetTeamCatId = targetTeamCatRes.body.id;
+
+      // 3. Create task in team1 with team1's category
+      const taskRes = await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `Move Team And Category Task ${Date.now()}`,
+          teamId: team1Id,
+          categoryId: teamCategoryId,
+        })
+        .expect(201);
+
+      // 4. Move task to targetTeam AND set targetTeam's category in the same request
+      const patchRes = await request(app.getHttpServer())
+        .patch(`/tasks/${taskRes.body.id}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          teamId: targetTeamId,
+          categoryId: targetTeamCatId,
+        })
+        .expect(200);
+
+      expect(patchRes.body.teamId).toBe(targetTeamId);
+      expect(patchRes.body.categoryId).toBe(targetTeamCatId);
+    });
+
+    it('rejects updating teamId and categoryId in the same request if category does not belong to target team', async () => {
+      // 1. Create target team
+      const targetTeamRes = await request(app.getHttpServer())
+        .post('/teams')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          name: `Target Team Beta ${Date.now()}`,
+        })
+        .expect(201);
+      const targetTeamId = targetTeamRes.body.id;
+
+      // 2. Create task in team1 with team1's category
+      const taskRes = await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `Invalid Target Cat Task ${Date.now()}`,
+          teamId: team1Id,
+          categoryId: teamCategoryId,
+        })
+        .expect(201);
+
+      // 3. Try moving to targetTeam while keeping team1's category (which does NOT belong to targetTeam)
+      const patchRes = await request(app.getHttpServer())
+        .patch(`/tasks/${taskRes.body.id}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          teamId: targetTeamId,
+          categoryId: teamCategoryId, // Belongs to team1, not targetTeam!
+        })
+        .expect(400);
+
+      expect(patchRes.body.message).toContain('không thuộc nhóm này');
+
+      // Verify task in DB was rolled back and is unchanged
+      const checkRes = await request(app.getHttpServer())
+        .get(`/tasks/${taskRes.body.id}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      expect(checkRes.body.teamId).toBe(team1Id);
+      expect(checkRes.body.categoryId).toBe(teamCategoryId);
+    });
+
+    it('allows moving team task to personal space and setting personal category in the same request', async () => {
+      // 1. Create task in team1 with team1's category
+      const taskRes = await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `Move To Personal Task ${Date.now()}`,
+          teamId: team1Id,
+          categoryId: teamCategoryId,
+        })
+        .expect(201);
+
+      // 2. Move to personal space (teamId: null) and assign personal category in the same request
+      const patchRes = await request(app.getHttpServer())
+        .patch(`/tasks/${taskRes.body.id}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          teamId: null,
+          categoryId: personalCategoryId,
+        })
+        .expect(200);
+
+      expect(patchRes.body.teamId).toBeNull();
+      expect(patchRes.body.categoryId).toBe(personalCategoryId);
+    });
+
+    it('rejects moving team task to personal space if category is a team category', async () => {
+      // 1. Create task in team1
+      const taskRes = await request(app.getHttpServer())
+        .post('/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `Personal With Team Cat Task ${Date.now()}`,
+          teamId: team1Id,
+        })
+        .expect(201);
+
+      // 2. Try moving to personal while assigning team1's category
+      await request(app.getHttpServer())
+        .patch(`/tasks/${taskRes.body.id}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          teamId: null,
+          categoryId: teamCategoryId,
+        })
+        .expect(404);
+    });
+
     it('rejects JWT via URL query parameter on standard REST endpoints', async () => {
       await request(app.getHttpServer())
         .get(`/tasks?token=${tokenOwner}`)

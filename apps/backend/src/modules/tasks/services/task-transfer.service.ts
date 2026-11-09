@@ -111,11 +111,13 @@ export class TaskTransferService {
             ? { teamId: effectiveTeamId }
             : { userId: currentTask.userId, teamId: null };
 
+          const targetTitle = (dto.title && dto.title.trim()) ? dto.title.trim() : currentTask.title;
+
           const duplicateTask = await tx.task.findFirst({
             where: {
               ...duplicateScopeWhere,
               title: {
-                equals: currentTask.title,
+                equals: targetTitle,
                 mode: 'insensitive',
               },
               NOT: { id },
@@ -123,7 +125,7 @@ export class TaskTransferService {
           });
 
           if (duplicateTask) {
-            throw new ConflictException(`Tiêu đề '${currentTask.title}' đã được sử dụng bởi một công việc khác`);
+            throw new ConflictException(`Tiêu đề '${targetTitle}' đã được sử dụng bởi một công việc khác`);
           }
         }
 

@@ -48,7 +48,7 @@ export class TaskCrudService {
     if (
       date.getUTCFullYear() !== year ||
       date.getUTCMonth() !== month - 1 ||
-      date.getUTCDate() !== day
+      date.getUTCDate() !== day 
     ) {
       throw new BadRequestException('Ngày không hợp lệ trong lịch');
     }

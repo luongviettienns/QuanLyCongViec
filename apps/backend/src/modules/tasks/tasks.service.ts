@@ -61,6 +61,31 @@ export class TasksService {
     const result = await this.prisma.$transaction(async (tx) => {
       let updated: Task | undefined;
 
+      // Bước 1: Nếu có thay đổi nhóm hoặc phân công, thực hiện moveTeam trước
+      // Điều này đảm bảo task đã thuộc phạm vi Team mới (hoặc không gian cá nhân mới)
+      // trước khi validate danh mục (categoryId) và nội dung ở bước tiếp theo.
+      if (hasTeam) {
+        updated = await this.taskWorkflowService.moveTeam(
+          id,
+          {
+            teamId: data.teamId,
+            assigneeId: data.assigneeId,
+            title: data.title,
+          },
+          userId,
+          tx,
+        );
+      } else if (hasAssignee) {
+        updated = await this.taskWorkflowService.updateAssignee(
+          id,
+          { assigneeId: data.assigneeId },
+          userId,
+          tx,
+        );
+      }
+
+      // Bước 2: Cập nhật nội dung (tiêu đề, mô tả, ưu tiên, ngày tháng, và categoryId)
+      // CategoryId ở đây sẽ được kiểm tra tính hợp lệ đối với Team đích (đã cập nhật ở Bước 1).
       if (hasContent) {
         updated = await this.taskCrudService.updateContent(
           id,
@@ -77,25 +102,7 @@ export class TasksService {
         );
       }
 
-      if (hasTeam) {
-        updated = await this.taskWorkflowService.moveTeam(
-          id,
-          {
-            teamId: data.teamId,
-            assigneeId: data.assigneeId,
-          },
-          userId,
-          tx,
-        );
-      } else if (hasAssignee) {
-        updated = await this.taskWorkflowService.updateAssignee(
-          id,
-          { assigneeId: data.assigneeId },
-          userId,
-          tx,
-        );
-      }
-
+      // Bước 3: Cập nhật trạng thái quy trình (nếu có)
       if (hasStatus && data.status !== undefined) {
         updated = await this.taskWorkflowService.updateStatus(
           id,
