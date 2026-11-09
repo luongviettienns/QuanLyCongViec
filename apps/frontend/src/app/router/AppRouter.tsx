@@ -98,6 +98,16 @@ function TaskAppShell() {
   } = useTasks({ enabled: currentNav === 'tasks' });
 
   const { user } = useAuth();
+  const [dashboardReloadCounter, setDashboardReloadCounter] = useState(0);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+
+  const handleGlobalReload = useCallback(() => {
+    if (currentNav === 'dashboard') {
+      setDashboardReloadCounter((c) => c + 1);
+    } else {
+      void refetch();
+    }
+  }, [currentNav, refetch]);
 
   const handleRealtimeTaskEvent = useCallback(
     (event: RealtimeEventData) => {
@@ -107,6 +117,8 @@ function TaskAppShell() {
       }
       if (currentNav === 'tasks') {
         void refetch();
+      } else if (currentNav === 'dashboard') {
+        setDashboardReloadCounter((c) => c + 1);
       }
     },
     [user?.id, currentNav, refetch],
@@ -178,10 +190,10 @@ function TaskAppShell() {
 
   return (
     <AppLayout
-      onReload={() => void refetch()}
+      onReload={handleGlobalReload}
       onCreateTask={handleOpenCreate}
       onOpenCategories={() => setCategoryModalOpen(true)}
-      loading={loading}
+      loading={currentNav === 'dashboard' ? dashboardLoading : loading}
       currentNav={currentNav}
       onNavChange={(key) => navigate('/' + key)}
       onNavigateNotification={handleNotificationNavigate}
@@ -192,6 +204,8 @@ function TaskAppShell() {
           element={
             <DashboardPage
               active={currentNav === 'dashboard'}
+              refreshTrigger={dashboardReloadCounter}
+              onLoadingChange={setDashboardLoading}
               onNavigateToTasks={handleNavigateFromDashboard}
               onOpenCreateTask={handleOpenCreate}
             />

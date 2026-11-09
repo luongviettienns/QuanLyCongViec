@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
+import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
 import {
   Row,
   Col,
@@ -10,7 +10,7 @@ import {
   Skeleton,
   Tag,
 } from 'antd';
-import { ReloadOutlined, PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined } from '@ant-design/icons';
 import { getTaskStats } from '../../tasks/api/tasks.api';
 import type {
   TaskStats,
@@ -67,6 +67,8 @@ interface DashboardPageProps {
   onNavigateToTasks?: (status?: TaskStatus) => void;
   onOpenCreateTask?: () => void;
   active?: boolean;
+  refreshTrigger?: number;
+  onLoadingChange?: (loading: boolean) => void;
 }
 
 function sanitizeNumber(val: unknown): number {
@@ -116,11 +118,17 @@ export default function DashboardPage({
   onNavigateToTasks,
   onOpenCreateTask,
   active = true,
+  refreshTrigger,
+  onLoadingChange,
 }: DashboardPageProps) {
   const [stats, setStats] = useState<TaskStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
+
+  useEffect(() => {
+    onLoadingChange?.(loading);
+  }, [loading, onLoadingChange]);
 
   const fetchStats = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -145,10 +153,19 @@ export default function DashboardPage({
     }
   }, []);
 
-  const handleManualReload = useCallback(() => {
+  const handleRetry = useCallback(() => {
     setLoading(true);
     void fetchStats();
   }, [fetchStats]);
+
+  const prevTriggerRef = useRef(refreshTrigger);
+  useEffect(() => {
+    if (refreshTrigger !== undefined && refreshTrigger !== prevTriggerRef.current) {
+      prevTriggerRef.current = refreshTrigger;
+      setLoading(true);
+      void fetchStats();
+    }
+  }, [refreshTrigger, fetchStats]);
 
   useEffect(() => {
     if (!active) return;
@@ -194,13 +211,6 @@ export default function DashboardPage({
               Cập nhật lúc: {lastUpdated}
             </Tag>
           )}
-          <Button
-            icon={<ReloadOutlined />}
-            loading={loading}
-            onClick={handleManualReload}
-          >
-            Làm mới
-          </Button>
           {onOpenCreateTask && (
             <Button
               type="primary"
@@ -220,7 +230,7 @@ export default function DashboardPage({
           message="Lỗi kết nối dữ liệu thống kê"
           description={error}
           action={
-            <Button size="small" danger onClick={handleManualReload}>
+            <Button size="small" danger onClick={handleRetry}>
               Thử lại
             </Button>
           }
