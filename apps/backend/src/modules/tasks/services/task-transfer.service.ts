@@ -12,6 +12,7 @@ import { TaskQueryService } from './task-query.service.js';
 import { TaskReorderService } from './task-reorder.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
 import { RealtimeService } from '../../realtime/realtime.service.js';
+import { TaskAssignmentService } from './task-assignment.service.js';
 import { type Task, Prisma } from '@prisma/client';
 
 @Injectable()
@@ -23,6 +24,7 @@ export class TaskTransferService {
     private readonly reorderService: TaskReorderService,
     private readonly notificationEventService: NotificationEventService,
     private readonly realtimeService: RealtimeService,
+    private readonly assignmentService: TaskAssignmentService,
   ) {}
 
   private executeInTransaction<T>(
@@ -79,15 +81,17 @@ export class TaskTransferService {
         const effectiveTeamId = hasTeamId ? (dto.teamId ?? null) : currentTask.teamId;
         const isTeamChanged = effectiveTeamId !== currentTask.teamId;
         let effectiveAssigneeId = hasAssigneeId ? (dto.assigneeId ?? null) : currentTask.assigneeId;
+        let targetTeamMemberIds: number[] = [];
 
         if (effectiveTeamId !== null) {
           const targetTeam = await tx.team.findUnique({
             where: { id: effectiveTeamId },
             include: { members: true },
           });
-          if (!this.policy.isTeamMember(userId, targetTeam)) {
+          if (!targetTeam || !this.policy.isTeamMember(userId, targetTeam)) {
             throw new NotFoundException('Không tìm thấy nhóm');
           }
+          targetTeamMemberIds = targetTeam.members.map((m) => m.userId);
 
           if (hasAssigneeId) {
             if (effectiveAssigneeId && !this.policy.isTeamMember(effectiveAssigneeId, targetTeam)) {
@@ -185,6 +189,38 @@ export class TaskTransferService {
             currentTask.status,
           );
           updateData.position = newPosition;
+
+          // When moving across teams or to personal space, revoke invalid collaborators first
+          if (effectiveTeamId === null) {
+            await tx.taskCollaborator.updateMany({
+              where: {
+                taskId: id,
+                status: { in: ['PENDING', 'ACCEPTED'] },
+              },
+              data: { status: 'REVOKED' },
+            });
+          } else {
+            await tx.taskCollaborator.updateMany({
+              where: {
+                taskId: id,
+                status: { in: ['PENDING', 'ACCEPTED'] },
+                userId: { notIn: targetTeamMemberIds },
+              },
+              data: { status: 'REVOKED' },
+            });
+          }
+        }
+
+        // Unified business logic: handle Main Assignee transition & subtask handover/invalidation.
+        // Runs whenever assignee is explicitly set, changed, or when team is transferred.
+        if (hasAssigneeId || isTeamChanged || currentTask.assigneeId !== effectiveAssigneeId) {
+          await this.assignmentService.handleMainAssigneeChange(
+            tx,
+            id,
+            currentTask.assigneeId,
+            effectiveAssigneeId,
+            effectiveTeamId !== null ? targetTeamMemberIds : [currentTask.userId],
+          );
         }
 
         const updatedTask = await tx.task.update({

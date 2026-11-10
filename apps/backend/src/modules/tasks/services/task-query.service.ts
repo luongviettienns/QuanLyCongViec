@@ -98,6 +98,26 @@ export class TaskQueryService {
         team: {
           select: { id: true, name: true, ownerId: true },
         },
+        collaborators: {
+          where: { status: 'ACCEPTED' },
+          select: {
+            id: true,
+            userId: true,
+            status: true,
+            user: { select: { id: true, name: true, email: true } },
+          },
+        },
+        subtasks: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            position: true,
+            assigneeId: true,
+          },
+          orderBy: { position: 'asc' },
+        },
       },
       orderBy: [
         { status: 'asc' },
@@ -129,8 +149,37 @@ export class TaskQueryService {
         },
         team: {
           include: {
-            members: true,
+            members: {
+              include: {
+                user: {
+                  select: { id: true, name: true, email: true },
+                },
+              },
+            },
           },
+        },
+        collaborators: {
+          include: {
+            user: {
+              select: { id: true, name: true, email: true },
+            },
+            invitedBy: {
+              select: { id: true, name: true, email: true },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+        subtasks: {
+          where: { deletedAt: null },
+          include: {
+            assignee: {
+              select: { id: true, name: true, email: true },
+            },
+            createdBy: {
+              select: { id: true, name: true, email: true },
+            },
+          },
+          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
         },
       },
     });

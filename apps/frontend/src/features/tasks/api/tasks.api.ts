@@ -1,5 +1,7 @@
 import type {
   Task,
+  TaskCollaborator,
+  Subtask,
   CreateTaskPayload,
   UpdateTaskPayload,
   UpdateTaskContentPayload,
@@ -215,4 +217,139 @@ export async function getTaskStats(
   });
 
   return handleApiResponse<TaskStats>(response, 'Không thể tải số liệu thống kê công việc');
+}
+
+// ==================== COLLABORATOR APIs ====================
+
+export async function getCollaborators(taskId: number): Promise<TaskCollaborator[]> {
+  const response = await fetch(`/api/tasks/${taskId}/collaborators`, {
+    headers: {
+      ...getAuthHeaders(),
+    },
+  });
+
+  return handleApiResponse<TaskCollaborator[]>(response, 'Không thể tải danh sách người phối hợp');
+}
+
+export async function inviteCollaborator(taskId: number, userId: number): Promise<TaskCollaborator> {
+  const response = await fetch(`/api/tasks/${taskId}/collaborators`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({ userId }),
+  });
+
+  return handleApiResponse<TaskCollaborator>(response, 'Không thể gửi lời mời phối hợp');
+}
+
+export async function respondCollaborator(taskId: number, action: 'ACCEPT' | 'DECLINE'): Promise<TaskCollaborator> {
+  const response = await fetch(`/api/tasks/${taskId}/collaborators/respond`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({ action }),
+  });
+
+  return handleApiResponse<TaskCollaborator>(response, 'Không thể phản hồi lời mời phối hợp');
+}
+
+export async function removeCollaborator(taskId: number, targetUserId: number): Promise<TaskCollaborator> {
+  const response = await fetch(`/api/tasks/${taskId}/collaborators/${targetUserId}`, {
+    method: 'DELETE',
+    headers: {
+      ...getAuthHeaders(),
+    },
+  });
+
+  return handleApiResponse<TaskCollaborator>(response, 'Không thể xóa người phối hợp');
+}
+
+// ==================== SUBTASK APIs ====================
+
+export async function getSubtasks(taskId: number): Promise<Subtask[]> {
+  const response = await fetch(`/api/tasks/${taskId}/subtasks`, {
+    headers: {
+      ...getAuthHeaders(),
+    },
+  });
+
+  return handleApiResponse<Subtask[]>(response, 'Không thể tải danh sách công việc con');
+}
+
+export async function createSubtask(
+  taskId: number,
+  data: { title: string; description?: string; assigneeId?: number | null },
+): Promise<Subtask> {
+  const response = await fetch(`/api/tasks/${taskId}/subtasks`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify(data),
+  });
+
+  return handleApiResponse<Subtask>(response, 'Không thể tạo công việc con');
+}
+
+export async function updateSubtask(
+  taskId: number,
+  subtaskId: number,
+  data: { title?: string; description?: string | null; assigneeId?: number | null; status?: TaskStatus },
+): Promise<Subtask> {
+  const response = await fetch(`/api/tasks/${taskId}/subtasks/${subtaskId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify(data),
+  });
+
+  return handleApiResponse<Subtask>(response, 'Không thể cập nhật công việc con');
+}
+
+export async function updateSubtaskStatus(
+  taskId: number,
+  subtaskId: number,
+  status: TaskStatus,
+): Promise<Subtask> {
+  const response = await fetch(`/api/tasks/${taskId}/subtasks/${subtaskId}/status`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({ status }),
+  });
+
+  return handleApiResponse<Subtask>(response, 'Không thể cập nhật trạng thái công việc con');
+}
+
+export async function deleteSubtask(taskId: number, subtaskId: number): Promise<void> {
+  const response = await fetch(`/api/tasks/${taskId}/subtasks/${subtaskId}`, {
+    method: 'DELETE',
+    headers: {
+      ...getAuthHeaders(),
+    },
+  });
+
+  return handleVoidApiResponse(response, 'Không thể xoá công việc con');
+}
+
+export async function reorderSubtasks(taskId: number, subtaskIds: number[]): Promise<Subtask[]> {
+  const response = await fetch(`/api/tasks/${taskId}/subtasks/reorder`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({ subtaskIds }),
+  });
+
+  return handleApiResponse<Subtask[]>(response, 'Không thể sắp xếp công việc con');
 }
