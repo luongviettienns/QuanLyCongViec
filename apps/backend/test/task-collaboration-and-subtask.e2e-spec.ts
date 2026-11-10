@@ -799,5 +799,123 @@ describe('Task Collaboration & Subtasks P0 (e2e)', () => {
 
       expect(reorderRes.body.map((s: any) => s.id)).toEqual([s3.body.id, s1.body.id, s2.body.id]);
     });
+
+    it('8. PATCH /api/tasks/:id/team with isTeamChanged=false revokes collaborator and hands over subtask', async () => {
+      // 1. Create a task in teamId assigned to Owner
+      const taskRes = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `MoveTeam Assignee Only ${Date.now()}`, teamId, assigneeId: ownerId })
+        .expect(201);
+      const tId = taskRes.body.id;
+
+      // 2. Member accepts invitation to become collaborator
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ userId: memberId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/collaborators/respond`)
+        .set('Authorization', `Bearer ${tokenMember}`)
+        .send({ action: 'ACCEPT' })
+        .expect(201);
+
+      // 3. Create subtask assigned to Owner
+      const subRes = await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'Subtask for MoveTeam test', assigneeId: ownerId })
+        .expect(201);
+
+      // 4. Update assignee via PATCH /api/tasks/:id/team keeping teamId the same (isTeamChanged = false)
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/team`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ teamId, assigneeId: memberId })
+        .expect(200);
+
+      // Verify Member is no longer a Collaborator (REVOKED)
+      const collabs = await request(app.getHttpServer())
+        .get(`/api/tasks/${tId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+      const memberCollab = collabs.body.find((c: any) => c.userId === memberId);
+      expect(memberCollab.status).toBe('REVOKED');
+
+      // Verify subtask was handed over from Owner to Member
+      const subs = await request(app.getHttpServer())
+        .get(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+      const updatedSub = subs.body.find((s: any) => s.id === subRes.body.id);
+      expect(updatedSub.assigneeId).toBe(memberId);
+    });
+
+    it('9. PATCH /api/tasks/:id (general update) changing assignee revokes collaborator and hands over subtask', async () => {
+      // 1. Create a task in teamId assigned to Owner
+      const taskRes = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `General Update Assignee ${Date.now()}`, teamId, assigneeId: ownerId })
+        .expect(201);
+      const tId = taskRes.body.id;
+
+      // 2. Admin accepts invitation to become collaborator
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ userId: adminId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/collaborators/respond`)
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .send({ action: 'ACCEPT' })
+        .expect(201);
+
+      // 3. Create subtask assigned to Owner
+      const subRes = await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'Subtask for General Update test', assigneeId: ownerId })
+        .expect(201);
+
+      // 4. Update assignee via PATCH /api/tasks/:id
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ assigneeId: adminId })
+        .expect(200);
+
+      // Verify Admin is no longer a Collaborator (REVOKED)
+      const collabs = await request(app.getHttpServer())
+        .get(`/api/tasks/${tId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+      const adminCollab = collabs.body.find((c: any) => c.userId === adminId);
+      expect(adminCollab.status).toBe('REVOKED');
+
+      // Verify subtask was handed over from Owner to Admin
+      const subs = await request(app.getHttpServer())
+        .get(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+      const updatedSub = subs.body.find((s: any) => s.id === subRes.body.id);
+      expect(updatedSub.assigneeId).toBe(adminId);
+    });
+
+    it('10. Outsider access isolation: outsider cannot view collaborators or subtasks of team task', async () => {
+      await request(app.getHttpServer())
+        .get(`/api/tasks/${teamTaskId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenOutsider}`)
+        .expect(404);
+
+      await request(app.getHttpServer())
+        .get(`/api/tasks/${teamTaskId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOutsider}`)
+        .expect(404);
+    });
   });
 });

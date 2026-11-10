@@ -12,6 +12,7 @@ import { TaskQueryService } from './task-query.service.js';
 import { TaskReorderService } from './task-reorder.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
 import { RealtimeService } from '../../realtime/realtime.service.js';
+import { TaskAssignmentService } from './task-assignment.service.js';
 import { type Task, Prisma } from '@prisma/client';
 
 @Injectable()
@@ -23,6 +24,7 @@ export class TaskTransferService {
     private readonly reorderService: TaskReorderService,
     private readonly notificationEventService: NotificationEventService,
     private readonly realtimeService: RealtimeService,
+    private readonly assignmentService: TaskAssignmentService,
   ) {}
 
   private executeInTransaction<T>(
@@ -188,7 +190,7 @@ export class TaskTransferService {
           );
           updateData.position = newPosition;
 
-          // Re-validate or revoke collaborators and subtask assignments across teams
+          // When moving across teams or to personal space, revoke invalid collaborators first
           if (effectiveTeamId === null) {
             await tx.taskCollaborator.updateMany({
               where: {
@@ -197,54 +199,28 @@ export class TaskTransferService {
               },
               data: { status: 'REVOKED' },
             });
-
-            await tx.subtask.updateMany({
-              where: {
-                taskId: id,
-                deletedAt: null,
-                assigneeId: { not: null, notIn: [currentTask.userId] },
-              },
-              data: { assigneeId: null },
-            });
           } else {
             await tx.taskCollaborator.updateMany({
               where: {
                 taskId: id,
                 status: { in: ['PENDING', 'ACCEPTED'] },
-                OR: [
-                  { userId: { notIn: targetTeamMemberIds } },
-                  ...(effectiveAssigneeId ? [{ userId: effectiveAssigneeId }] : []),
-                ],
+                userId: { notIn: targetTeamMemberIds },
               },
               data: { status: 'REVOKED' },
             });
-
-            const validCollabs = await tx.taskCollaborator.findMany({
-              where: {
-                taskId: id,
-                status: 'ACCEPTED',
-                userId: { in: targetTeamMemberIds },
-              },
-              select: { userId: true },
-            });
-
-            const eligibleSubtaskAssignees = [
-              ...(effectiveAssigneeId ? [effectiveAssigneeId] : []),
-              ...validCollabs.map((c) => c.userId),
-            ];
-
-            await tx.subtask.updateMany({
-              where: {
-                taskId: id,
-                deletedAt: null,
-                assigneeId: {
-                  not: null,
-                  notIn: eligibleSubtaskAssignees.length > 0 ? eligibleSubtaskAssignees : [-1],
-                },
-              },
-              data: { assigneeId: null },
-            });
           }
+        }
+
+        // Unified business logic: handle Main Assignee transition & subtask handover/invalidation.
+        // Runs whenever assignee is explicitly set, changed, or when team is transferred.
+        if (hasAssigneeId || isTeamChanged || currentTask.assigneeId !== effectiveAssigneeId) {
+          await this.assignmentService.handleMainAssigneeChange(
+            tx,
+            id,
+            currentTask.assigneeId,
+            effectiveAssigneeId,
+            effectiveTeamId !== null ? targetTeamMemberIds : [currentTask.userId],
+          );
         }
 
         const updatedTask = await tx.task.update({

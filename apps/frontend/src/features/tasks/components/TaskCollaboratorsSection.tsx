@@ -58,16 +58,32 @@ export function TaskCollaboratorsSection({
       setLoading(true);
       const data = await getCollaborators(task.id);
       setCollaborators(data);
-    } catch (err: any) {
-      message.error(err.message || 'Không thể tải danh sách người phối hợp');
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : 'Không thể tải danh sách người phối hợp');
     } finally {
       setLoading(false);
     }
   }, [task.id]);
 
   useEffect(() => {
-    fetchCollaborators();
-  }, [fetchCollaborators]);
+    let cancelled = false;
+    getCollaborators(task.id)
+      .then((data) => {
+        if (!cancelled) {
+          setCollaborators(data);
+          setLoading(false);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          message.error(err instanceof Error ? err.message : 'Không thể tải danh sách người phối hợp');
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [task.id]);
 
   const pendingInvitationForMe = useMemo(() => {
     if (!currentUser) return null;
@@ -107,8 +123,8 @@ export function TaskCollaboratorsSection({
       setSelectedUserId(undefined);
       await fetchCollaborators();
       onChanged?.();
-    } catch (err: any) {
-      message.error(err.message || 'Không thể gửi lời mời');
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : 'Không thể gửi lời mời');
     } finally {
       setInviting(false);
     }
@@ -124,8 +140,8 @@ export function TaskCollaboratorsSection({
       );
       await fetchCollaborators();
       onChanged?.();
-    } catch (err: any) {
-      message.error(err.message || 'Thao tác thất bại');
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : 'Thao tác thất bại');
     }
   };
 
@@ -139,8 +155,8 @@ export function TaskCollaboratorsSection({
       );
       await fetchCollaborators();
       onChanged?.();
-    } catch (err: any) {
-      message.error(err.message || 'Không thể thu hồi quyền');
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : 'Không thể thu hồi quyền');
     }
   };
 

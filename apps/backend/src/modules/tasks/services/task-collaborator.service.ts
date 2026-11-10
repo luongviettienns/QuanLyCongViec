@@ -10,7 +10,7 @@ import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { TaskQueryService } from './task-query.service.js';
 import { InviteCollaboratorDto } from '../dto/invite-collaborator.dto.js';
 import { RespondCollaboratorDto } from '../dto/respond-collaborator.dto.js';
-import { CollaboratorStatus, TaskStatus, Prisma } from '@prisma/client';
+import { CollaboratorStatus, TaskStatus } from '@prisma/client';
 
 @Injectable()
 export class TaskCollaboratorService {

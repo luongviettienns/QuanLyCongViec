@@ -68,16 +68,32 @@ export function TaskSubtasksSection({
       setLoading(true);
       const data = await getSubtasks(task.id);
       setSubtasks(data);
-    } catch (err: any) {
-      message.error(err.message || 'Không thể tải danh sách công việc con');
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : 'Không thể tải danh sách công việc con');
     } finally {
       setLoading(false);
     }
   }, [task.id]);
 
   useEffect(() => {
-    fetchSubtasks();
-  }, [fetchSubtasks]);
+    let cancelled = false;
+    getSubtasks(task.id)
+      .then((data) => {
+        if (!cancelled) {
+          setSubtasks(data);
+          setLoading(false);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          message.error(err instanceof Error ? err.message : 'Không thể tải danh sách công việc con');
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [task.id]);
 
   const isParentDone = task.status === 'DONE';
 
@@ -129,8 +145,8 @@ export function TaskSubtasksSection({
       setShowAddForm(false);
       await fetchSubtasks();
       onChanged?.();
-    } catch (err: any) {
-      message.error(err.message || 'Không thể thêm công việc con');
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : 'Không thể thêm công việc con');
     } finally {
       setAdding(false);
     }
@@ -152,10 +168,10 @@ export function TaskSubtasksSection({
       await updateSubtaskStatus(task.id, subtaskId, newStatus);
       message.success('Đã cập nhật trạng thái việc con');
       onChanged?.();
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Rollback on failure
       setSubtasks(previous);
-      message.error(err.message || 'Không thể cập nhật trạng thái việc con');
+      message.error(err instanceof Error ? err.message : 'Không thể cập nhật trạng thái việc con');
     }
   };
 
@@ -165,8 +181,8 @@ export function TaskSubtasksSection({
       message.success('Đã xoá công việc con');
       await fetchSubtasks();
       onChanged?.();
-    } catch (err: any) {
-      message.error(err.message || 'Không thể xoá việc con');
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : 'Không thể xoá việc con');
     }
   };
 
@@ -194,8 +210,8 @@ export function TaskSubtasksSection({
       setEditingSubtask(null);
       await fetchSubtasks();
       onChanged?.();
-    } catch (err: any) {
-      message.error(err.message || 'Không thể cập nhật công việc con');
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : 'Không thể cập nhật công việc con');
     } finally {
       setUpdating(false);
     }
@@ -219,9 +235,9 @@ export function TaskSubtasksSection({
         next.map((s) => s.id),
       );
       onChanged?.();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setSubtasks(prev);
-      message.error(err.message || 'Không thể sắp xếp công việc con');
+      message.error(err instanceof Error ? err.message : 'Không thể sắp xếp công việc con');
     }
   };
 

@@ -81,33 +81,9 @@ export class TaskAssignmentService {
 
         const previousAssigneeId = currentTask.assigneeId;
 
-        // Main Assignee cannot simultaneously be a Collaborator
-        if (targetAssigneeId) {
-          await tx.taskCollaborator.updateMany({
-            where: {
-              taskId: id,
-              userId: targetAssigneeId,
-              status: { in: ['PENDING', 'ACCEPTED'] },
-            },
-            data: {
-              status: 'REVOKED',
-            },
-          });
-        }
-
-        // Hand over active subtasks previously assigned to the former main assignee
-        if (previousAssigneeId && previousAssigneeId !== targetAssigneeId) {
-          await tx.subtask.updateMany({
-            where: {
-              taskId: id,
-              assigneeId: previousAssigneeId,
-              deletedAt: null,
-            },
-            data: {
-              assigneeId: targetAssigneeId ?? null,
-            },
-          });
-        }
+        // Unified business logic: revoke collaborator role if target user is now main assignee,
+        // hand over subtasks, and ensure no subtask remains with an ineligible assignee.
+        await this.handleMainAssigneeChange(tx, id, previousAssigneeId, targetAssigneeId);
 
         const updatedTask = await tx.task.update({
           where: { id },
@@ -227,19 +203,8 @@ export class TaskAssignmentService {
         tx,
       );
 
-      // Hand over active subtasks previously assigned to the returning assignee
-      if (currentTask.assigneeId) {
-        await tx.subtask.updateMany({
-          where: {
-            taskId: id,
-            assigneeId: currentTask.assigneeId,
-            deletedAt: null,
-          },
-          data: {
-            assigneeId: newAssigneeId ?? null,
-          },
-        });
-      }
+      // Unified business logic: hand over subtasks and re-validate assignees
+      await this.handleMainAssigneeChange(tx, id, currentTask.assigneeId, newAssigneeId);
 
       return tx.task.update({
         where: { id },
@@ -258,6 +223,82 @@ export class TaskAssignmentService {
           },
         },
       });
+    });
+  }
+
+  /**
+   * Core domain logic for handing over and re-validating collaborators and subtasks
+   * whenever the Main Assignee of a task changes.
+   *
+   * 1. Main Assignee cannot simultaneously be a Collaborator:
+   *    Revokes any PENDING or ACCEPTED collaborator record for targetAssigneeId.
+   * 2. Hand over active subtasks:
+   *    Transfers active subtasks belonging to previousAssigneeId to targetAssigneeId,
+   *    or unassigns them if the task is now unassigned.
+   * 3. Invariant check:
+   *    Guarantees no active subtask remains assigned to an ineligible user.
+   */
+  async handleMainAssigneeChange(
+    tx: Prisma.TransactionClient,
+    taskId: number,
+    previousAssigneeId: number | null | undefined,
+    targetAssigneeId: number | null | undefined,
+    allowedTeamMemberIds?: number[],
+  ): Promise<void> {
+    // 1. New Main Assignee cannot be a Collaborator
+    if (targetAssigneeId) {
+      await tx.taskCollaborator.updateMany({
+        where: {
+          taskId,
+          userId: targetAssigneeId,
+          status: { in: ['PENDING', 'ACCEPTED'] },
+        },
+        data: {
+          status: 'REVOKED',
+        },
+      });
+    }
+
+    // 2. Hand over active subtasks of the former main assignee
+    if (previousAssigneeId && previousAssigneeId !== targetAssigneeId) {
+      await tx.subtask.updateMany({
+        where: {
+          taskId,
+          assigneeId: previousAssigneeId,
+          deletedAt: null,
+        },
+        data: {
+          assigneeId: targetAssigneeId ?? null,
+        },
+      });
+    }
+
+    // 3. Guarantee that any active subtask is assigned ONLY to either targetAssigneeId
+    // OR an ACCEPTED collaborator (who belongs to the team if team member list provided)
+    const acceptedCollabs = await tx.taskCollaborator.findMany({
+      where: {
+        taskId,
+        status: 'ACCEPTED',
+        ...(allowedTeamMemberIds ? { userId: { in: allowedTeamMemberIds } } : {}),
+      },
+      select: { userId: true },
+    });
+
+    const eligibleAssigneeIds = [
+      ...(targetAssigneeId ? [targetAssigneeId] : []),
+      ...acceptedCollabs.map((c) => c.userId),
+    ];
+
+    await tx.subtask.updateMany({
+      where: {
+        taskId,
+        deletedAt: null,
+        assigneeId: {
+          not: null,
+          notIn: eligibleAssigneeIds.length > 0 ? eligibleAssigneeIds : [-1],
+        },
+      },
+      data: { assigneeId: null },
     });
   }
 }
