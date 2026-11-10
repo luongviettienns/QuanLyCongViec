@@ -24,6 +24,8 @@ import {
 import type { Task, TaskCollaborator } from '../types/task.types';
 import type { Team } from '../../teams/types/team.types';
 import type { User } from '../../auth/types/auth.types';
+import { useRealtimeEvent } from '../../realtime';
+import type { RealtimeEventData } from '../../realtime/types/realtime.types';
 import {
   getCollaborators,
   inviteCollaborator,
@@ -84,6 +86,19 @@ export function TaskCollaboratorsSection({
       cancelled = true;
     };
   }, [task.id]);
+
+  const handleRealtimeCollaborators = useCallback(
+    (event: RealtimeEventData) => {
+      const payload = event.payload as { taskId?: number } | undefined;
+      if (payload?.taskId === task.id) {
+        void fetchCollaborators();
+        onChanged?.();
+      }
+    },
+    [task.id, fetchCollaborators, onChanged],
+  );
+
+  useRealtimeEvent('TASK_COLLABORATORS_CHANGED', handleRealtimeCollaborators);
 
   const pendingInvitationForMe = useMemo(() => {
     if (!currentUser) return null;

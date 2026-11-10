@@ -483,6 +483,13 @@ describe('Task Collaboration & Subtasks P0 (e2e)', () => {
         .expect(200);
 
       for (const st of subtasks.body) {
+        if (st.status === 'TODO') {
+          await request(app.getHttpServer())
+            .patch(`/api/tasks/${teamTaskId}/subtasks/${st.id}/status`)
+            .set('Authorization', `Bearer ${tokenOwner}`)
+            .send({ status: 'IN_PROGRESS' })
+            .expect(200);
+        }
         await request(app.getHttpServer())
           .patch(`/api/tasks/${teamTaskId}/subtasks/${st.id}/status`)
           .set('Authorization', `Bearer ${tokenOwner}`)
@@ -1220,6 +1227,31 @@ describe('Task Collaboration & Subtasks P0 (e2e)', () => {
         .send({ status: 'TODO' })
         .expect(200);
       expect(res.body.status).toBe('TODO');
+    });
+
+    it('8. Manager (Main Assignee / Owner) CANNOT skip directly from TODO to DONE -> 400 Bad Request', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'DONE' })
+        .expect(400);
+      expect(res.body.message).toContain('Không thể chuyển công việc con trực tiếp từ Cần làm sang Hoàn thành (TODO -> DONE)');
+    });
+
+    it('9. Manager can advance subtask properly via TODO -> IN_PROGRESS -> DONE', async () => {
+      const res1 = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'IN_PROGRESS' })
+        .expect(200);
+      expect(res1.body.status).toBe('IN_PROGRESS');
+
+      const res2 = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'DONE' })
+        .expect(200);
+      expect(res2.body.status).toBe('DONE');
     });
   });
 

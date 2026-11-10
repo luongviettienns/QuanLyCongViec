@@ -9,6 +9,7 @@ import { PrismaService } from '../../../database/prisma.service.js';
 import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { TaskQueryService } from './task-query.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
+import { RealtimeService } from '../../realtime/realtime.service.js';
 import { InviteCollaboratorDto } from '../dto/invite-collaborator.dto.js';
 import { RespondCollaboratorDto } from '../dto/respond-collaborator.dto.js';
 import { CollaboratorStatus, TaskStatus } from '@prisma/client';
@@ -20,6 +21,7 @@ export class TaskCollaboratorService {
     private readonly policy: TaskPolicyService,
     private readonly queryService: TaskQueryService,
     private readonly notificationEventService: NotificationEventService,
+    private readonly realtimeService: RealtimeService,
   ) {}
 
   async getCollaborators(taskId: number, callerId: number) {
@@ -41,11 +43,13 @@ export class TaskCollaboratorService {
   }
 
   async invite(taskId: number, dto: InviteCollaboratorDto, callerId: number) {
-    return this.prisma.$transaction(async (tx) => {
+    let parentTask: any = null;
+    const result = await this.prisma.$transaction(async (tx) => {
       // Row lock the parent task for concurrent protection
       await tx.$executeRaw`SELECT id, status FROM "Task" WHERE id = ${taskId} FOR UPDATE;`;
 
       const task = await this.queryService.findOne(taskId, callerId, tx);
+      parentTask = task;
 
       if (!task.teamId || !task.team) {
         throw new BadRequestException('Chỉ có thể mời người phối hợp cho công việc thuộc nhóm làm việc');
@@ -150,14 +154,30 @@ export class TaskCollaboratorService {
 
       return created;
     });
+
+    void this.realtimeService.emit({
+      type: 'TASK_COLLABORATORS_CHANGED',
+      actorId: callerId,
+      teamId: parentTask?.teamId,
+      payload: {
+        taskId,
+        action: 'INVITE',
+        userId: dto.userId,
+        status: result.status,
+      },
+    });
+
+    return result;
   }
 
   async respond(taskId: number, dto: RespondCollaboratorDto, callerId: number) {
-    return this.prisma.$transaction(async (tx) => {
+    let parentTask: any = null;
+    const updated = await this.prisma.$transaction(async (tx) => {
       // Row lock on task
       await tx.$executeRaw`SELECT id, status FROM "Task" WHERE id = ${taskId} FOR UPDATE;`;
 
       const task = await this.queryService.findOne(taskId, callerId, tx);
+      parentTask = task;
 
       const collab = await tx.taskCollaborator.findUnique({
         where: {
@@ -188,7 +208,7 @@ export class TaskCollaboratorService {
           ? CollaboratorStatus.ACCEPTED
           : CollaboratorStatus.DECLINED;
 
-      const updated = await tx.taskCollaborator.update({
+      const updatedRecord = await tx.taskCollaborator.update({
         where: { id: collab.id },
         data: {
           status: newStatus,
@@ -210,8 +230,8 @@ export class TaskCollaboratorService {
             teamId: task.teamId!,
             invitedById: collab.invitedById,
             assigneeId: task.assigneeId,
-            respondedAt: updated.respondedAt ?? new Date(),
-            timestamp: updated.respondedAt?.getTime() ?? Date.now(),
+            respondedAt: updatedRecord.respondedAt ?? new Date(),
+            timestamp: updatedRecord.respondedAt?.getTime() ?? Date.now(),
           },
           tx,
         );
@@ -225,22 +245,39 @@ export class TaskCollaboratorService {
             teamId: task.teamId!,
             invitedById: collab.invitedById,
             assigneeId: task.assigneeId,
-            respondedAt: updated.respondedAt ?? new Date(),
-            timestamp: updated.respondedAt?.getTime() ?? Date.now(),
+            respondedAt: updatedRecord.respondedAt ?? new Date(),
+            timestamp: updatedRecord.respondedAt?.getTime() ?? Date.now(),
           },
           tx,
         );
       }
 
-      return updated;
+      return updatedRecord;
     });
+
+    void this.realtimeService.emit({
+      type: 'TASK_COLLABORATORS_CHANGED',
+      actorId: callerId,
+      teamId: parentTask?.teamId,
+      payload: {
+        taskId,
+        action: dto.action,
+        userId: callerId,
+        status: updated.status,
+      },
+    });
+
+    return updated;
   }
 
   async remove(taskId: number, targetUserId: number, callerId: number) {
-    return this.prisma.$transaction(async (tx) => {
+    let parentTask: any = null;
+    let isSelfLeaving = false;
+    const updatedCollab = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT id, status FROM "Task" WHERE id = ${taskId} FOR UPDATE;`;
 
       const task = await this.queryService.findOne(taskId, callerId, tx);
+      parentTask = task;
 
       const collab = await tx.taskCollaborator.findUnique({
         where: {
@@ -252,13 +289,13 @@ export class TaskCollaboratorService {
         throw new NotFoundException('Không tìm thấy người phối hợp hoặc lời mời đã bị thu hồi');
       }
 
-      const isSelfLeaving = callerId === targetUserId;
+      isSelfLeaving = callerId === targetUserId;
       if (!isSelfLeaving && !this.policy.canManageCollaborators(callerId, task)) {
         throw new ForbiddenException('Bạn không có quyền thu hồi hoặc xóa người phối hợp này');
       }
 
       // Update collaborator status to REVOKED
-      const updatedCollab = await tx.taskCollaborator.update({
+      const updated = await tx.taskCollaborator.update({
         where: { id: collab.id },
         data: {
           status: CollaboratorStatus.REVOKED,
@@ -293,13 +330,27 @@ export class TaskCollaboratorService {
           removedUserId: targetUserId,
           isSelfLeave: isSelfLeaving,
           assigneeId: task.assigneeId,
-          removedAt: updatedCollab.updatedAt,
-          timestamp: updatedCollab.updatedAt.getTime(),
+          removedAt: updated.updatedAt,
+          timestamp: updated.updatedAt.getTime(),
         },
         tx,
       );
 
-      return updatedCollab;
+      return updated;
     });
+
+    void this.realtimeService.emit({
+      type: 'TASK_COLLABORATORS_CHANGED',
+      actorId: callerId,
+      teamId: parentTask?.teamId,
+      payload: {
+        taskId,
+        action: isSelfLeaving ? 'LEAVE' : 'REMOVE',
+        userId: targetUserId,
+        status: updatedCollab.status,
+      },
+    });
+
+    return updatedCollab;
   }
 }

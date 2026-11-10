@@ -1,4 +1,4 @@
-import { useState, useCallback, type ReactNode } from 'react';
+import { useState, useCallback, useMemo, type ReactNode } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Spin } from 'antd';
 import AppLayout from '../layouts/AppLayout';
@@ -132,11 +132,31 @@ function TaskAppShell() {
   useRealtimeEvent('TASK_REORDERED', handleRealtimeTaskEvent);
   useRealtimeEvent('TASK_ASSIGNED', handleRealtimeTaskEvent);
   useRealtimeEvent('TASK_RETURNED', handleRealtimeTaskEvent);
+  useRealtimeEvent('SUBTASK_CREATED', handleRealtimeTaskEvent);
+  useRealtimeEvent('SUBTASK_UPDATED', handleRealtimeTaskEvent);
+  useRealtimeEvent('SUBTASK_DELETED', handleRealtimeTaskEvent);
+  useRealtimeEvent('SUBTASK_REORDERED', handleRealtimeTaskEvent);
+  useRealtimeEvent('TASK_COLLABORATORS_CHANGED', handleRealtimeTaskEvent);
+
+  const handleRealtimeNotification = useCallback(() => {
+    if (currentNav === 'tasks') {
+      void refetch();
+    } else if (currentNav === 'dashboard') {
+      setDashboardReloadCounter((c) => c + 1);
+    }
+  }, [currentNav, refetch]);
+
+  useRealtimeEvent('NOTIFICATION_NEW', handleRealtimeNotification);
 
   const [modalState, setModalState] = useState<{ open: boolean; task: Task | null }>({
     open: false,
     task: null,
   });
+
+  const activeModalTask = useMemo(() => {
+    if (!modalState.open || !modalState.task) return null;
+    return tasks.find((t) => t.id === modalState.task?.id) ?? modalState.task;
+  }, [modalState.open, modalState.task, tasks]);
 
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
 
@@ -260,7 +280,7 @@ function TaskAppShell() {
       {modalState.open && (
         <TaskFormModal
           open={modalState.open}
-          task={modalState.task}
+          task={activeModalTask}
           categories={categories}
           teams={teams}
           onClose={handleCloseModal}

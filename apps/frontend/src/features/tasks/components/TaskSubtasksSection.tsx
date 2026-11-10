@@ -26,6 +26,8 @@ import {
 } from '@ant-design/icons';
 import type { Task, Subtask, TaskStatus } from '../types/task.types';
 import type { User } from '../../auth/types/auth.types';
+import { useRealtimeEvent } from '../../realtime';
+import type { RealtimeEventData } from '../../realtime/types/realtime.types';
 import {
   getSubtasks,
   createSubtask,
@@ -95,6 +97,23 @@ export function TaskSubtasksSection({
     };
   }, [task.id]);
 
+  const handleRealtimeSubtask = useCallback(
+    (event: RealtimeEventData) => {
+      const payload = event.payload as { taskId?: number } | undefined;
+      if (payload?.taskId === task.id) {
+        void fetchSubtasks();
+        onChanged?.();
+      }
+    },
+    [task.id, fetchSubtasks, onChanged],
+  );
+
+  useRealtimeEvent('SUBTASK_CREATED', handleRealtimeSubtask);
+  useRealtimeEvent('SUBTASK_UPDATED', handleRealtimeSubtask);
+  useRealtimeEvent('SUBTASK_DELETED', handleRealtimeSubtask);
+  useRealtimeEvent('SUBTASK_REORDERED', handleRealtimeSubtask);
+  useRealtimeEvent('TASK_COLLABORATORS_CHANGED', handleRealtimeSubtask);
+
   const isParentDone = task.status === 'DONE';
 
   const subtaskStats = useMemo(() => {
@@ -155,6 +174,14 @@ export function TaskSubtasksSection({
   const handleStatusChange = async (subtaskId: number, newStatus: TaskStatus) => {
     if (isParentDone && newStatus !== 'DONE') {
       message.warning('Không thể đổi trạng thái việc con khi công việc chính đã hoàn thành. Hãy mở lại công việc chính trước.');
+      return;
+    }
+
+    const current = subtasks.find((s) => s.id === subtaskId);
+    if (current && current.status === 'TODO' && newStatus === 'DONE') {
+      message.warning(
+        'Không thể chuyển công việc con trực tiếp từ Cần làm sang Hoàn thành (TODO -> DONE). Phải chuyển sang Đang làm (IN_PROGRESS) trước.',
+      );
       return;
     }
 
@@ -353,7 +380,7 @@ export function TaskSubtasksSection({
               ? [
                   { value: 'TODO', label: 'TODO' },
                   { value: 'IN_PROGRESS', label: 'IN_PROGRESS' },
-                  { value: 'DONE', label: 'DONE' },
+                  { value: 'DONE', label: 'DONE', disabled: item.status === 'TODO' },
                 ]
               : item.status === 'TODO'
                 ? [
