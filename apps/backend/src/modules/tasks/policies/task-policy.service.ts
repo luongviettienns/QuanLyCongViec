@@ -7,6 +7,8 @@ export type TaskWithTeamAndMembers = Task & {
     ownerId: number;
     members: TeamMember[];
   } | null;
+  collaborators?: any[];
+  subtasks?: any[];
 };
 
 @Injectable()
@@ -117,5 +119,44 @@ export class TaskPolicyService {
       return task.userId === userId;
     }
     return this.isAdminOrOwner(userId, task.team);
+  }
+
+  canManageCollaborators(userId: number, task: TaskWithTeamAndMembers): boolean {
+    if (task.teamId === null || !task.team) {
+      return false;
+    }
+    if (!this.isTeamMember(userId, task.team)) {
+      return false;
+    }
+    if (this.isAdminOrOwner(userId, task.team)) {
+      return true;
+    }
+    return task.userId === userId || task.assigneeId === userId;
+  }
+
+  canCreateSubtask(userId: number, task: TaskWithTeamAndMembers): boolean {
+    if (task.teamId === null || !task.team) {
+      return task.userId === userId;
+    }
+    if (!this.isTeamMember(userId, task.team)) {
+      return false;
+    }
+    if (this.isAdminOrOwner(userId, task.team)) {
+      return true;
+    }
+    return task.userId === userId || task.assigneeId === userId;
+  }
+
+  canManageSubtask(userId: number, task: TaskWithTeamAndMembers): boolean {
+    if (task.teamId === null || !task.team) {
+      return task.userId === userId;
+    }
+    if (!this.isTeamMember(userId, task.team)) {
+      return false;
+    }
+    if (this.isAdminOrOwner(userId, task.team)) {
+      return true;
+    }
+    return task.userId === userId || task.assigneeId === userId;
   }
 }

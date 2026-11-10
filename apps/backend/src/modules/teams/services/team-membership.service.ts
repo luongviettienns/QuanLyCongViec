@@ -340,6 +340,39 @@ export class TeamMembershipService {
         );
       }
 
+      // 3.1. Thu hồi toàn bộ quyền Collaborator của thành viên rời nhóm và unassign các Subtask chưa hoàn thành
+      const teamTaskRecords = await tx.task.findMany({
+        where: { teamId },
+        select: { id: true },
+      });
+      const teamTaskIds = teamTaskRecords.map((t) => t.id);
+
+      if (teamTaskIds.length > 0) {
+        await tx.taskCollaborator.updateMany({
+          where: {
+            taskId: { in: teamTaskIds },
+            userId: targetMember.userId,
+            status: { in: ['PENDING', 'ACCEPTED'] },
+          },
+          data: {
+            status: 'REVOKED',
+          },
+        });
+
+        await tx.subtask.updateMany({
+          where: {
+            taskId: { in: teamTaskIds },
+            assigneeId: targetMember.userId,
+            status: { in: [TaskStatus.TODO, TaskStatus.IN_PROGRESS] },
+            deletedAt: null,
+          },
+          data: {
+            assigneeId: null,
+            status: TaskStatus.TODO,
+          },
+        });
+      }
+
       // 4. Các công việc DONE được giữ nguyên vẹn để bảo toàn lịch sử người đã hoàn thành!
 
       // 5. Xóa quan hệ thành viên khỏi nhóm

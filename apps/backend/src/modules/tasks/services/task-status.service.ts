@@ -2,6 +2,7 @@ import {
   Injectable,
   ForbiddenException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service.js';
 import { UpdateTaskStatusDto } from '../dto/update-task-status.dto.js';
@@ -48,7 +49,24 @@ export class TaskStatusService {
         teamId: initialTask.teamId,
         userId: initialTask.userId,
       });
+      await tx.$executeRaw`SELECT id, status FROM "Task" WHERE id = ${id} FOR UPDATE;`;
       const currentTask = await this.queryService.findOne(id, userId, tx);
+
+      if (data.status === TaskStatus.DONE) {
+        const unfinishedSubtasksCount = await tx.subtask.count({
+          where: {
+            taskId: id,
+            status: { not: TaskStatus.DONE },
+            deletedAt: null,
+          },
+        });
+
+        if (unfinishedSubtasksCount > 0) {
+          throw new BadRequestException(
+            'Không thể chuyển công việc chính sang hoàn thành khi vẫn còn công việc con chưa hoàn thành',
+          );
+        }
+      }
 
       const scopeWhere: Prisma.TaskWhereInput = currentTask.teamId
         ? { teamId: currentTask.teamId, deletedAt: null }

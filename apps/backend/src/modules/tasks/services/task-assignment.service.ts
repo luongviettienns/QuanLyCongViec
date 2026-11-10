@@ -81,6 +81,20 @@ export class TaskAssignmentService {
 
         const previousAssigneeId = currentTask.assigneeId;
 
+        // Main Assignee cannot simultaneously be a Collaborator
+        if (targetAssigneeId) {
+          await tx.taskCollaborator.updateMany({
+            where: {
+              taskId: id,
+              userId: targetAssigneeId,
+              status: { in: ['PENDING', 'ACCEPTED'] },
+            },
+            data: {
+              status: 'REVOKED',
+            },
+          });
+        }
+
         const updatedTask = await tx.task.update({
           where: { id },
           data: {

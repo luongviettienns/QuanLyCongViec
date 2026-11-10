@@ -5,6 +5,8 @@ import { TaskCrudService } from './services/task-crud.service.js';
 import { TaskWorkflowService } from './services/task-workflow.service.js';
 import { TaskReorderService } from './services/task-reorder.service.js';
 import { TaskStatsService } from './services/task-stats.service.js';
+import { TaskCollaboratorService } from './services/task-collaborator.service.js';
+import { SubtaskService } from './services/subtask.service.js';
 import { RealtimeService } from '../realtime/realtime.service.js';
 import { CreateTaskDto } from './dto/create-task.dto.js';
 import { UpdateTaskDto } from './dto/update-task.dto.js';
@@ -15,6 +17,12 @@ import { ReturnTaskDto } from './dto/return-task.dto.js';
 import { MoveTaskTeamDto } from './dto/move-task-team.dto.js';
 import { ReorderTasksDto } from './dto/reorder-tasks.dto.js';
 import { FilterTasksDto } from './dto/filter-tasks.dto.js';
+import { InviteCollaboratorDto } from './dto/invite-collaborator.dto.js';
+import { RespondCollaboratorDto } from './dto/respond-collaborator.dto.js';
+import { CreateSubtaskDto } from './dto/create-subtask.dto.js';
+import { UpdateSubtaskDto } from './dto/update-subtask.dto.js';
+import { UpdateSubtaskStatusDto } from './dto/update-subtask-status.dto.js';
+import { ReorderSubtasksDto } from './dto/reorder-subtasks.dto.js';
 import type { TaskWithTeamAndMembers } from './policies/task-policy.service.js';
 import type { Task } from '@prisma/client';
 
@@ -27,6 +35,8 @@ export class TasksService {
     private readonly taskWorkflowService: TaskWorkflowService,
     private readonly taskReorderService: TaskReorderService,
     private readonly taskStatsService: TaskStatsService,
+    private readonly taskCollaboratorService: TaskCollaboratorService,
+    private readonly subtaskService: SubtaskService,
     private readonly realtimeService: RealtimeService,
   ) {}
 
@@ -182,5 +192,47 @@ export class TasksService {
 
   getStats(userId: number, query?: FilterTasksDto) {
     return this.taskStatsService.getStats(userId, query);
+  }
+
+  // Collaborators
+  getCollaborators(taskId: number, userId: number) {
+    return this.taskCollaboratorService.getCollaborators(taskId, userId);
+  }
+
+  inviteCollaborator(taskId: number, dto: InviteCollaboratorDto, userId: number) {
+    return this.taskCollaboratorService.invite(taskId, dto, userId);
+  }
+
+  respondCollaborator(taskId: number, dto: RespondCollaboratorDto, userId: number) {
+    return this.taskCollaboratorService.respond(taskId, dto, userId);
+  }
+
+  removeCollaborator(taskId: number, targetUserId: number, userId: number) {
+    return this.taskCollaboratorService.remove(taskId, targetUserId, userId);
+  }
+
+  // Subtasks
+  getSubtasks(taskId: number, userId: number) {
+    return this.subtaskService.getSubtasks(taskId, userId);
+  }
+
+  createSubtask(taskId: number, dto: CreateSubtaskDto, userId: number) {
+    return this.subtaskService.create(taskId, dto, userId);
+  }
+
+  updateSubtask(taskId: number, subtaskId: number, dto: UpdateSubtaskDto, userId: number) {
+    return this.subtaskService.update(taskId, subtaskId, dto, userId);
+  }
+
+  updateSubtaskStatus(taskId: number, subtaskId: number, dto: UpdateSubtaskStatusDto, userId: number) {
+    return this.subtaskService.updateStatus(taskId, subtaskId, dto, userId);
+  }
+
+  removeSubtask(taskId: number, subtaskId: number, userId: number) {
+    return this.subtaskService.remove(taskId, subtaskId, userId);
+  }
+
+  reorderSubtasks(taskId: number, dto: ReorderSubtasksDto, userId: number) {
+    return this.subtaskService.reorder(taskId, dto, userId);
   }
 }

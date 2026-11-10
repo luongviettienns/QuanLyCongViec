@@ -24,6 +24,13 @@ enum TeamRole {
   MEMBER
 }
 
+enum CollaboratorStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  REVOKED
+}
+
 enum NotificationType {
   TASK_ASSIGNED
   TASK_UNASSIGNED
@@ -60,6 +67,11 @@ model User {
   categories             Category[]
   notifications          Notification[] @relation("NotificationRecipient")
   triggeredNotifications Notification[] @relation("NotificationActor")
+
+  collaborations         TaskCollaborator[] @relation("TaskCollaboratorUser")
+  invitedCollaborations  TaskCollaborator[] @relation("TaskCollaboratorInvitedBy")
+  assignedSubtasks       Subtask[]          @relation("SubtaskAssignee")
+  createdSubtasks        Subtask[]          @relation("SubtaskCreator")
 
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
@@ -147,6 +159,8 @@ model Task {
   category      Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   notifications Notification[]
+  collaborators TaskCollaborator[]
+  subtasks      Subtask[]
 
   deletedAt     DateTime?
   deletedById   Int?
@@ -199,4 +213,56 @@ model SystemSetting {
   updatedAt DateTime @updatedAt
 
   @@map("SystemSetting")
+}
+
+model TaskCollaborator {
+  id          Int                @id @default(autoincrement())
+
+  taskId      Int
+  task        Task               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  userId      Int
+  user        User               @relation("TaskCollaboratorUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  status      CollaboratorStatus @default(PENDING)
+
+  invitedById Int
+  invitedBy   User               @relation("TaskCollaboratorInvitedBy", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  invitedAt   DateTime           @default(now())
+  respondedAt DateTime?
+
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@unique([taskId, userId])
+  @@index([taskId, status])
+  @@index([userId, status])
+  @@map("TaskCollaborator")
+}
+
+model Subtask {
+  id          Int        @id @default(autoincrement())
+
+  taskId      Int
+  task        Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  status      TaskStatus @default(TODO)
+  position    Int        @default(0)
+
+  assigneeId  Int?
+  assignee    User?      @relation("SubtaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  createdById Int
+  createdBy   User       @relation("SubtaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+
+  @@index([taskId, deletedAt, position])
+  @@index([assigneeId, status])
+  @@map("Subtask")
 }

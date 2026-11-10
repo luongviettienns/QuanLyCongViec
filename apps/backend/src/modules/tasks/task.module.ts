@@ -11,6 +11,8 @@ import { TaskReorderService } from './services/task-reorder.service.js';
 import { TaskStatsService } from './services/task-stats.service.js';
 import { TaskPolicyService } from './policies/task-policy.service.js';
 import { TaskWorkflowPolicy } from './policies/task-workflow-policy.service.js';
+import { TaskCollaboratorService } from './services/task-collaborator.service.js';
+import { SubtaskService } from './services/subtask.service.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 
@@ -29,11 +31,15 @@ import { NotificationsModule } from '../notifications/notifications.module.js';
     TaskStatsService,
     TaskPolicyService,
     TaskWorkflowPolicy,
+    TaskCollaboratorService,
+    SubtaskService,
   ],
   exports: [
     TasksService,
     TaskPolicyService,
     TaskWorkflowPolicy,
+    TaskCollaboratorService,
+    SubtaskService,
     TaskWorkflowService,
     TaskStatusService,
     TaskAssignmentService,

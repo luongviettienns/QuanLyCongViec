@@ -6,6 +6,35 @@ export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE';
 
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH';
 
+export type CollaboratorStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'REVOKED';
+
+export interface TaskCollaborator {
+  id: number;
+  taskId: number;
+  userId: number;
+  status: CollaboratorStatus;
+  invitedById: number;
+  invitedAt: string;
+  respondedAt?: string | null;
+  user?: { id: number; name: string; email: string };
+  invitedBy?: { id: number; name: string; email: string };
+}
+
+export interface Subtask {
+  id: number;
+  taskId: number;
+  title: string;
+  description?: string | null;
+  status: TaskStatus;
+  position: number;
+  assigneeId?: number | null;
+  createdById: number;
+  createdAt: string;
+  updatedAt: string;
+  assignee?: { id: number; name: string; email: string } | null;
+  createdBy?: { id: number; name: string; email: string };
+}
+
 export type StatusFilter = 'ALL' | TaskStatus;
 
 export type PriorityFilter = 'ALL' | TaskPriority;
@@ -32,6 +61,8 @@ export interface Task {
   position?: number;
   startDate?: string | null;
   dueDate?: string | null;
+  collaborators?: TaskCollaborator[];
+  subtasks?: Subtask[];
 }
 
 export interface TaskFormValues {
