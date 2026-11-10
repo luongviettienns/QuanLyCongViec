@@ -101,7 +101,8 @@ export class SubtaskService {
             subtaskId: createdSubtask.id,
             subtaskTitle: createdSubtask.title,
             subtaskAssigneeId: createdSubtask.assigneeId,
-            timestamp: Date.now(),
+            assignedAt: createdSubtask.createdAt,
+            timestamp: createdSubtask.createdAt.getTime(),
           },
           tx,
         );
@@ -250,7 +251,8 @@ export class SubtaskService {
             subtaskId: updatedSubtask.id,
             subtaskTitle: updatedSubtask.title,
             subtaskAssigneeId: dto.assigneeId,
-            timestamp: Date.now(),
+            assignedAt: updatedSubtask.updatedAt,
+            timestamp: updatedSubtask.updatedAt.getTime(),
           },
           tx,
         );

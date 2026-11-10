@@ -13,6 +13,7 @@ export function useTaskBoard(
   setTasks: Dispatch<SetStateAction<Task[]>>,
   user?: User | null,
   teams?: Team[],
+  onSynced?: () => void,
 ) {
   const handleStatusMove = useCallback(
     async (taskId: number, newStatus: TaskStatus, newPosition?: number) => {
@@ -44,6 +45,14 @@ export function useTaskBoard(
 
       setTasks((prev) => {
         const remaining = prev.filter((t) => t.id !== taskId);
+
+        // 1. Reindex source column tasks to remove any gaps
+        const sourceTasks = remaining
+          .filter((t) => t.status === targetTask.status)
+          .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+          .map((t, idx) => ({ ...t, position: idx }));
+
+        // 2. Prepare destination column tasks with dragged task inserted at targetIdx
         const destTasks = remaining
           .filter((t) => t.status === newStatus)
           .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
@@ -64,8 +73,13 @@ export function useTaskBoard(
 
         destTasks.splice(targetIdx, 0, updatedItem);
         const reindexedDest = destTasks.map((t, idx) => ({ ...t, position: idx }));
-        const otherTasks = remaining.filter((t) => t.status !== newStatus);
-        return [...otherTasks, ...reindexedDest];
+
+        // 3. Other columns (untouched)
+        const untouchedTasks = remaining.filter(
+          (t) => t.status !== targetTask.status && t.status !== newStatus,
+        );
+
+        return [...untouchedTasks, ...sourceTasks, ...reindexedDest];
       });
 
       try {
@@ -73,6 +87,7 @@ export function useTaskBoard(
         setTasks((prev) =>
           prev.map((t) => (t.id === taskId ? { ...t, ...updated } : t)),
         );
+        onSynced?.();
         message.success('Cập nhật trạng thái thành công');
       } catch (error) {
         setTasks(previousTasks);
@@ -87,7 +102,7 @@ export function useTaskBoard(
         );
       }
     },
-    [isAuthenticated, tasks, setTasks, user, teams],
+    [isAuthenticated, tasks, setTasks, user, teams, onSynced],
   );
 
   const handleReorder = useCallback(
@@ -130,6 +145,7 @@ export function useTaskBoard(
           status,
           teamFilter !== 'ALL' && teamFilter !== undefined ? teamFilter : undefined,
         );
+        onSynced?.();
       } catch (error) {
         setTasks(previousTasks);
         if (
@@ -143,7 +159,7 @@ export function useTaskBoard(
         );
       }
     },
-    [isAuthenticated, tasks, setTasks],
+    [isAuthenticated, tasks, setTasks, onSynced],
   );
 
   return {

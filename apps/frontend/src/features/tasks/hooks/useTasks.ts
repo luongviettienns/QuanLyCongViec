@@ -14,12 +14,33 @@ export function useTasks(options?: { enabled?: boolean }) {
   const filters = useTaskFilters();
   const queries = useTaskQueries(isAuthenticated);
   const mutations = useTaskMutations(isAuthenticated);
+
+  const syncCanonicalTasks = useCallback(() => {
+    void queries.fetchTasks(
+      filters.searchText,
+      filters.statusFilter,
+      filters.categoryFilter,
+      filters.priorityFilter,
+      filters.teamFilter,
+      filters.scopeFilter,
+    );
+  }, [
+    queries,
+    filters.searchText,
+    filters.statusFilter,
+    filters.categoryFilter,
+    filters.priorityFilter,
+    filters.teamFilter,
+    filters.scopeFilter,
+  ]);
+
   const board = useTaskBoard(
     isAuthenticated,
     queries.tasks,
     queries.setTasks,
     user,
     queries.teams,
+    syncCanonicalTasks,
   );
 
   const {

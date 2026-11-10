@@ -5,6 +5,8 @@ import { App } from 'supertest/types.js';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/database/prisma.service.js';
 import { configureTestApp } from './test-app.helper.js';
+import { NotificationEventService } from '../src/modules/notifications/services/notification-event.service.js';
+import type { DomainNotificationEvent } from '../src/modules/notifications/types/notification-event.types.js';
 
 describe('Task Collaboration & Subtasks P0 (e2e)', () => {
   let app: INestApplication<App>;
@@ -1355,6 +1357,66 @@ describe('Task Collaboration & Subtasks P0 (e2e)', () => {
       );
       expect(subNotif).toBeDefined();
       expect(subNotif.title).toContain('Bạn được phân công việc con mới');
+    });
+
+    it('6. Idempotency: duplicate or retried event publishing produces exactly one notification without phantom duplicates', async () => {
+      const notificationEventService = app.get(NotificationEventService);
+      const testTimestamp = Date.now();
+      const testEvent: DomainNotificationEvent = {
+        type: 'TASK_COLLABORATOR_INVITED',
+        actorId: ownerId,
+        taskId: notifTaskId,
+        taskTitle: 'Idempotency Test Task',
+        teamId,
+        invitedUserId: memberId,
+        invitedAt: new Date(testTimestamp),
+        timestamp: testTimestamp,
+      };
+
+      // 1. Publish sequentially twice with same event parameters
+      await notificationEventService.publish(testEvent);
+      await notificationEventService.publish(testEvent);
+
+      // Verify that recipient has exactly 1 notification for this specific invitation eventKey
+      const count = await prisma.notification.count({
+        where: {
+          userId: memberId,
+          type: 'TASK_COLLABORATOR_INVITED',
+          taskId: notifTaskId,
+          eventKey: { contains: new Date(testTimestamp).toISOString() },
+        },
+      });
+      expect(count).toBe(1);
+
+      // 2. Publish concurrently 3 times for SUBTASK_ASSIGNED
+      const subtaskEvent: DomainNotificationEvent = {
+        type: 'SUBTASK_ASSIGNED',
+        actorId: ownerId,
+        taskId: notifTaskId,
+        taskTitle: 'Idempotency Test Task',
+        teamId,
+        subtaskId: 8888,
+        subtaskTitle: 'Concurrent Subtask',
+        subtaskAssigneeId: memberId,
+        assignedAt: new Date(testTimestamp),
+        timestamp: testTimestamp,
+      };
+
+      await Promise.all([
+        notificationEventService.publish(subtaskEvent),
+        notificationEventService.publish(subtaskEvent),
+        notificationEventService.publish(subtaskEvent),
+      ]);
+
+      const subtaskNotifs = await prisma.notification.findMany({
+        where: {
+          userId: memberId,
+          type: 'SUBTASK_ASSIGNED',
+          taskId: notifTaskId,
+          content: { contains: 'Concurrent Subtask' },
+        },
+      });
+      expect(subtaskNotifs.length).toBe(1);
     });
   });
 

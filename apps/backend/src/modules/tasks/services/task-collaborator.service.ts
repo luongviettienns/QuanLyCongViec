@@ -112,7 +112,8 @@ export class TaskCollaboratorService {
             taskTitle: task.title,
             teamId: task.teamId,
             invitedUserId: dto.userId,
-            timestamp: Date.now(),
+            invitedAt: updated.invitedAt,
+            timestamp: updated.invitedAt.getTime(),
           },
           tx,
         );
@@ -141,7 +142,8 @@ export class TaskCollaboratorService {
           taskTitle: task.title,
           teamId: task.teamId,
           invitedUserId: dto.userId,
-          timestamp: Date.now(),
+          invitedAt: created.invitedAt,
+          timestamp: created.invitedAt.getTime(),
         },
         tx,
       );
@@ -208,7 +210,8 @@ export class TaskCollaboratorService {
             teamId: task.teamId!,
             invitedById: collab.invitedById,
             assigneeId: task.assigneeId,
-            timestamp: Date.now(),
+            respondedAt: updated.respondedAt ?? new Date(),
+            timestamp: updated.respondedAt?.getTime() ?? Date.now(),
           },
           tx,
         );
@@ -222,7 +225,8 @@ export class TaskCollaboratorService {
             teamId: task.teamId!,
             invitedById: collab.invitedById,
             assigneeId: task.assigneeId,
-            timestamp: Date.now(),
+            respondedAt: updated.respondedAt ?? new Date(),
+            timestamp: updated.respondedAt?.getTime() ?? Date.now(),
           },
           tx,
         );
@@ -289,7 +293,8 @@ export class TaskCollaboratorService {
           removedUserId: targetUserId,
           isSelfLeave: isSelfLeaving,
           assigneeId: task.assigneeId,
-          timestamp: Date.now(),
+          removedAt: updatedCollab.updatedAt,
+          timestamp: updatedCollab.updatedAt.getTime(),
         },
         tx,
       );

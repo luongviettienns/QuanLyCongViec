@@ -168,6 +168,7 @@ export interface TaskCollaboratorInvitedEvent {
   taskTitle: string;
   teamId: number;
   invitedUserId: number;
+  invitedAt?: number | string | Date;
   timestamp?: number;
 }
 
@@ -179,6 +180,7 @@ export interface TaskCollaboratorAcceptedEvent {
   teamId: number;
   invitedById: number;
   assigneeId?: number | null;
+  respondedAt?: number | string | Date;
   timestamp?: number;
 }
 
@@ -190,6 +192,7 @@ export interface TaskCollaboratorDeclinedEvent {
   teamId: number;
   invitedById: number;
   assigneeId?: number | null;
+  respondedAt?: number | string | Date;
   timestamp?: number;
 }
 
@@ -202,6 +205,7 @@ export interface TaskCollaboratorRemovedEvent {
   removedUserId: number;
   isSelfLeave: boolean;
   assigneeId?: number | null;
+  removedAt?: number | string | Date;
   timestamp?: number;
 }
 
@@ -214,6 +218,7 @@ export interface SubtaskAssignedEvent {
   subtaskId: number;
   subtaskTitle: string;
   subtaskAssigneeId: number;
+  assignedAt?: number | string | Date;
   timestamp?: number;
 }
 

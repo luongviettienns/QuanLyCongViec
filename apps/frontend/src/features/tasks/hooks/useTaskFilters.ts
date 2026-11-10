@@ -18,6 +18,17 @@ export function useTaskFilters() {
   const [teamFilter, setTeamFilter] = useState<number | 'ALL'>('ALL');
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all');
 
+  /**
+   * isFiltering indicates whether the Kanban board is filtered to a partial subset
+   * of tasks (by search text, status, category, priority, or non-all scope).
+   *
+   * Note on teamFilter:
+   * teamFilter represents the board's organizational scope/workspace (e.g. personal vs team X),
+   * not a subset filter. Selecting a specific team shows all tasks of that team, which is
+   * in fact the prerequisite for team reordering (useTaskBoard requires teamFilter !== 'ALL').
+   * If teamFilter were included in isFiltering, KanbanBoard would show the "Filtering active"
+   * alert and disable same-column reordering for that team.
+   */
   const isFiltering = useMemo(
     () =>
       searchText.trim() !== '' ||
