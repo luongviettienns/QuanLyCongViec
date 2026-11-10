@@ -1043,4 +1043,478 @@ describe('Task Collaboration & Subtasks P0 (e2e)', () => {
         .expect(404);
     });
   });
+
+  describe('P0 — Kanban Drag-and-Drop & Position RBAC', () => {
+    let kanbanTaskId = 0;
+
+    beforeAll(async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `Kanban RBAC Task ${Date.now()}`,
+          teamId,
+          assigneeId,
+        })
+        .expect(201);
+      kanbanTaskId = res.body.id;
+    });
+
+    it('1. Main Assignee cannot reorder within same column (sending position) -> 403 Forbidden', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${kanbanTaskId}/status`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'TODO', position: 1 })
+        .expect(403);
+      expect(res.body.message).toContain('không có quyền sắp xếp');
+    });
+
+    it('2. Main Assignee cannot transition cross-column with position -> 403 Forbidden', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${kanbanTaskId}/status`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'IN_PROGRESS', position: 0 })
+        .expect(403);
+      expect(res.body.message).toContain('không có quyền sắp xếp');
+    });
+
+    it('3. Main Assignee CAN transition cross-column WITHOUT position -> 200 OK', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${kanbanTaskId}/status`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'IN_PROGRESS' })
+        .expect(200);
+      expect(res.body.status).toBe('IN_PROGRESS');
+    });
+
+    it('4. Owner / Admin CAN transition cross-column WITH position -> 200 OK', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${kanbanTaskId}/status`)
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .send({ status: 'DONE', position: 0 })
+        .expect(200);
+      expect(res.body.status).toBe('DONE');
+    });
+
+    it('5. Regular Member (not assignee/creator/admin) CANNOT transition or drag -> 403 Forbidden', async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${kanbanTaskId}/status`)
+        .set('Authorization', `Bearer ${tokenMember}`)
+        .send({ status: 'TODO' })
+        .expect(403);
+    });
+  });
+
+  describe('P0 — Subtask Linear Progression for Collaborator vs Manager', () => {
+    let workflowTaskId = 0;
+    let workflowSubtaskId = 0;
+
+    beforeAll(async () => {
+      // Re-add collab to teamId if previously removed
+      await request(app.getHttpServer())
+        .post(`/api/teams/${teamId}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p0_collab_${ts}@test.local`, role: 'MEMBER' });
+
+      const taskRes = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `Subtask Workflow Task ${Date.now()}`,
+          teamId,
+          assigneeId,
+        })
+        .expect(201);
+      workflowTaskId = taskRes.body.id;
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${workflowTaskId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ userId: collabId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${workflowTaskId}/collaborators/respond`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ action: 'ACCEPT' })
+        .expect(201);
+
+      const subRes = await request(app.getHttpServer())
+        .post(`/api/tasks/${workflowTaskId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({
+          title: 'Linear Subtask',
+          assigneeId: collabId,
+        })
+        .expect(201);
+      workflowSubtaskId = subRes.body.id;
+    });
+
+    it('1. Collaborator cannot skip directly from TODO to DONE -> 400 Bad Request', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ status: 'DONE' })
+        .expect(400);
+      expect(res.body.message).toContain('TODO -> IN_PROGRESS');
+    });
+
+    it('2. Collaborator cannot edit title, description, or change assigneeId -> 403 Forbidden', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ title: 'New title by collab' })
+        .expect(403);
+      expect(res.body.message).toContain('Bạn không có quyền chỉnh sửa nội dung hoặc người thực hiện');
+    });
+
+    it('3. Collaborator can advance subtask TODO -> IN_PROGRESS -> 200 OK', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ status: 'IN_PROGRESS' })
+        .expect(200);
+      expect(res.body.status).toBe('IN_PROGRESS');
+    });
+
+    it('4. Collaborator cannot reverse subtask IN_PROGRESS -> TODO -> 400 Bad Request', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ status: 'TODO' })
+        .expect(400);
+      expect(res.body.message).toContain('IN_PROGRESS -> DONE');
+    });
+
+    it('5. Collaborator can advance subtask IN_PROGRESS -> DONE -> 200 OK', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ status: 'DONE' })
+        .expect(200);
+      expect(res.body.status).toBe('DONE');
+    });
+
+    it('6. Collaborator cannot reopen subtask from DONE -> IN_PROGRESS or DONE -> TODO -> 400 Bad Request', async () => {
+      const res1 = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ status: 'IN_PROGRESS' })
+        .expect(400);
+      expect(res1.body.message).toContain('Không thể thay đổi trạng thái công việc con đã hoàn thành');
+
+      const res2 = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ status: 'TODO' })
+        .expect(400);
+      expect(res2.body.message).toContain('Không thể thay đổi trạng thái công việc con đã hoàn thành');
+    });
+
+    it('7. Manager (Main Assignee / Owner) CAN reopen subtask DONE -> TODO -> 200 OK', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'TODO' })
+        .expect(200);
+      expect(res.body.status).toBe('TODO');
+    });
+  });
+
+  describe('P1 — Collaboration Notifications & Recipient Delivery', () => {
+    let notifTaskId = 0;
+
+    beforeAll(async () => {
+      // Re-add collab to teamId if needed
+      await request(app.getHttpServer())
+        .post(`/api/teams/${teamId}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p0_collab_${ts}@test.local`, role: 'MEMBER' });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `Notif Test Task ${Date.now()}`,
+          teamId,
+          assigneeId,
+        })
+        .expect(201);
+      notifTaskId = res.body.id;
+    });
+
+    it('1. Inviting collaborator creates TASK_COLLABORATOR_INVITED for invitee (not inviter)', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${notifTaskId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ userId: collabId })
+        .expect(201);
+
+      const inviteeNotifs = await request(app.getHttpServer())
+        .get('/api/notifications')
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+
+      const inviteNotif = inviteeNotifs.body.items?.find(
+        (n: any) => n.type === 'TASK_COLLABORATOR_INVITED' && n.taskId === notifTaskId,
+      );
+      expect(inviteNotif).toBeDefined();
+      expect(inviteNotif.title).toContain('Lời mời phối hợp');
+
+      const inviterNotifs = await request(app.getHttpServer())
+        .get('/api/notifications')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      const selfNotif = inviterNotifs.body.items?.find(
+        (n: any) => n.type === 'TASK_COLLABORATOR_INVITED' && n.taskId === notifTaskId,
+      );
+      expect(selfNotif).toBeUndefined();
+    });
+
+    it('2. Accepting invitation creates TASK_COLLABORATOR_ACCEPTED for inviter & creator/assignee', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${notifTaskId}/collaborators/respond`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ action: 'ACCEPT' })
+        .expect(201);
+
+      const ownerNotifs = await request(app.getHttpServer())
+        .get('/api/notifications')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      const acceptNotif = ownerNotifs.body.items?.find(
+        (n: any) => n.type === 'TASK_COLLABORATOR_ACCEPTED' && n.taskId === notifTaskId,
+      );
+      expect(acceptNotif).toBeDefined();
+      expect(acceptNotif.content).toContain('đồng ý');
+    });
+
+    it('3. Declining invitation creates TASK_COLLABORATOR_DECLINED for inviter', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${notifTaskId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ userId: memberId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${notifTaskId}/collaborators/respond`)
+        .set('Authorization', `Bearer ${tokenMember}`)
+        .send({ action: 'DECLINE' })
+        .expect(201);
+
+      const ownerNotifs = await request(app.getHttpServer())
+        .get('/api/notifications')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      const declineNotif = ownerNotifs.body.items?.find(
+        (n: any) => n.type === 'TASK_COLLABORATOR_DECLINED' && n.taskId === notifTaskId,
+      );
+      expect(declineNotif).toBeDefined();
+      expect(declineNotif.content).toContain('từ chối');
+    });
+
+    it('4. Removing collaborator creates TASK_COLLABORATOR_REMOVED for removed user', async () => {
+      await request(app.getHttpServer())
+        .delete(`/api/tasks/${notifTaskId}/collaborators/${collabId}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      const collabNotifs = await request(app.getHttpServer())
+        .get('/api/notifications')
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+
+      const removeNotif = collabNotifs.body.items?.find(
+        (n: any) => n.type === 'TASK_COLLABORATOR_REMOVED' && n.taskId === notifTaskId,
+      );
+      expect(removeNotif).toBeDefined();
+      expect(removeNotif.title).toContain('Thu hồi quyền phối hợp');
+    });
+
+    it('5. Assigning subtask creates SUBTASK_ASSIGNED notification for assignee', async () => {
+      const subRes = await request(app.getHttpServer())
+        .post(`/api/tasks/${notifTaskId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: 'Notif Subtask',
+          assigneeId: assigneeId,
+        })
+        .expect(201);
+      expect(subRes.body.id).toBeGreaterThan(0);
+
+      const asgNotifs = await request(app.getHttpServer())
+        .get('/api/notifications')
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .expect(200);
+
+      const subNotif = asgNotifs.body.items?.find(
+        (n: any) => n.type === 'SUBTASK_ASSIGNED' && n.taskId === notifTaskId,
+      );
+      expect(subNotif).toBeDefined();
+      expect(subNotif.title).toContain('Bạn được phân công việc con mới');
+    });
+  });
+
+  describe('P1 — Task Scope Filtering Expansion', () => {
+    let taskAssignedToCollab = 0;
+    let taskCollabAccepted = 0;
+    let taskWithSubtaskOnly = 0;
+    let otherTeamId = 0;
+    let taskOtherTeam = 0;
+
+    beforeAll(async () => {
+      // Re-add collab to teamId if needed
+      await request(app.getHttpServer())
+        .post(`/api/teams/${teamId}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p0_collab_${ts}@test.local`, role: 'MEMBER' });
+
+      const tRes = await request(app.getHttpServer())
+        .post('/api/teams')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ name: `Other Team ${Date.now()}` })
+        .expect(201);
+      otherTeamId = tRes.body.id;
+
+      await request(app.getHttpServer())
+        .post(`/api/teams/${otherTeamId}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p0_collab_${ts}@test.local`, role: 'MEMBER' })
+        .expect(201);
+
+      // Task 1: Assigned to collabId in teamId, has subtask assigned to collabId
+      const t1 = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `Collab Main Task ${Date.now()}`, teamId, assigneeId: collabId })
+        .expect(201);
+      taskAssignedToCollab = t1.body.id;
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${taskAssignedToCollab}/subtasks`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ title: 'Subtask for main assignee', assigneeId: collabId })
+        .expect(201);
+
+      // Task 2: Assigned to ownerId, collabId accepted as collaborator in teamId (no subtask)
+      const t2 = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `Collab Invited Task ${Date.now()}`, teamId, assigneeId: ownerId })
+        .expect(201);
+      taskCollabAccepted = t2.body.id;
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${taskCollabAccepted}/collaborators`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ userId: collabId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${taskCollabAccepted}/collaborators/respond`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ action: 'ACCEPT' })
+        .expect(201);
+
+      // Task 3: Assigned to ownerId, collabId accepted as collaborator, AND has subtask assigned to collabId
+      const t3 = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `Subtask Parent Task ${Date.now()}`, teamId, assigneeId: ownerId })
+        .expect(201);
+      taskWithSubtaskOnly = t3.body.id;
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${taskWithSubtaskOnly}/collaborators`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ userId: collabId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${taskWithSubtaskOnly}/collaborators/respond`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ action: 'ACCEPT' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${taskWithSubtaskOnly}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'Subtask for collab', assigneeId: collabId })
+        .expect(201);
+
+      // Task 4: In otherTeamId, assigned to collabId
+      const t4 = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `Other Team Task ${Date.now()}`, teamId: otherTeamId, assigneeId: collabId })
+        .expect(201);
+      taskOtherTeam = t4.body.id;
+    });
+
+    it('1. scope=collaborating returns only tasks where user is ACCEPTED collaborator', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/api/tasks?scope=collaborating&teamId=${teamId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+
+      const ids = res.body.map((t: any) => t.id);
+      expect(ids).toContain(taskCollabAccepted);
+      expect(ids).toContain(taskWithSubtaskOnly);
+      expect(ids).not.toContain(taskAssignedToCollab);
+    });
+
+    it('2. scope=subtasks_assigned_to_me returns only tasks where user has active assigned subtasks', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/api/tasks?scope=subtasks_assigned_to_me&teamId=${teamId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+
+      const ids = res.body.map((t: any) => t.id);
+      expect(ids).toContain(taskAssignedToCollab);
+      expect(ids).toContain(taskWithSubtaskOnly);
+      expect(ids).not.toContain(taskCollabAccepted);
+    });
+
+    it('3. scope=my_work returns union of Main Assignee + Collaborator + Subtask Assignee without duplicates', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/api/tasks?scope=my_work&teamId=${teamId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+
+      const ids = res.body.map((t: any) => t.id);
+      expect(ids).toContain(taskAssignedToCollab);
+      expect(ids).toContain(taskCollabAccepted);
+      expect(ids).toContain(taskWithSubtaskOnly);
+      expect(ids).not.toContain(taskOtherTeam);
+
+      const uniqueIds = Array.from(new Set(ids));
+      expect(ids.length).toBe(uniqueIds.length);
+    });
+
+    it('4. teamId combined with scope=my_work restricts to specified team', async () => {
+      const resOther = await request(app.getHttpServer())
+        .get(`/api/tasks?scope=my_work&teamId=${otherTeamId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+
+      const otherIds = resOther.body.map((t: any) => t.id);
+      expect(otherIds).toContain(taskOtherTeam);
+      expect(otherIds).not.toContain(taskAssignedToCollab);
+      expect(otherIds).not.toContain(taskCollabAccepted);
+      expect(otherIds).not.toContain(taskWithSubtaskOnly);
+    });
+
+    it('5. GET /api/tasks/stats works accurately for all new scopes', async () => {
+      const statsRes = await request(app.getHttpServer())
+        .get(`/api/tasks/stats?scope=my_work&teamId=${teamId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+
+      expect(Number(statsRes.body.total)).toBeGreaterThanOrEqual(3);
+    });
+  });
+
 });

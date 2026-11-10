@@ -5,7 +5,7 @@ import type { Team } from '../../teams/types/team.types';
 import type { User } from '../../auth/types/auth.types';
 import { updateTaskStatus, reorderTasks } from '../api/tasks.api';
 import { UnauthorizedError } from '../../../shared/api';
-import { canTransitionTask } from '../utils/task-permission.utils';
+import { canTransitionTask, canReorderTask } from '../utils/task-permission.utils';
 
 export function useTaskBoard(
   isAuthenticated: boolean,
@@ -36,24 +36,32 @@ export function useTaskBoard(
         return;
       }
 
+      // Check reorder privilege: Only users with reorder permission may specify position
+      const canReorder = canReorderTask(user, targetTask, taskTeam);
+      const positionToSend = canReorder ? newPosition : undefined;
+
       const previousTasks = [...tasks];
 
       setTasks((prev) => {
         const remaining = prev.filter((t) => t.id !== taskId);
-        const updatedItem = {
-          ...targetTask,
-          status: newStatus,
-          position: newPosition ?? 0,
-        };
         const destTasks = remaining
           .filter((t) => t.status === newStatus)
           .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
         const targetIdx =
+          canReorder &&
           newPosition !== undefined &&
           newPosition >= 0 &&
           newPosition <= destTasks.length
             ? newPosition
             : destTasks.length;
+
+        const updatedItem = {
+          ...targetTask,
+          status: newStatus,
+          position: targetIdx,
+        };
+
         destTasks.splice(targetIdx, 0, updatedItem);
         const reindexedDest = destTasks.map((t, idx) => ({ ...t, position: idx }));
         const otherTasks = remaining.filter((t) => t.status !== newStatus);
@@ -61,7 +69,7 @@ export function useTaskBoard(
       });
 
       try {
-        const updated = await updateTaskStatus(taskId, newStatus, newPosition);
+        const updated = await updateTaskStatus(taskId, newStatus, positionToSend);
         setTasks((prev) =>
           prev.map((t) => (t.id === taskId ? { ...t, ...updated } : t)),
         );

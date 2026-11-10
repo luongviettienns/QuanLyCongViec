@@ -8,8 +8,10 @@ import {
   TeamOutlined,
   FilterOutlined,
   ReloadOutlined,
+  SolutionOutlined,
+  OrderedListOutlined,
 } from '@ant-design/icons';
-import type { StatusFilter, PriorityFilter } from '../types/task.types';
+import type { StatusFilter, PriorityFilter, ScopeFilter } from '../types/task.types';
 import type { Category } from '../../categories/types/category.types';
 import type { Team } from '../../teams/types/team.types';
 import { useResponsive } from '../../../shared/hooks';
@@ -20,7 +22,7 @@ interface TaskToolbarProps {
   categoryFilter?: number | 'ALL';
   priorityFilter?: PriorityFilter;
   teamFilter?: number | 'ALL';
-  scopeFilter?: 'all' | 'created_by_me' | 'assigned_to_me';
+  scopeFilter?: ScopeFilter;
   categories?: Category[];
   teams?: Team[];
   onSearchChange: (value: string) => void;
@@ -29,7 +31,7 @@ interface TaskToolbarProps {
   onCategoryChange?: (categoryId: number | 'ALL') => void;
   onPriorityChange?: (priority: PriorityFilter) => void;
   onTeamChange?: (teamId: number | 'ALL') => void;
-  onScopeChange?: (scope: 'all' | 'created_by_me' | 'assigned_to_me') => void;
+  onScopeChange?: (scope: ScopeFilter) => void;
   onReset: () => void;
 }
 
@@ -120,7 +122,7 @@ export default function TaskToolbar({
     }
   }
 
-  function handleScopeChange(sc: 'all' | 'created_by_me' | 'assigned_to_me') {
+  function handleScopeChange(sc: ScopeFilter) {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
     }
@@ -176,14 +178,17 @@ export default function TaskToolbar({
             style={{ width: isMobile ? '100%' : 260 }}
           />
 
-          <Segmented<'all' | 'created_by_me' | 'assigned_to_me'>
+          <Segmented<ScopeFilter>
             value={scopeFilter}
             onChange={handleScopeChange}
             style={{ overflowX: 'auto', maxWidth: '100%' }}
             options={[
-              { value: 'all', label: 'Tất cả', icon: <AppstoreOutlined /> },
-              { value: 'created_by_me', label: 'Tôi tạo', icon: <UserOutlined /> },
-              { value: 'assigned_to_me', label: 'Giao cho tôi', icon: <CheckSquareOutlined /> },
+              { value: 'all', label: 'Tất cả công việc', icon: <AppstoreOutlined /> },
+              { value: 'my_work', label: 'Công việc của tôi', icon: <SolutionOutlined /> },
+              { value: 'assigned_to_me', label: 'Tôi phụ trách', icon: <CheckSquareOutlined /> },
+              { value: 'collaborating', label: 'Tôi phối hợp', icon: <TeamOutlined /> },
+              { value: 'subtasks_assigned_to_me', label: 'Subtask của tôi', icon: <OrderedListOutlined /> },
+              { value: 'created_by_me', label: 'Tôi đã tạo', icon: <UserOutlined /> },
             ]}
           />
         </div>

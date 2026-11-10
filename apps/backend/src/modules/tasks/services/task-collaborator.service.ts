@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../../database/prisma.service.js';
 import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { TaskQueryService } from './task-query.service.js';
+import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
 import { InviteCollaboratorDto } from '../dto/invite-collaborator.dto.js';
 import { RespondCollaboratorDto } from '../dto/respond-collaborator.dto.js';
 import { CollaboratorStatus, TaskStatus } from '@prisma/client';
@@ -18,6 +19,7 @@ export class TaskCollaboratorService {
     private readonly prisma: PrismaService,
     private readonly policy: TaskPolicyService,
     private readonly queryService: TaskQueryService,
+    private readonly notificationEventService: NotificationEventService,
   ) {}
 
   async getCollaborators(taskId: number, callerId: number) {
@@ -88,7 +90,7 @@ export class TaskCollaboratorService {
         }
 
         // Re-inviting previously declined or revoked collaborator
-        return tx.taskCollaborator.update({
+        const updated = await tx.taskCollaborator.update({
           where: { id: existing.id },
           data: {
             status: CollaboratorStatus.PENDING,
@@ -101,9 +103,24 @@ export class TaskCollaboratorService {
             invitedBy: { select: { id: true, name: true, email: true } },
           },
         });
+
+        await this.notificationEventService.publish(
+          {
+            type: 'TASK_COLLABORATOR_INVITED',
+            actorId: callerId,
+            taskId,
+            taskTitle: task.title,
+            teamId: task.teamId,
+            invitedUserId: dto.userId,
+            timestamp: Date.now(),
+          },
+          tx,
+        );
+
+        return updated;
       }
 
-      return tx.taskCollaborator.create({
+      const created = await tx.taskCollaborator.create({
         data: {
           taskId,
           userId: dto.userId,
@@ -115,6 +132,21 @@ export class TaskCollaboratorService {
           invitedBy: { select: { id: true, name: true, email: true } },
         },
       });
+
+      await this.notificationEventService.publish(
+        {
+          type: 'TASK_COLLABORATOR_INVITED',
+          actorId: callerId,
+          taskId,
+          taskTitle: task.title,
+          teamId: task.teamId,
+          invitedUserId: dto.userId,
+          timestamp: Date.now(),
+        },
+        tx,
+      );
+
+      return created;
     });
   }
 
@@ -154,7 +186,7 @@ export class TaskCollaboratorService {
           ? CollaboratorStatus.ACCEPTED
           : CollaboratorStatus.DECLINED;
 
-      return tx.taskCollaborator.update({
+      const updated = await tx.taskCollaborator.update({
         where: { id: collab.id },
         data: {
           status: newStatus,
@@ -165,6 +197,38 @@ export class TaskCollaboratorService {
           invitedBy: { select: { id: true, name: true, email: true } },
         },
       });
+
+      if (dto.action === 'ACCEPT') {
+        await this.notificationEventService.publish(
+          {
+            type: 'TASK_COLLABORATOR_ACCEPTED',
+            actorId: callerId,
+            taskId,
+            taskTitle: task.title,
+            teamId: task.teamId!,
+            invitedById: collab.invitedById,
+            assigneeId: task.assigneeId,
+            timestamp: Date.now(),
+          },
+          tx,
+        );
+      } else {
+        await this.notificationEventService.publish(
+          {
+            type: 'TASK_COLLABORATOR_DECLINED',
+            actorId: callerId,
+            taskId,
+            taskTitle: task.title,
+            teamId: task.teamId!,
+            invitedById: collab.invitedById,
+            assigneeId: task.assigneeId,
+            timestamp: Date.now(),
+          },
+          tx,
+        );
+      }
+
+      return updated;
     });
   }
 
@@ -214,6 +278,21 @@ export class TaskCollaboratorService {
           status: TaskStatus.TODO,
         },
       });
+
+      await this.notificationEventService.publish(
+        {
+          type: 'TASK_COLLABORATOR_REMOVED',
+          actorId: callerId,
+          taskId,
+          taskTitle: task.title,
+          teamId: task.teamId!,
+          removedUserId: targetUserId,
+          isSelfLeave: isSelfLeaving,
+          assigneeId: task.assigneeId,
+          timestamp: Date.now(),
+        },
+        tx,
+      );
 
       return updatedCollab;
     });

@@ -342,7 +342,30 @@ export function TaskSubtasksSection({
           bordered
           dataSource={subtasks}
           renderItem={(item, index) => {
-            const canChange = canUserChangeStatus(item) && !isParentDone;
+            const isManager = canManage;
+            const isAssignedCollab = !isManager && canUserChangeStatus(item);
+            const isStatusDisabled =
+              isParentDone ||
+              (!isManager && !isAssignedCollab) ||
+              (isAssignedCollab && item.status === 'DONE');
+
+            const statusOptions = isManager
+              ? [
+                  { value: 'TODO', label: 'TODO' },
+                  { value: 'IN_PROGRESS', label: 'IN_PROGRESS' },
+                  { value: 'DONE', label: 'DONE' },
+                ]
+              : item.status === 'TODO'
+                ? [
+                    { value: 'TODO', label: 'TODO', disabled: true },
+                    { value: 'IN_PROGRESS', label: 'IN_PROGRESS' },
+                  ]
+                : item.status === 'IN_PROGRESS'
+                  ? [
+                      { value: 'IN_PROGRESS', label: 'IN_PROGRESS', disabled: true },
+                      { value: 'DONE', label: 'DONE' },
+                    ]
+                  : [{ value: 'DONE', label: 'DONE' }];
             return (
               <List.Item
                 actions={[
@@ -395,14 +418,10 @@ export function TaskSubtasksSection({
                   <Select
                     size="small"
                     value={item.status}
-                    disabled={!canChange}
+                    disabled={isStatusDisabled}
                     style={{ width: 130 }}
                     onChange={(val) => handleStatusChange(item.id, val)}
-                    options={[
-                      { value: 'TODO', label: 'TODO' },
-                      { value: 'IN_PROGRESS', label: 'IN_PROGRESS' },
-                      { value: 'DONE', label: 'DONE' },
-                    ]}
+                    options={statusOptions}
                   />
 
                   <div style={{ flex: 1, minWidth: 0 }}>

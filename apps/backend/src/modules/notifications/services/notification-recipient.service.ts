@@ -177,6 +177,49 @@ export class NotificationRecipientService {
           candidateIds.push(m.userId);
         }
         break;
+
+      case 'TASK_COLLABORATOR_INVITED':
+        if (event.invitedUserId) {
+          candidateIds.push(event.invitedUserId);
+        }
+        break;
+
+      case 'TASK_COLLABORATOR_ACCEPTED':
+      case 'TASK_COLLABORATOR_DECLINED':
+        if (event.invitedById) {
+          candidateIds.push(event.invitedById);
+        }
+        if (event.assigneeId) {
+          candidateIds.push(event.assigneeId);
+        }
+        break;
+
+      case 'TASK_COLLABORATOR_REMOVED':
+        if (event.isSelfLeave) {
+          // If self leaving, notify Main Assignee and Team Owner
+          if (event.assigneeId) {
+            candidateIds.push(event.assigneeId);
+          }
+          if (event.teamId) {
+            const team = await prisma.team.findUnique({
+              where: { id: event.teamId },
+              select: { ownerId: true },
+            });
+            if (team?.ownerId) {
+              candidateIds.push(team.ownerId);
+            }
+          }
+        } else {
+          // If removed by manager, notify the removed collaborator
+          candidateIds.push(event.removedUserId);
+        }
+        break;
+
+      case 'SUBTASK_ASSIGNED':
+        if (event.subtaskAssigneeId) {
+          candidateIds.push(event.subtaskAssigneeId);
+        }
+        break;
     }
 
     // Filter out actor and deduplicate
@@ -207,6 +250,9 @@ export class NotificationRecipientService {
             return true;
           }
           if (event.type === 'TEAM_MEMBER_REMOVED' && id === event.removedUserId) {
+            return true;
+          }
+          if (event.type === 'TASK_COLLABORATOR_REMOVED' && id === event.removedUserId) {
             return true;
           }
           if (event.type === 'TEAM_DELETED') {

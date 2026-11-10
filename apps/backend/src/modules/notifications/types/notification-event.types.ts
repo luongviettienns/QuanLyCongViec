@@ -161,6 +161,62 @@ export interface TeamDeletedEvent {
   timestamp?: number;
 }
 
+export interface TaskCollaboratorInvitedEvent {
+  type: 'TASK_COLLABORATOR_INVITED';
+  actorId: number;
+  taskId: number;
+  taskTitle: string;
+  teamId: number;
+  invitedUserId: number;
+  timestamp?: number;
+}
+
+export interface TaskCollaboratorAcceptedEvent {
+  type: 'TASK_COLLABORATOR_ACCEPTED';
+  actorId: number;
+  taskId: number;
+  taskTitle: string;
+  teamId: number;
+  invitedById: number;
+  assigneeId?: number | null;
+  timestamp?: number;
+}
+
+export interface TaskCollaboratorDeclinedEvent {
+  type: 'TASK_COLLABORATOR_DECLINED';
+  actorId: number;
+  taskId: number;
+  taskTitle: string;
+  teamId: number;
+  invitedById: number;
+  assigneeId?: number | null;
+  timestamp?: number;
+}
+
+export interface TaskCollaboratorRemovedEvent {
+  type: 'TASK_COLLABORATOR_REMOVED';
+  actorId: number;
+  taskId: number;
+  taskTitle: string;
+  teamId: number;
+  removedUserId: number;
+  isSelfLeave: boolean;
+  assigneeId?: number | null;
+  timestamp?: number;
+}
+
+export interface SubtaskAssignedEvent {
+  type: 'SUBTASK_ASSIGNED';
+  actorId: number;
+  taskId: number;
+  taskTitle: string;
+  teamId?: number | null;
+  subtaskId: number;
+  subtaskTitle: string;
+  subtaskAssigneeId: number;
+  timestamp?: number;
+}
+
 export type DomainNotificationEvent =
   | TaskAssignedEvent
   | TaskUnassignedEvent
@@ -176,4 +232,9 @@ export type DomainNotificationEvent =
   | TeamMemberRemovedEvent
   | TeamRoleChangedEvent
   | TeamOwnershipTransferredEvent
-  | TeamDeletedEvent;
+  | TeamDeletedEvent
+  | TaskCollaboratorInvitedEvent
+  | TaskCollaboratorAcceptedEvent
+  | TaskCollaboratorDeclinedEvent
+  | TaskCollaboratorRemovedEvent
+  | SubtaskAssignedEvent;

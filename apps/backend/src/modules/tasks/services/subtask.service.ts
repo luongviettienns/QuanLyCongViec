@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../../../database/prisma.service.js';
 import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { TaskQueryService } from './task-query.service.js';
+import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
 import { CreateSubtaskDto } from '../dto/create-subtask.dto.js';
 import { UpdateSubtaskDto } from '../dto/update-subtask.dto.js';
 import { UpdateSubtaskStatusDto } from '../dto/update-subtask-status.dto.js';
@@ -19,6 +20,7 @@ export class SubtaskService {
     private readonly prisma: PrismaService,
     private readonly policy: TaskPolicyService,
     private readonly queryService: TaskQueryService,
+    private readonly notificationEventService: NotificationEventService,
   ) {}
 
   async getSubtasks(taskId: number, callerId: number) {
@@ -68,7 +70,7 @@ export class SubtaskService {
       });
       const nextPosition = (maxPosResult._max.position ?? -1) + 1;
 
-      return tx.subtask.create({
+      const createdSubtask = await tx.subtask.create({
         data: {
           taskId,
           title: dto.title.trim(),
@@ -87,6 +89,25 @@ export class SubtaskService {
           },
         },
       });
+
+      if (createdSubtask.assigneeId) {
+        await this.notificationEventService.publish(
+          {
+            type: 'SUBTASK_ASSIGNED',
+            actorId: callerId,
+            taskId,
+            taskTitle: task.title,
+            teamId: task.teamId,
+            subtaskId: createdSubtask.id,
+            subtaskTitle: createdSubtask.title,
+            subtaskAssigneeId: createdSubtask.assigneeId,
+            timestamp: Date.now(),
+          },
+          tx,
+        );
+      }
+
+      return createdSubtask;
     });
   }
 
@@ -153,6 +174,25 @@ export class SubtaskService {
           if (!isAssigned || !acceptedCollab) {
             throw new ForbiddenException('Bạn không có quyền thay đổi trạng thái công việc con này');
           }
+
+          // Enforce Collaborator status workflow: TODO -> IN_PROGRESS -> DONE only
+          if (subtask.status === TaskStatus.DONE) {
+            throw new BadRequestException(
+              'Không thể thay đổi trạng thái công việc con đã hoàn thành. Hãy nhờ người quản lý mở lại nếu cần.',
+            );
+          }
+
+          if (subtask.status === TaskStatus.TODO && dto.status !== TaskStatus.IN_PROGRESS) {
+            throw new BadRequestException(
+              'Người phối hợp chỉ có thể chuyển công việc con từ Cần làm sang Đang làm (TODO -> IN_PROGRESS)',
+            );
+          }
+
+          if (subtask.status === TaskStatus.IN_PROGRESS && dto.status !== TaskStatus.DONE) {
+            throw new BadRequestException(
+              'Người phối hợp chỉ có thể chuyển công việc con từ Đang làm sang Hoàn thành (IN_PROGRESS -> DONE)',
+            );
+          }
         }
 
         // Invariant: Cannot change subtask to non-DONE if parent is DONE
@@ -182,7 +222,7 @@ export class SubtaskService {
       if (dto.status !== undefined) dataToUpdate.status = dto.status;
       if (dto.assigneeId !== undefined) dataToUpdate.assigneeId = dto.assigneeId;
 
-      return tx.subtask.update({
+      const updatedSubtask = await tx.subtask.update({
         where: { id: subtaskId },
         data: dataToUpdate,
         include: {
@@ -194,6 +234,29 @@ export class SubtaskService {
           },
         },
       });
+
+      if (
+        dto.assigneeId !== undefined &&
+        dto.assigneeId !== null &&
+        dto.assigneeId !== subtask.assigneeId
+      ) {
+        await this.notificationEventService.publish(
+          {
+            type: 'SUBTASK_ASSIGNED',
+            actorId: callerId,
+            taskId,
+            taskTitle: task.title,
+            teamId: task.teamId,
+            subtaskId: updatedSubtask.id,
+            subtaskTitle: updatedSubtask.title,
+            subtaskAssigneeId: dto.assigneeId,
+            timestamp: Date.now(),
+          },
+          tx,
+        );
+      }
+
+      return updatedSubtask;
     });
   }
 

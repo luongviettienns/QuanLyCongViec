@@ -16,14 +16,14 @@ export class TaskQueryService {
   ) {}
 
   async findAll(query: FilterTasksDto | undefined, userId: number): Promise<Task[]> {
-    let baseWhere: Prisma.TaskWhereInput = {};
-
     const userTeamAccessWhere: Prisma.TeamWhereInput = {
       OR: [
         { ownerId: userId },
         { members: { some: { userId } } },
       ],
     };
+
+    let teamAccessWhere: Prisma.TaskWhereInput;
 
     if (query?.teamId) {
       const team = await this.prisma.team.findUnique({
@@ -33,25 +33,9 @@ export class TaskQueryService {
       if (!this.policy.isTeamMember(userId, team)) {
         throw new NotFoundException('Không tìm thấy nhóm');
       }
-      baseWhere = { teamId: query.teamId };
-    } else if (query?.scope === 'assigned_to_me') {
-      baseWhere = {
-        assigneeId: userId,
-        OR: [
-          { teamId: null },
-          { team: userTeamAccessWhere },
-        ],
-      };
-    } else if (query?.scope === 'created_by_me') {
-      baseWhere = {
-        userId,
-        OR: [
-          { teamId: null },
-          { team: userTeamAccessWhere },
-        ],
-      };
+      teamAccessWhere = { teamId: query.teamId };
     } else {
-      baseWhere = {
+      teamAccessWhere = {
         OR: [
           { teamId: null, userId },
           { teamId: null, assigneeId: userId },
@@ -60,9 +44,56 @@ export class TaskQueryService {
       };
     }
 
+    let scopeWhere: Prisma.TaskWhereInput = {};
+    if (query?.scope === 'created_by_me') {
+      scopeWhere = { userId };
+    } else if (query?.scope === 'assigned_to_me') {
+      scopeWhere = { assigneeId: userId };
+    } else if (query?.scope === 'collaborating') {
+      scopeWhere = {
+        collaborators: {
+          some: {
+            userId,
+            status: 'ACCEPTED',
+          },
+        },
+      };
+    } else if (query?.scope === 'subtasks_assigned_to_me') {
+      scopeWhere = {
+        subtasks: {
+          some: {
+            assigneeId: userId,
+            deletedAt: null,
+          },
+        },
+      };
+    } else if (query?.scope === 'my_work') {
+      scopeWhere = {
+        OR: [
+          { assigneeId: userId },
+          {
+            collaborators: {
+              some: {
+                userId,
+                status: 'ACCEPTED',
+              },
+            },
+          },
+          {
+            subtasks: {
+              some: {
+                assigneeId: userId,
+                deletedAt: null,
+              },
+            },
+          },
+        ],
+      };
+    }
+
     const where: Prisma.TaskWhereInput = {
-      ...baseWhere,
       deletedAt: null,
+      AND: [teamAccessWhere, scopeWhere],
     };
 
     if (query?.assigneeId) {

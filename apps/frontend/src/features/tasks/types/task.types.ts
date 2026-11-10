@@ -39,6 +39,14 @@ export type StatusFilter = 'ALL' | TaskStatus;
 
 export type PriorityFilter = 'ALL' | TaskPriority;
 
+export type ScopeFilter =
+  | 'all'
+  | 'my_work'
+  | 'assigned_to_me'
+  | 'collaborating'
+  | 'subtasks_assigned_to_me'
+  | 'created_by_me';
+
 export const TASK_PRIORITY_CONFIG: Record<TaskPriority, { color: string; label: string }> = {
   HIGH: { color: 'red', label: 'Cao' },
   MEDIUM: { color: 'orange', label: 'Trung bình' },

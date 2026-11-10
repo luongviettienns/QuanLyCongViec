@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { message } from 'antd';
-import type { Task, StatusFilter, PriorityFilter } from '../types/task.types';
+import type { Task, StatusFilter, PriorityFilter, ScopeFilter } from '../types/task.types';
 import type { Category } from '../../categories/types/category.types';
 import type { Team } from '../../teams/types/team.types';
 import { getTasks } from '../api/tasks.api';
@@ -34,7 +34,7 @@ export function useTaskQueries(isAuthenticated: boolean) {
       catId: number | 'ALL' = 'ALL',
       priority: PriorityFilter = 'ALL',
       tId: number | 'ALL' = 'ALL',
-      scope: 'all' | 'created_by_me' | 'assigned_to_me' = 'all',
+      scope: ScopeFilter = 'all',
     ) => {
       if (!isAuthenticated) {
         setTasks([]);

@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import type { StatusFilter, PriorityFilter } from '../types/task.types';
+import type { StatusFilter, PriorityFilter, ScopeFilter } from '../types/task.types';
 
 export interface TaskFilterState {
   searchText: string;
@@ -7,7 +7,7 @@ export interface TaskFilterState {
   categoryFilter: number | 'ALL';
   priorityFilter: PriorityFilter;
   teamFilter: number | 'ALL';
-  scopeFilter: 'all' | 'created_by_me' | 'assigned_to_me';
+  scopeFilter: ScopeFilter;
 }
 
 export function useTaskFilters() {
@@ -16,7 +16,7 @@ export function useTaskFilters() {
   const [categoryFilter, setCategoryFilter] = useState<number | 'ALL'>('ALL');
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('ALL');
   const [teamFilter, setTeamFilter] = useState<number | 'ALL'>('ALL');
-  const [scopeFilter, setScopeFilter] = useState<'all' | 'created_by_me' | 'assigned_to_me'>('all');
+  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all');
 
   const isFiltering = useMemo(
     () =>
