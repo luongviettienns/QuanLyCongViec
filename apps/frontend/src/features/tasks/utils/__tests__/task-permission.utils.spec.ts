@@ -258,4 +258,106 @@ describe('Task Permission Utils', () => {
       assert.equal(canTransitionTask(ownerUser, task, 'TODO', mockTeam), true);
     });
   });
+
+  describe('Task Done & Reopen Permissions Matrix (Section 6 Requirement)', () => {
+    const ownerUser: User = { ...currentUser, id: 100 };
+    const adminUser: User = { ...currentUser, id: 200 };
+    const creatorUser: User = { ...currentUser, id: 10 };
+    const assigneeUser: User = { ...currentUser, id: 300 };
+    const memberUser: User = { ...currentUser, id: 400 };
+
+    const teamWithMember: Team = {
+      ...mockTeam,
+      members: [
+        ...(mockTeam.members || []),
+        {
+          id: 3,
+          teamId: 1,
+          userId: 300,
+          role: 'MEMBER',
+          joinedAt: new Date().toISOString(),
+          user: { id: 300, name: 'Assignee', email: 'assignee@example.com' },
+        },
+        {
+          id: 4,
+          teamId: 1,
+          userId: 400,
+          role: 'MEMBER',
+          joinedAt: new Date().toISOString(),
+          user: { id: 400, name: 'Regular Member', email: 'member@example.com' },
+        },
+      ],
+    };
+
+    it('1. Owner views Task TODO: can edit content, can change assignee, can transition', () => {
+      const task: Task = { id: 1, title: 'T1', userId: 10, assigneeId: 300, teamId: 1, status: 'TODO' };
+      const perms = getTaskPermissions(ownerUser, task, teamWithMember);
+      assert.equal(perms.canEditContent, true);
+      assert.equal(perms.canChangeAssignee, true);
+      assert.equal(perms.canChangeStatus, true);
+      assert.deepEqual(perms.allowedNextStatuses.sort(), ['DONE', 'IN_PROGRESS']);
+    });
+
+    it('2. Owner views Task DONE: cannot edit content (locked), but CAN reopen (allowedNextStatuses has TODO, IN_PROGRESS)', () => {
+      const task: Task = { id: 1, title: 'T1', userId: 10, assigneeId: 300, teamId: 1, status: 'DONE' };
+      const perms = getTaskPermissions(ownerUser, task, teamWithMember);
+      assert.equal(perms.canEditContent, false);
+      assert.equal(perms.canChangeAssignee, false);
+      assert.equal(perms.canChangeStatus, true);
+      const canReopen = perms.allowedNextStatuses.some((s) => s === 'TODO' || s === 'IN_PROGRESS');
+      assert.equal(canReopen, true);
+      assert.deepEqual(perms.allowedNextStatuses.sort(), ['IN_PROGRESS', 'TODO']);
+    });
+
+    it('3. Admin views Task DONE: CAN reopen', () => {
+      const task: Task = { id: 1, title: 'T1', userId: 10, assigneeId: 300, teamId: 1, status: 'DONE' };
+      const perms = getTaskPermissions(adminUser, task, teamWithMember);
+      const canReopen = perms.allowedNextStatuses.some((s) => s === 'TODO' || s === 'IN_PROGRESS');
+      assert.equal(canReopen, true);
+    });
+
+    it('4. Creator (non-admin) views Task DONE: CAN reopen', () => {
+      const task: Task = { id: 1, title: 'T1', userId: 10, assigneeId: 300, teamId: 1, status: 'DONE' };
+      const perms = getTaskPermissions(creatorUser, task, teamWithMember);
+      const canReopen = perms.allowedNextStatuses.some((s) => s === 'TODO' || s === 'IN_PROGRESS');
+      assert.equal(canReopen, true);
+    });
+
+    it('5. Main Assignee views Task TODO: cannot edit content, can only advance to IN_PROGRESS', () => {
+      const task: Task = { id: 1, title: 'T1', userId: 10, assigneeId: 300, teamId: 1, status: 'TODO' };
+      const perms = getTaskPermissions(assigneeUser, task, teamWithMember);
+      assert.equal(perms.canEditContent, false);
+      assert.equal(perms.canChangeAssignee, false);
+      assert.equal(perms.canChangeStatus, true);
+      assert.deepEqual(perms.allowedNextStatuses, ['IN_PROGRESS']);
+    });
+
+    it('6. Main Assignee views Task IN_PROGRESS: cannot edit content, can only advance to DONE', () => {
+      const task: Task = { id: 1, title: 'T1', userId: 10, assigneeId: 300, teamId: 1, status: 'IN_PROGRESS' };
+      const perms = getTaskPermissions(assigneeUser, task, teamWithMember);
+      assert.equal(perms.canEditContent, false);
+      assert.equal(perms.canChangeStatus, true);
+      assert.deepEqual(perms.allowedNextStatuses, ['DONE']);
+    });
+
+    it('7. Main Assignee views Task DONE: CANNOT reopen, allowedNextStatuses is empty', () => {
+      const task: Task = { id: 1, title: 'T1', userId: 10, assigneeId: 300, teamId: 1, status: 'DONE' };
+      const perms = getTaskPermissions(assigneeUser, task, teamWithMember);
+      assert.equal(perms.canEditContent, false);
+      assert.equal(perms.canChangeStatus, false);
+      const canReopen = perms.allowedNextStatuses.some((s) => s === 'TODO' || s === 'IN_PROGRESS');
+      assert.equal(canReopen, false);
+      assert.deepEqual(perms.allowedNextStatuses, []);
+    });
+
+    it('8. Regular Member / Collaborator views Task DONE: CANNOT reopen, read-only mode', () => {
+      const task: Task = { id: 1, title: 'T1', userId: 10, assigneeId: 300, teamId: 1, status: 'DONE' };
+      const perms = getTaskPermissions(memberUser, task, teamWithMember);
+      assert.equal(perms.canEditContent, false);
+      assert.equal(perms.canChangeStatus, false);
+      const canReopen = perms.allowedNextStatuses.some((s) => s === 'TODO' || s === 'IN_PROGRESS');
+      assert.equal(canReopen, false);
+      assert.deepEqual(perms.allowedNextStatuses, []);
+    });
+  });
 });

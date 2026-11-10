@@ -84,21 +84,48 @@ export default function TaskFormModal({
   const canEditContent = !task ? true : (permissions?.canEditContent ?? true);
   const canChangeAssignee = !task ? true : (permissions?.canChangeAssignee ?? true);
   const canChangeStatus = !task ? true : (permissions?.canChangeStatus ?? true);
-  const isAssigneeOnly = Boolean(
-    task &&
-      task.teamId &&
-      permissions?.roles.includes('ASSIGNEE') &&
-      !permissions?.roles.includes('CREATOR') &&
-      !permissions?.roles.includes('ADMIN') &&
-      !permissions?.roles.includes('OWNER'),
-  );
-  const isReopenBlocked = isAssigneeOnly && task?.status === 'DONE';
   const isReadOnly = Boolean(task && !canEditContent && !canChangeStatus);
   const canManage = Boolean(
     permissions?.roles.some((r) =>
       ['OWNER', 'ADMIN', 'CREATOR', 'ASSIGNEE'].includes(r),
     ),
   );
+
+  const isParentDone = task?.status === 'DONE';
+  const canReopenTask = Boolean(
+    isParentDone &&
+      permissions?.allowedNextStatuses.some(
+        (status) => status === 'TODO' || status === 'IN_PROGRESS',
+      ),
+  );
+
+  // Consolidated single alert for task info form according to role and status
+  let alertConfig: { type: 'warning' | 'info'; message: string; description?: string } | null = null;
+  if (task) {
+    if (isParentDone) {
+      if (canReopenTask) {
+        alertConfig = {
+          type: 'warning',
+          message: 'Công việc đã hoàn thành',
+          description:
+            'Bạn có thể chuyển về Cần làm hoặc Đang làm để tiếp tục thực hiện các thao tác được phép.',
+        };
+      } else {
+        alertConfig = {
+          type: 'info',
+          message: 'Công việc này đã hoàn thành. Bạn không có quyền mở lại công việc.',
+        };
+      }
+    } else if (!canEditContent) {
+      if (!canChangeStatus) {
+        alertConfig = {
+          type: 'info',
+          message:
+            'Bạn đang xem thông tin công việc chính ở chế độ chỉ đọc. Bạn không có quyền chỉnh sửa nội dung hoặc thay đổi trạng thái công việc này.',
+        };
+      }
+    }
+  }
 
   async function handleSubmit(values: TaskFormValues) {
     try {
@@ -161,18 +188,11 @@ export default function TaskFormModal({
       onFinish={(values) => void handleSubmit(values)}
       initialValues={{ status: 'TODO', priority: 'MEDIUM' }}
     >
-      {isReadOnly && (
+      {alertConfig && (
         <Alert
-          message="Bạn đang xem công việc này ở chế độ chỉ đọc. Chỉ người tạo, người được giao hoặc quản trị viên mới có thể chỉnh sửa."
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-        />
-      )}
-      {task?.status === 'DONE' && (
-        <Alert
-          message="Công việc này đã hoàn thành. Hãy mở lại trạng thái (Cần làm / Đang làm) nếu bạn cần chỉnh sửa nội dung hoặc thay đổi người thực hiện."
-          type="warning"
+          message={alertConfig.message}
+          description={alertConfig.description}
+          type={alertConfig.type}
           showIcon
           style={{ marginBottom: 16 }}
         />
@@ -280,22 +300,34 @@ export default function TaskFormModal({
       <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', gap: screens.xs ? 0 : 16 }}>
         <Form.Item name="status" label="Trạng thái" style={{ flex: 1 }}>
           <Select
-            disabled={!canChangeStatus || isReopenBlocked}
+            disabled={Boolean(task && !canChangeStatus)}
             options={[
               {
                 value: 'TODO',
                 label: 'TODO',
-                disabled: isAssigneeOnly && task?.status !== 'TODO',
+                disabled: Boolean(
+                  task &&
+                    task.status !== 'TODO' &&
+                    !permissions?.allowedNextStatuses.includes('TODO'),
+                ),
               },
               {
                 value: 'IN_PROGRESS',
                 label: 'IN_PROGRESS',
-                disabled: isAssigneeOnly && task?.status === 'DONE',
+                disabled: Boolean(
+                  task &&
+                    task.status !== 'IN_PROGRESS' &&
+                    !permissions?.allowedNextStatuses.includes('IN_PROGRESS'),
+                ),
               },
               {
                 value: 'DONE',
                 label: 'DONE',
-                disabled: isAssigneeOnly && task?.status === 'TODO',
+                disabled: Boolean(
+                  task &&
+                    task.status !== 'DONE' &&
+                    !permissions?.allowedNextStatuses.includes('DONE'),
+                ),
               },
             ]}
           />

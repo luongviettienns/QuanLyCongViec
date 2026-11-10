@@ -3,7 +3,6 @@ import {
   IsString,
   MinLength,
   MaxLength,
-  IsOptional,
   IsInt,
   Min,
   IsEnum,
@@ -15,7 +14,7 @@ import { TaskStatus } from '@prisma/client';
 
 export class UpdateSubtaskDto {
   @ApiPropertyOptional({ description: 'Tiêu đề công việc con', example: 'Thiết kế API đăng nhập cập nhật' })
-  @IsOptional()
+  @ValidateIf((_obj, val) => val !== undefined)
   @Transform(trimString)
   @IsString({ message: 'Tiêu đề công việc con phải là chuỗi ký tự' })
   @MinLength(2, { message: 'Tiêu đề công việc con phải có ít nhất 2 ký tự' })
@@ -23,22 +22,20 @@ export class UpdateSubtaskDto {
   title?: string;
 
   @ApiPropertyOptional({ description: 'Mô tả chi tiết công việc con' })
-  @IsOptional()
+  @ValidateIf((_obj, val) => val !== undefined && val !== null)
   @Transform(trimString)
-  @ValidateIf((_obj, val) => val !== null)
   @IsString({ message: 'Mô tả công việc con phải là chuỗi ký tự' })
   @MaxLength(1000, { message: 'Mô tả công việc con không được vượt quá 1000 ký tự' })
   description?: string | null;
 
   @ApiPropertyOptional({ description: 'ID người thực hiện công việc con (hoặc null để hủy phân công)' })
-  @IsOptional()
-  @ValidateIf((_obj, val) => val !== null)
+  @ValidateIf((_obj, val) => val !== undefined && val !== null)
   @IsInt({ message: 'Mã người thực hiện (assigneeId) phải là số nguyên' })
   @Min(1, { message: 'Mã người thực hiện (assigneeId) phải là số nguyên dương' })
   assigneeId?: number | null;
 
   @ApiPropertyOptional({ description: 'Trạng thái công việc con', enum: TaskStatus })
-  @IsOptional()
+  @ValidateIf((_obj, val) => val !== undefined)
   @IsEnum(TaskStatus, { message: 'Trạng thái công việc con phải là TODO, IN_PROGRESS hoặc DONE' })
   status?: TaskStatus;
 }

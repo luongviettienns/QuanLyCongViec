@@ -4,9 +4,9 @@ import {
   IsString,
   MinLength,
   MaxLength,
-  IsOptional,
   IsInt,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { trimString } from '../../../common/transformers/trim-string.transformer.js';
@@ -21,15 +21,15 @@ export class CreateSubtaskDto {
   title!: string;
 
   @ApiPropertyOptional({ description: 'Mô tả chi tiết công việc con' })
-  @IsOptional()
+  @ValidateIf((_obj, val) => val !== undefined && val !== null)
   @Transform(trimString)
   @IsString({ message: 'Mô tả công việc con phải là chuỗi ký tự' })
   @MaxLength(1000, { message: 'Mô tả công việc con không được vượt quá 1000 ký tự' })
-  description?: string;
+  description?: string | null;
 
   @ApiPropertyOptional({ description: 'ID người thực hiện công việc con (Main Assignee hoặc Collaborator)' })
-  @IsOptional()
+  @ValidateIf((_obj, val) => val !== undefined && val !== null)
   @IsInt({ message: 'Mã người thực hiện (assigneeId) phải là số nguyên' })
   @Min(1, { message: 'Mã người thực hiện (assigneeId) phải là số nguyên dương' })
-  assigneeId?: number;
+  assigneeId?: number | null;
 }

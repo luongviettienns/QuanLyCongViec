@@ -371,6 +371,93 @@ describe('Task Collaboration & Subtasks P0 (e2e)', () => {
       expect(res.body[0].id).toBe(subtaskId2);
       expect(res.body[1].id).toBe(subtaskId1);
     });
+
+    it('9. Validation hardening: invalid update payload is rejected with 400', async () => {
+      // Empty body
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${teamTaskId}/subtasks/${subtaskId1}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({})
+        .expect(400);
+
+      // Null or empty or invalid title
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${teamTaskId}/subtasks/${subtaskId1}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: null })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${teamTaskId}/subtasks/${subtaskId1}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: '' })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${teamTaskId}/subtasks/${subtaskId1}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: '   ' })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${teamTaskId}/subtasks/${subtaskId1}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 123 })
+        .expect(400);
+
+      // Null or invalid status
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${teamTaskId}/subtasks/${subtaskId1}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ status: null })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${teamTaskId}/subtasks/${subtaskId1}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ status: 'INVALID' })
+        .expect(400);
+
+      // Invalid description
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${teamTaskId}/subtasks/${subtaskId1}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ description: 123 })
+        .expect(400);
+
+      // Invalid assigneeId
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${teamTaskId}/subtasks/${subtaskId1}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ assigneeId: -1 })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${teamTaskId}/subtasks/${subtaskId1}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ assigneeId: '123' })
+        .expect(400);
+    });
+
+    it('10. Valid nullable fields: description: null and assigneeId: null succeed', async () => {
+      // Clear description
+      const resDesc = await request(app.getHttpServer())
+        .patch(`/api/tasks/${teamTaskId}/subtasks/${subtaskId1}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ description: null })
+        .expect(200);
+
+      expect(resDesc.body.description).toBeNull();
+
+      // Unassign
+      const resAssignee = await request(app.getHttpServer())
+        .patch(`/api/tasks/${teamTaskId}/subtasks/${subtaskId1}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ assigneeId: null })
+        .expect(200);
+
+      expect(resAssignee.body.assigneeId).toBeNull();
+    });
   });
 
   describe('P0.2 — Concurrency & Invariants: Parent DONE Rule', () => {
@@ -431,6 +518,44 @@ describe('Task Collaboration & Subtasks P0 (e2e)', () => {
         .patch(`/api/tasks/${teamTaskId}/subtasks/${subtasks.body[0].id}/status`)
         .set('Authorization', `Bearer ${tokenOwner}`)
         .send({ status: 'TODO' })
+        .expect(400);
+    });
+
+    it('4a. While Parent Task is DONE, editing Subtask content is rejected -> 400', async () => {
+      const subtasks = await request(app.getHttpServer())
+        .get(`/api/tasks/${teamTaskId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${teamTaskId}/subtasks/${subtasks.body[0].id}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'New Subtask Title' })
+        .expect(400);
+    });
+
+    it('4b. While Parent Task is DONE, deleting a Subtask is rejected -> 400', async () => {
+      const subtasks = await request(app.getHttpServer())
+        .get(`/api/tasks/${teamTaskId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .delete(`/api/tasks/${teamTaskId}/subtasks/${subtasks.body[0].id}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(400);
+    });
+
+    it('4c. While Parent Task is DONE, reordering Subtasks is rejected -> 400', async () => {
+      const subtasks = await request(app.getHttpServer())
+        .get(`/api/tasks/${teamTaskId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${teamTaskId}/subtasks/reorder`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ subtaskIds: subtasks.body.map((s: any) => s.id) })
         .expect(400);
     });
 

@@ -96,6 +96,15 @@ export class SubtaskService {
     dto: UpdateSubtaskDto,
     callerId: number,
   ) {
+    const hasAnyField =
+      dto.title !== undefined ||
+      dto.description !== undefined ||
+      dto.assigneeId !== undefined ||
+      dto.status !== undefined;
+    if (!hasAnyField) {
+      throw new BadRequestException('Vui lòng cung cấp ít nhất một thông tin cần cập nhật');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT id, status FROM "Task" WHERE id = ${taskId} FOR UPDATE;`;
 
@@ -116,6 +125,13 @@ export class SubtaskService {
         dto.title !== undefined ||
         dto.description !== undefined ||
         dto.assigneeId !== undefined;
+
+      // Invariant: If parent task is DONE, reject any content modification
+      if (isModifyingContent && task.status === TaskStatus.DONE) {
+        throw new BadRequestException(
+          'Không thể chỉnh sửa công việc con khi công việc chính đã hoàn thành. Hãy mở lại công việc chính trước.',
+        );
+      }
 
       if (isModifyingContent && !canManage) {
         throw new ForbiddenException('Bạn không có quyền chỉnh sửa nội dung hoặc người thực hiện của công việc con');
@@ -151,9 +167,18 @@ export class SubtaskService {
         await this.assertValidSubtaskAssignee(tx, taskId, task.assigneeId, dto.assigneeId, task.team);
       }
 
-      const dataToUpdate: any = {};
-      if (dto.title !== undefined) dataToUpdate.title = dto.title.trim();
-      if (dto.description !== undefined) dataToUpdate.description = dto.description?.trim() || null;
+      const dataToUpdate: Record<string, unknown> = {};
+      if (dto.title !== undefined) {
+        const cleanTitle = typeof dto.title === 'string' ? dto.title.trim() : '';
+        if (cleanTitle.length < 2) {
+          throw new BadRequestException('Tiêu đề công việc con phải có ít nhất 2 ký tự');
+        }
+        dataToUpdate.title = cleanTitle;
+      }
+      if (dto.description !== undefined) {
+        dataToUpdate.description =
+          typeof dto.description === 'string' ? dto.description.trim() || null : null;
+      }
       if (dto.status !== undefined) dataToUpdate.status = dto.status;
       if (dto.assigneeId !== undefined) dataToUpdate.assigneeId = dto.assigneeId;
 
@@ -186,6 +211,12 @@ export class SubtaskService {
       await tx.$executeRaw`SELECT id, status FROM "Task" WHERE id = ${taskId} FOR UPDATE;`;
 
       const task = await this.queryService.findOne(taskId, callerId, tx);
+
+      if (task.status === TaskStatus.DONE) {
+        throw new BadRequestException(
+          'Không thể xóa công việc con khi công việc chính đã hoàn thành. Hãy mở lại công việc chính trước.',
+        );
+      }
 
       if (!this.policy.canManageSubtask(callerId, task)) {
         throw new ForbiddenException('Bạn không có quyền xóa công việc con này');
@@ -231,6 +262,12 @@ export class SubtaskService {
       await tx.$executeRaw`SELECT id, status FROM "Task" WHERE id = ${taskId} FOR UPDATE;`;
 
       const task = await this.queryService.findOne(taskId, callerId, tx);
+
+      if (task.status === TaskStatus.DONE) {
+        throw new BadRequestException(
+          'Không thể sắp xếp lại công việc con khi công việc chính đã hoàn thành. Hãy mở lại công việc chính trước.',
+        );
+      }
 
       if (!this.policy.canManageSubtask(callerId, task)) {
         throw new ForbiddenException('Bạn không có quyền sắp xếp công việc con');
