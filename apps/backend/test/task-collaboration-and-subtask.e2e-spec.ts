@@ -595,5 +595,209 @@ describe('Task Collaboration & Subtasks P0 (e2e)', () => {
 
       expect(restoredSubtasks.body.length).toBeGreaterThan(0);
     });
+
+    it('4. Restoring parent task does NOT resurrect subtasks that were individually deleted before the parent task was deleted', async () => {
+      // 1. Create a task with 2 subtasks
+      const tRes = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `Restore Isolation Task ${Date.now()}`, teamId })
+        .expect(201);
+      const testTaskId = tRes.body.id;
+
+      const sub1 = await request(app.getHttpServer())
+        .post(`/api/tasks/${testTaskId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'Subtask To Be Individually Deleted' })
+        .expect(201);
+
+      const sub2 = await request(app.getHttpServer())
+        .post(`/api/tasks/${testTaskId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'Subtask To Survive Cascade Restore' })
+        .expect(201);
+
+      // 2. Individually delete subtask 1
+      await request(app.getHttpServer())
+        .delete(`/api/tasks/${testTaskId}/subtasks/${sub1.body.id}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      // Verify subtask 1 is deleted
+      const checkSubs1 = await request(app.getHttpServer())
+        .get(`/api/tasks/${testTaskId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+      expect(checkSubs1.body.length).toBe(1);
+      expect(checkSubs1.body[0].id).toBe(sub2.body.id);
+
+      // 3. Soft-delete the Parent Task
+      await request(app.getHttpServer())
+        .delete(`/api/tasks/${testTaskId}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      // 4. Restore the Parent Task
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${testTaskId}/restore`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(201);
+
+      // 5. Verify subtask 2 is restored, but subtask 1 is NOT resurrected!
+      const checkSubs2 = await request(app.getHttpServer())
+        .get(`/api/tasks/${testTaskId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      expect(checkSubs2.body.length).toBe(1);
+      expect(checkSubs2.body[0].id).toBe(sub2.body.id);
+
+      const dbSub1 = await prisma.subtask.findUnique({ where: { id: sub1.body.id } });
+      expect(dbSub1!.deletedAt).not.toBeNull();
+      expect(dbSub1!.deletedWithTask).toBe(false);
+    });
+
+    it('5. Moving task to another team revokes collaborators outside new team and unassigns invalid subtask assignees', async () => {
+      // Create Team B with only Owner as member
+      const teamBRes = await request(app.getHttpServer())
+        .post('/api/teams')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ name: `Team B ${Date.now()}` })
+        .expect(201);
+      const teamBId = teamBRes.body.id;
+
+      // Create a task in Team A with assignee and subtask
+      const taskRes = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `Transfer Test Task ${Date.now()}`, teamId, assigneeId })
+        .expect(201);
+      const tId = taskRes.body.id;
+
+      // Add memberId as collaborator in Team A task
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ userId: memberId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/collaborators/respond`)
+        .set('Authorization', `Bearer ${tokenMember}`)
+        .send({ action: 'ACCEPT' })
+        .expect(201);
+
+      // Create subtask assigned to memberId (accepted collab)
+      const subtaskRes = await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'Subtask for member in Team A', assigneeId: memberId })
+        .expect(201);
+
+      // Move task from Team A to Team B (memberId is NOT in Team B)
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/team`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ teamId: teamBId, assigneeId: null })
+        .expect(200);
+
+      // Collaborator memberId should now be REVOKED
+      const collabs = await request(app.getHttpServer())
+        .get(`/api/tasks/${tId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+      const collabRecord = collabs.body.find((c: any) => c.userId === memberId);
+      expect(collabRecord.status).toBe('REVOKED');
+
+      // Subtask assigned to memberId should now be unassigned (assigneeId: null)
+      const subtasks = await request(app.getHttpServer())
+        .get(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+      const sub = subtasks.body.find((s: any) => s.id === subtaskRes.body.id);
+      expect(sub.assigneeId).toBeNull();
+    });
+
+    it('6. Changing main assignee reassigns their subtasks to the new assignee (or unassigns if unassigned)', async () => {
+      // Create a task assigned to Owner
+      const taskRes = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `Handover Subtask Test ${Date.now()}`, teamId, assigneeId: ownerId })
+        .expect(201);
+      const tId = taskRes.body.id;
+
+      // Create a subtask assigned to Owner
+      const subRes = await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'Subtask of Owner', assigneeId: ownerId })
+        .expect(201);
+
+      // Change main assignee from Owner to assigneeId
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/assignee`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ assigneeId })
+        .expect(200);
+
+      // Verify subtask was handed over to the new assignee
+      const subs = await request(app.getHttpServer())
+        .get(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+      const targetSub = subs.body.find((s: any) => s.id === subRes.body.id);
+      expect(targetSub.assigneeId).toBe(assigneeId);
+    });
+
+    it('7. Reordering subtasks fails with 400 if list is incomplete or contains duplicates', async () => {
+      const taskRes = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `Reorder Validation Task ${Date.now()}`, teamId })
+        .expect(201);
+      const tId = taskRes.body.id;
+
+      const s1 = await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'Sub 1' })
+        .expect(201);
+
+      const s2 = await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'Sub 2' })
+        .expect(201);
+
+      const s3 = await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'Sub 3' })
+        .expect(201);
+
+      // Incomplete list: only sends 2 of 3 subtasks
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/subtasks/reorder`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ subtaskIds: [s2.body.id, s1.body.id] })
+        .expect(400);
+
+      // Duplicate IDs
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/subtasks/reorder`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ subtaskIds: [s1.body.id, s1.body.id, s2.body.id] })
+        .expect(400);
+
+      // Valid full reorder: succeeds
+      const reorderRes = await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/subtasks/reorder`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ subtaskIds: [s3.body.id, s1.body.id, s2.body.id] })
+        .expect(200);
+
+      expect(reorderRes.body.map((s: any) => s.id)).toEqual([s3.body.id, s1.body.id, s2.body.id]);
+    });
   });
 });

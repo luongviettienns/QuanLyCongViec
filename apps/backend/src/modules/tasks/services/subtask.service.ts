@@ -201,7 +201,10 @@ export class SubtaskService {
 
       const deletedSubtask = await tx.subtask.update({
         where: { id: subtaskId },
-        data: { deletedAt: new Date() },
+        data: {
+          deletedAt: new Date(),
+          deletedWithTask: false,
+        },
       });
 
       // Reindex remaining active subtasks
@@ -237,6 +240,17 @@ export class SubtaskService {
         where: { taskId, deletedAt: null },
         select: { id: true },
       });
+
+      if (dto.subtaskIds.length !== activeSubtasks.length) {
+        throw new BadRequestException(
+          `Danh sách subtaskIds phải chứa đầy đủ tất cả ${activeSubtasks.length} công việc con đang hoạt động`,
+        );
+      }
+
+      const uniqueDtoIds = new Set(dto.subtaskIds);
+      if (uniqueDtoIds.size !== dto.subtaskIds.length) {
+        throw new BadRequestException('Danh sách subtaskIds không được chứa giá trị trùng lặp');
+      }
 
       const activeIdSet = new Set(activeSubtasks.map((s) => s.id));
       for (const id of dto.subtaskIds) {

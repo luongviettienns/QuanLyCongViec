@@ -473,7 +473,10 @@ export class TaskCrudService {
       // Cascade soft delete all active subtasks
       await tx.subtask.updateMany({
         where: { taskId: id, deletedAt: null },
-        data: { deletedAt: new Date() },
+        data: {
+          deletedAt: new Date(),
+          deletedWithTask: true,
+        },
       });
 
       await this.reorderService.reindexColumn(tx, remainingTasksScope, taskToDelete.status, [id]);
@@ -592,10 +595,13 @@ export class TaskCrudService {
         },
       });
 
-      // Restore associated subtasks
+      // Restore only associated subtasks that were cascade-deleted with the parent task
       await tx.subtask.updateMany({
-        where: { taskId: id },
-        data: { deletedAt: null },
+        where: { taskId: id, deletedWithTask: true },
+        data: {
+          deletedAt: null,
+          deletedWithTask: false,
+        },
       });
 
       return restoredTask;

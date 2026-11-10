@@ -95,6 +95,20 @@ export class TaskAssignmentService {
           });
         }
 
+        // Hand over active subtasks previously assigned to the former main assignee
+        if (previousAssigneeId && previousAssigneeId !== targetAssigneeId) {
+          await tx.subtask.updateMany({
+            where: {
+              taskId: id,
+              assigneeId: previousAssigneeId,
+              deletedAt: null,
+            },
+            data: {
+              assigneeId: targetAssigneeId ?? null,
+            },
+          });
+        }
+
         const updatedTask = await tx.task.update({
           where: { id },
           data: {
@@ -212,6 +226,20 @@ export class TaskAssignmentService {
         },
         tx,
       );
+
+      // Hand over active subtasks previously assigned to the returning assignee
+      if (currentTask.assigneeId) {
+        await tx.subtask.updateMany({
+          where: {
+            taskId: id,
+            assigneeId: currentTask.assigneeId,
+            deletedAt: null,
+          },
+          data: {
+            assigneeId: newAssigneeId ?? null,
+          },
+        });
+      }
 
       return tx.task.update({
         where: { id },

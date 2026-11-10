@@ -13,19 +13,26 @@ import {
   Spin,
   Empty,
   Card,
+  Modal,
+  Tooltip,
 } from 'antd';
 import {
   PlusOutlined,
   DeleteOutlined,
   UserOutlined,
+  EditOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined,
 } from '@ant-design/icons';
 import type { Task, Subtask, TaskStatus } from '../types/task.types';
 import type { User } from '../../auth/types/auth.types';
 import {
   getSubtasks,
   createSubtask,
+  updateSubtask,
   updateSubtaskStatus,
   deleteSubtask,
+  reorderSubtasks,
 } from '../api/tasks.api';
 
 const { Text } = Typography;
@@ -49,6 +56,12 @@ export function TaskSubtasksSection({
   const [newTitle, setNewTitle] = useState('');
   const [newAssigneeId, setNewAssigneeId] = useState<number | undefined>(undefined);
   const [showAddForm, setShowAddForm] = useState(false);
+
+  const [editingSubtask, setEditingSubtask] = useState<Subtask | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editAssigneeId, setEditAssigneeId] = useState<number | undefined>(undefined);
+  const [updating, setUpdating] = useState(false);
 
   const fetchSubtasks = useCallback(async () => {
     try {
@@ -157,6 +170,61 @@ export function TaskSubtasksSection({
     }
   };
 
+  const handleOpenEdit = (subtask: Subtask) => {
+    setEditingSubtask(subtask);
+    setEditTitle(subtask.title);
+    setEditDescription(subtask.description || '');
+    setEditAssigneeId(subtask.assigneeId || undefined);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingSubtask) return;
+    if (!editTitle.trim()) {
+      message.warning('Vui lòng nhập tiêu đề việc con');
+      return;
+    }
+    try {
+      setUpdating(true);
+      await updateSubtask(task.id, editingSubtask.id, {
+        title: editTitle.trim(),
+        description: editDescription.trim() || null,
+        assigneeId: editAssigneeId || null,
+      });
+      message.success('Đã cập nhật công việc con');
+      setEditingSubtask(null);
+      await fetchSubtasks();
+      onChanged?.();
+    } catch (err: any) {
+      message.error(err.message || 'Không thể cập nhật công việc con');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleMove = async (index: number, direction: 'up' | 'down') => {
+    if (direction === 'up' && index === 0) return;
+    if (direction === 'down' && index === subtasks.length - 1) return;
+
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    const next = [...subtasks];
+    const [moved] = next.splice(index, 1);
+    next.splice(targetIndex, 0, moved);
+
+    const prev = [...subtasks];
+    setSubtasks(next);
+
+    try {
+      await reorderSubtasks(
+        task.id,
+        next.map((s) => s.id),
+      );
+      onChanged?.();
+    } catch (err: any) {
+      setSubtasks(prev);
+      message.error(err.message || 'Không thể sắp xếp công việc con');
+    }
+  };
+
   const canUserChangeStatus = (subtask: Subtask) => {
     if (canManage) return true;
     if (!currentUser) return false;
@@ -257,13 +325,46 @@ export function TaskSubtasksSection({
           size="small"
           bordered
           dataSource={subtasks}
-          renderItem={(item) => {
+          renderItem={(item, index) => {
             const canChange = canUserChangeStatus(item) && !isParentDone;
             return (
               <List.Item
                 actions={[
+                  canManage && !isParentDone && subtasks.length > 1 && (
+                    <Tooltip key="up" title="Di chuyển lên">
+                      <Button
+                        size="small"
+                        type="text"
+                        disabled={index === 0}
+                        icon={<ArrowUpOutlined />}
+                        onClick={() => handleMove(index, 'up')}
+                      />
+                    </Tooltip>
+                  ),
+                  canManage && !isParentDone && subtasks.length > 1 && (
+                    <Tooltip key="down" title="Di chuyển xuống">
+                      <Button
+                        size="small"
+                        type="text"
+                        disabled={index === subtasks.length - 1}
+                        icon={<ArrowDownOutlined />}
+                        onClick={() => handleMove(index, 'down')}
+                      />
+                    </Tooltip>
+                  ),
+                  canManage && !isParentDone && (
+                    <Tooltip key="edit" title="Chỉnh sửa việc con">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<EditOutlined />}
+                        onClick={() => handleOpenEdit(item)}
+                      />
+                    </Tooltip>
+                  ),
                   canManage && !isParentDone && (
                     <Popconfirm
+                      key="delete"
                       title="Xóa công việc con này?"
                       onConfirm={() => handleDeleteSubtask(item.id)}
                       okText="Xóa"
@@ -317,6 +418,57 @@ export function TaskSubtasksSection({
           }}
         />
       )}
+
+      <Modal
+        title="Chỉnh sửa công việc con"
+        open={Boolean(editingSubtask)}
+        onOk={handleSaveEdit}
+        onCancel={() => setEditingSubtask(null)}
+        confirmLoading={updating}
+        okText="Lưu"
+        cancelText="Hủy"
+        destroyOnHidden
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>
+              Tiêu đề <span style={{ color: '#ff4d4f' }}>*</span>
+            </label>
+            <Input
+              placeholder="Nhập tiêu đề việc con..."
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              maxLength={255}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>Mô tả</label>
+            <Input.TextArea
+              placeholder="Nhập mô tả chi tiết (tuỳ chọn)..."
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              rows={3}
+              maxLength={1000}
+              showCount
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>
+              Người thực hiện
+            </label>
+            <Select
+              allowClear
+              placeholder="Chọn người thực hiện"
+              style={{ width: '100%' }}
+              options={eligibleAssignees}
+              value={editAssigneeId}
+              onChange={setEditAssigneeId}
+            />
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

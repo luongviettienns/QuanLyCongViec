@@ -79,15 +79,17 @@ export class TaskTransferService {
         const effectiveTeamId = hasTeamId ? (dto.teamId ?? null) : currentTask.teamId;
         const isTeamChanged = effectiveTeamId !== currentTask.teamId;
         let effectiveAssigneeId = hasAssigneeId ? (dto.assigneeId ?? null) : currentTask.assigneeId;
+        let targetTeamMemberIds: number[] = [];
 
         if (effectiveTeamId !== null) {
           const targetTeam = await tx.team.findUnique({
             where: { id: effectiveTeamId },
             include: { members: true },
           });
-          if (!this.policy.isTeamMember(userId, targetTeam)) {
+          if (!targetTeam || !this.policy.isTeamMember(userId, targetTeam)) {
             throw new NotFoundException('Không tìm thấy nhóm');
           }
+          targetTeamMemberIds = targetTeam.members.map((m) => m.userId);
 
           if (hasAssigneeId) {
             if (effectiveAssigneeId && !this.policy.isTeamMember(effectiveAssigneeId, targetTeam)) {
@@ -185,6 +187,64 @@ export class TaskTransferService {
             currentTask.status,
           );
           updateData.position = newPosition;
+
+          // Re-validate or revoke collaborators and subtask assignments across teams
+          if (effectiveTeamId === null) {
+            await tx.taskCollaborator.updateMany({
+              where: {
+                taskId: id,
+                status: { in: ['PENDING', 'ACCEPTED'] },
+              },
+              data: { status: 'REVOKED' },
+            });
+
+            await tx.subtask.updateMany({
+              where: {
+                taskId: id,
+                deletedAt: null,
+                assigneeId: { not: null, notIn: [currentTask.userId] },
+              },
+              data: { assigneeId: null },
+            });
+          } else {
+            await tx.taskCollaborator.updateMany({
+              where: {
+                taskId: id,
+                status: { in: ['PENDING', 'ACCEPTED'] },
+                OR: [
+                  { userId: { notIn: targetTeamMemberIds } },
+                  ...(effectiveAssigneeId ? [{ userId: effectiveAssigneeId }] : []),
+                ],
+              },
+              data: { status: 'REVOKED' },
+            });
+
+            const validCollabs = await tx.taskCollaborator.findMany({
+              where: {
+                taskId: id,
+                status: 'ACCEPTED',
+                userId: { in: targetTeamMemberIds },
+              },
+              select: { userId: true },
+            });
+
+            const eligibleSubtaskAssignees = [
+              ...(effectiveAssigneeId ? [effectiveAssigneeId] : []),
+              ...validCollabs.map((c) => c.userId),
+            ];
+
+            await tx.subtask.updateMany({
+              where: {
+                taskId: id,
+                deletedAt: null,
+                assigneeId: {
+                  not: null,
+                  notIn: eligibleSubtaskAssignees.length > 0 ? eligibleSubtaskAssignees : [-1],
+                },
+              },
+              data: { assigneeId: null },
+            });
+          }
         }
 
         const updatedTask = await tx.task.update({
