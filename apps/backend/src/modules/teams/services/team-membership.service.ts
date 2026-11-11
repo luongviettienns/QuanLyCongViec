@@ -24,48 +24,54 @@ export class TeamMembershipService {
   ) {}
 
   async addMember(userId: number, teamId: number, dto: AddMemberDto) {
-    const team = await this.prisma.team.findUnique({
-      where: { id: teamId },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Khóa dòng Team trong transaction để tuần tự hóa và chống race condition
+      const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
+        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR UPDATE
+      `;
 
-    if (!team) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
+      if (!lockedTeams || lockedTeams.length === 0) {
+        throw new NotFoundException('Không tìm thấy nhóm');
+      }
+      const team = lockedTeams[0];
 
-    const caller = await this.prisma.teamMember.findUnique({
-      where: {
-        teamId_userId: { teamId, userId },
-      },
-    });
+      // 2. Đọc membership của caller ngay trong transaction đã khóa
+      const caller = await tx.teamMember.findUnique({
+        where: {
+          teamId_userId: { teamId, userId },
+        },
+      });
 
-    const { isOwner, callerRole } = this.policy.resolveCallerContext(
-      team.ownerId,
-      caller,
-      userId,
-    );
+      // 3. Xác thực quyền ngay trong transaction
+      const { isOwner, callerRole } = this.policy.resolveCallerContext(
+        team.ownerId,
+        caller,
+        userId,
+      );
 
-    this.policy.assertCanAddMember(isOwner, callerRole, dto.role);
+      this.policy.assertCanAddMember(isOwner, callerRole, dto.role);
 
-    const targetEmail = dto.email.trim().toLowerCase();
-    const targetUser = await this.prisma.user.findUnique({
-      where: { email: targetEmail },
-    });
+      // 4. Kiểm tra tài khoản đích
+      const targetEmail = dto.email.trim().toLowerCase();
+      const targetUser = await tx.user.findUnique({
+        where: { email: targetEmail },
+      });
 
-    if (!targetUser) {
-      throw new NotFoundException('Không tìm thấy tài khoản người dùng với email này');
-    }
+      if (!targetUser) {
+        throw new NotFoundException('Không tìm thấy tài khoản người dùng với email này');
+      }
 
-    const existingMember = await this.prisma.teamMember.findUnique({
-      where: {
-        teamId_userId: { teamId, userId: targetUser.id },
-      },
-    });
+      const existingMember = await tx.teamMember.findUnique({
+        where: {
+          teamId_userId: { teamId, userId: targetUser.id },
+        },
+      });
 
-    if (existingMember || team.ownerId === targetUser.id) {
-      throw new BadRequestException('Người dùng này đã là thành viên trong nhóm');
-    }
+      if (existingMember || team.ownerId === targetUser.id) {
+        throw new BadRequestException('Người dùng này đã là thành viên trong nhóm');
+      }
 
-    const member = await this.prisma.$transaction(async (tx) => {
+      // 5. Tạo thành viên mới
       const createdMember = await tx.teamMember.create({
         data: {
           teamId,
@@ -79,6 +85,7 @@ export class TeamMembershipService {
         },
       });
 
+      // 6. Ghi nhật ký hoạt động trong cùng transaction
       await tx.teamActivityLog.create({
         data: {
           teamIdSnapshot: team.id,
@@ -91,19 +98,21 @@ export class TeamMembershipService {
         },
       });
 
+      // 7. Tạo Notification nguyên tử trong cùng transaction (SSE tự động gửi post-commit)
+      await this.notificationEventService.publish(
+        {
+          type: 'TEAM_MEMBER_ADDED',
+          actorId: userId,
+          teamId,
+          teamName: team.name,
+          newMemberId: targetUser.id,
+          role: createdMember.role,
+        },
+        tx,
+      );
+
       return createdMember;
     });
-
-    await this.notificationEventService.publish({
-      type: 'TEAM_MEMBER_ADDED',
-      actorId: userId,
-      teamId,
-      teamName: team.name,
-      newMemberId: targetUser.id,
-      role: member.role,
-    });
-
-    return member;
   }
 
   async updateMemberRole(
@@ -112,38 +121,44 @@ export class TeamMembershipService {
     memberId: number,
     dto: UpdateMemberRoleDto,
   ) {
-    const team = await this.prisma.team.findUnique({
-      where: { id: teamId },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Khóa dòng Team trong transaction
+      const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
+        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR UPDATE
+      `;
 
-    if (!team) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
+      if (!lockedTeams || lockedTeams.length === 0) {
+        throw new NotFoundException('Không tìm thấy nhóm');
+      }
+      const team = lockedTeams[0];
 
-    const caller = await this.prisma.teamMember.findUnique({
-      where: {
-        teamId_userId: { teamId, userId },
-      },
-    });
+      // 2. Đọc caller membership trong transaction đã khóa
+      const caller = await tx.teamMember.findUnique({
+        where: {
+          teamId_userId: { teamId, userId },
+        },
+      });
 
-    const { isOwner } = this.policy.resolveCallerContext(team.ownerId, caller, userId);
+      const { isOwner } = this.policy.resolveCallerContext(team.ownerId, caller, userId);
 
-    const targetMember = await this.prisma.teamMember.findUnique({
-      where: { id: memberId },
-    });
+      // 3. Đọc target member trong transaction
+      const targetMember = await tx.teamMember.findUnique({
+        where: { id: memberId },
+      });
 
-    if (!targetMember || targetMember.teamId !== teamId) {
-      throw new NotFoundException('Không tìm thấy thành viên trong nhóm này');
-    }
+      if (!targetMember || targetMember.teamId !== teamId) {
+        throw new NotFoundException('Không tìm thấy thành viên trong nhóm này');
+      }
 
-    this.policy.assertCanUpdateMemberRole(
-      isOwner,
-      targetMember.userId,
-      team.ownerId,
-      userId,
-    );
+      // 4. Xác thực quyền trong transaction
+      this.policy.assertCanUpdateMemberRole(
+        isOwner,
+        targetMember.userId,
+        team.ownerId,
+        userId,
+      );
 
-    const updated = await this.prisma.$transaction(async (tx) => {
+      // 5. Cập nhật role
       const res = await tx.teamMember.update({
         where: { id: memberId },
         data: {
@@ -156,6 +171,7 @@ export class TeamMembershipService {
         },
       });
 
+      // 6. Ghi nhật ký trong transaction
       await tx.teamActivityLog.create({
         data: {
           teamIdSnapshot: team.id,
@@ -169,51 +185,58 @@ export class TeamMembershipService {
         },
       });
 
+      // 7. Tạo Notification nguyên tử trong cùng transaction (SSE tự động gửi post-commit)
+      await this.notificationEventService.publish(
+        {
+          type: 'TEAM_ROLE_CHANGED',
+          actorId: userId,
+          teamId,
+          teamName: team.name,
+          targetUserId: targetMember.userId,
+          newRole: dto.role,
+        },
+        tx,
+      );
+
       return res;
     });
-
-    await this.notificationEventService.publish({
-      type: 'TEAM_ROLE_CHANGED',
-      actorId: userId,
-      teamId,
-      teamName: team.name,
-      targetUserId: targetMember.userId,
-      newRole: dto.role,
-    });
-
-    return updated;
   }
 
   async transferOwnership(userId: number, teamId: number, dto: TransferOwnershipDto) {
-    const team = await this.prisma.team.findUnique({
-      where: { id: teamId },
-    });
-
-    if (!team) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
-
-    const caller = await this.prisma.teamMember.findUnique({
-      where: {
-        teamId_userId: { teamId, userId },
-      },
-    });
-
-    const { isOwner } = this.policy.resolveCallerContext(team.ownerId, caller, userId);
-
-    this.policy.assertCanTransferOwnership(isOwner, userId, dto.newOwnerId);
-
-    const targetMember = await this.prisma.teamMember.findUnique({
-      where: {
-        teamId_userId: { teamId, userId: dto.newOwnerId },
-      },
-    });
-
-    if (!targetMember) {
-      throw new BadRequestException('Người nhận quyền sở hữu phải là thành viên trong nhóm');
-    }
-
     return this.prisma.$transaction(async (tx) => {
+      // 1. Khóa dòng Team trong transaction để tuần tự hóa chuyển quyền
+      const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
+        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR UPDATE
+      `;
+
+      if (!lockedTeams || lockedTeams.length === 0) {
+        throw new NotFoundException('Không tìm thấy nhóm');
+      }
+      const team = lockedTeams[0];
+
+      // 2. Đọc caller membership ngay trong transaction đã khóa
+      const caller = await tx.teamMember.findUnique({
+        where: {
+          teamId_userId: { teamId, userId },
+        },
+      });
+
+      // 3. Xác thực quyền Owner ngay tại thời điểm đã khóa
+      const { isOwner } = this.policy.resolveCallerContext(team.ownerId, caller, userId);
+      this.policy.assertCanTransferOwnership(isOwner, userId, dto.newOwnerId);
+
+      // 4. Kiểm tra target member trong transaction
+      const targetMember = await tx.teamMember.findUnique({
+        where: {
+          teamId_userId: { teamId, userId: dto.newOwnerId },
+        },
+      });
+
+      if (!targetMember) {
+        throw new BadRequestException('Người nhận quyền sở hữu phải là thành viên trong nhóm');
+      }
+
+      // 5. Cập nhật quyền sở hữu và role
       await tx.team.update({
         where: { id: teamId },
         data: { ownerId: dto.newOwnerId },
@@ -289,49 +312,58 @@ export class TeamMembershipService {
   }
 
   async removeMember(userId: number, teamId: number, memberId: number) {
-    const team = await this.prisma.team.findUnique({
-      where: { id: teamId },
-    });
-
-    if (!team) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
-
-    const targetMember = await this.prisma.teamMember.findUnique({
-      where: { id: memberId },
-    });
-
-    if (!targetMember || targetMember.teamId !== teamId) {
-      throw new NotFoundException('Không tìm thấy thành viên trong nhóm này');
-    }
-
-    const caller = await this.prisma.teamMember.findUnique({
-      where: {
-        teamId_userId: { teamId, userId },
-      },
-    });
-
-    const { isOwner, callerRole } = this.policy.resolveCallerContext(
-      team.ownerId,
-      caller,
-      userId,
-    );
-
-    const { isSelfLeaving } = this.policy.assertCanRemoveMember(
-      isOwner,
-      callerRole,
-      targetMember.userId,
-      targetMember.role,
-      team.ownerId,
-      userId,
-    );
-
     const updatedTasks: Array<{ id: number; title: string }> = [];
     const affectedSubtasks: Array<{ id: number; taskId: number }> = [];
     const revokedCollabTaskIds: number[] = [];
+    let isSelfLeaving = false;
+    let targetMemberUserId = 0;
 
     await this.prisma.$transaction(async (tx) => {
-      // 1. Khóa phân tán scope Board của nhóm để đồng bộ hóa cập nhật vị trí
+      // 1. Khóa dòng Team trong transaction để tuần tự hóa xóa thành viên
+      const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
+        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR UPDATE
+      `;
+
+      if (!lockedTeams || lockedTeams.length === 0) {
+        throw new NotFoundException('Không tìm thấy nhóm');
+      }
+      const team = lockedTeams[0];
+
+      // 2. Đọc target member trong transaction
+      const targetMember = await tx.teamMember.findUnique({
+        where: { id: memberId },
+      });
+
+      if (!targetMember || targetMember.teamId !== teamId) {
+        throw new NotFoundException('Không tìm thấy thành viên trong nhóm này');
+      }
+      targetMemberUserId = targetMember.userId;
+
+      // 3. Đọc caller membership trong transaction đã khóa
+      const caller = await tx.teamMember.findUnique({
+        where: {
+          teamId_userId: { teamId, userId },
+        },
+      });
+
+      // 4. Xác thực quyền trong transaction
+      const { isOwner, callerRole } = this.policy.resolveCallerContext(
+        team.ownerId,
+        caller,
+        userId,
+      );
+
+      const removalResult = this.policy.assertCanRemoveMember(
+        isOwner,
+        callerRole,
+        targetMember.userId,
+        targetMember.role,
+        team.ownerId,
+        userId,
+      );
+      isSelfLeaving = removalResult.isSelfLeaving;
+
+      // 5. Khóa phân tán scope Board của nhóm để đồng bộ hóa cập nhật vị trí
       await this.taskReorderService.lockScope(tx, { teamId, userId });
 
       // 2. Tìm các công việc ĐANG HOẠT ĐỘNG (chưa DONE, chưa xóa) mà thành viên rời nhóm đang phụ trách
@@ -520,7 +552,7 @@ export class TeamMembershipService {
         payload: {
           taskId: collabTaskId,
           action: isSelfLeaving ? 'LEAVE' : 'REMOVE',
-          userId: targetMember.userId,
+          userId: targetMemberUserId,
           status: 'REVOKED',
         },
       });

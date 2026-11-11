@@ -5,7 +5,6 @@ import { App } from 'supertest/types.js';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/database/prisma.service.js';
 import { configureTestApp } from './test-app.helper.js';
-import { TaskStatus, TeamRole } from '@prisma/client';
 
 describe('P0 & P1: Team Delete Protection & Activity Log Audit (e2e)', () => {
   let app: INestApplication<App>;
@@ -536,6 +535,67 @@ describe('P0 & P1: Team Delete Protection & Activity Log Audit (e2e)', () => {
       expect(transferLog.action).toBe('TRANSFER_OWNER');
       expect(transferLog.actorId).toBe(ownerId);
       expect(transferLog.targetUserId).toBe(adminId);
+    });
+
+    it('P1-Concurrency: Khóa Team và kiểm tra quyền trong transaction chặn thao tác đồng thời dựa trên quyền cũ', async () => {
+      // Create new team where Owner A will concurrently transfer ownership to Member and Admin
+      const concTeam = await createTeam(`ConcurrentTeam_${ts}`);
+
+      // Add Admin and Member to concTeam
+      await request(app.getHttpServer())
+        .post(`/api/teams/${concTeam.id}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p01_admin_${ts}@test.local`, role: 'ADMIN' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/teams/${concTeam.id}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p01_member_${ts}@test.local`, role: 'MEMBER' })
+        .expect(201);
+
+      // Concurrently fire two transferOwnership requests from Owner A: one to adminId, one to memberId
+      const [res1, res2] = await Promise.all([
+        request(app.getHttpServer())
+          .patch(`/api/teams/${concTeam.id}/transfer-ownership`)
+          .set('Authorization', `Bearer ${tokenOwner}`)
+          .send({ newOwnerId: adminId }),
+        request(app.getHttpServer())
+          .patch(`/api/teams/${concTeam.id}/transfer-ownership`)
+          .set('Authorization', `Bearer ${tokenOwner}`)
+          .send({ newOwnerId: memberId }),
+      ]);
+
+      const statuses = [res1.status, res2.status].sort();
+      // Exactly one must succeed (200) and the second must be rejected (403 Forbidden)
+      expect(statuses).toEqual([200, 403]);
+
+      // Verify the final owner in DB is consistent
+      const finalTeam = await prisma.team.findUnique({ where: { id: concTeam.id } });
+      expect([adminId, memberId]).toContain(finalTeam?.ownerId);
+      expect(finalTeam?.ownerId).not.toBe(ownerId);
+    });
+
+    it('P1-Atomicity: Notification được tạo nguyên tử trong cùng transaction với addMember và updateMemberRole', async () => {
+      const atomTeam = await createTeam(`AtomicityTeam_${ts}`);
+
+      // Add outsider to atomTeam
+      await request(app.getHttpServer())
+        .post(`/api/teams/${atomTeam.id}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p01_outsider_${ts}@test.local`, role: 'MEMBER' })
+        .expect(201);
+
+      // Verify notification for outsider exists in DB with atomTeam.id
+      const notifOutsider = await prisma.notification.findFirst({
+        where: {
+          userId: outsiderId,
+          type: 'TEAM_MEMBER_ADDED',
+          teamId: atomTeam.id,
+        },
+      });
+      expect(notifOutsider).not.toBeNull();
+      expect(notifOutsider?.actorId).toBe(ownerId);
     });
   });
 });
