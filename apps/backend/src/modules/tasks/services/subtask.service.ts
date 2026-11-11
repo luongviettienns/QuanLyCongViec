@@ -40,6 +40,9 @@ export class SubtaskService {
         createdBy: {
           select: { id: true, name: true, email: true },
         },
+        completedBy: {
+          select: { id: true, name: true, email: true },
+        },
       },
       orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
     });
@@ -89,6 +92,9 @@ export class SubtaskService {
             select: { id: true, name: true, email: true },
           },
           createdBy: {
+            select: { id: true, name: true, email: true },
+          },
+          completedBy: {
             select: { id: true, name: true, email: true },
           },
         },
@@ -249,7 +255,16 @@ export class SubtaskService {
         dataToUpdate.description =
           typeof dto.description === 'string' ? dto.description.trim() || null : null;
       }
-      if (dto.status !== undefined) dataToUpdate.status = dto.status;
+      if (dto.status !== undefined) {
+        dataToUpdate.status = dto.status;
+        if (dto.status === TaskStatus.DONE && subtask.status !== TaskStatus.DONE) {
+          dataToUpdate.completedById = callerId;
+          dataToUpdate.completedAt = new Date();
+        } else if (dto.status !== TaskStatus.DONE && subtask.status === TaskStatus.DONE) {
+          dataToUpdate.completedById = null;
+          dataToUpdate.completedAt = null;
+        }
+      }
       if (dto.assigneeId !== undefined) dataToUpdate.assigneeId = dto.assigneeId;
 
       const updated = await tx.subtask.update({
@@ -260,6 +275,9 @@ export class SubtaskService {
             select: { id: true, name: true, email: true },
           },
           createdBy: {
+            select: { id: true, name: true, email: true },
+          },
+          completedBy: {
             select: { id: true, name: true, email: true },
           },
         },
@@ -439,6 +457,9 @@ export class SubtaskService {
             select: { id: true, name: true, email: true },
           },
           createdBy: {
+            select: { id: true, name: true, email: true },
+          },
+          completedBy: {
             select: { id: true, name: true, email: true },
           },
         },

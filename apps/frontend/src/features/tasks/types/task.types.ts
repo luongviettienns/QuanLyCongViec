@@ -29,10 +29,13 @@ export interface Subtask {
   position: number;
   assigneeId?: number | null;
   createdById: number;
+  completedById?: number | null;
+  completedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   assignee?: { id: number; name: string; email: string } | null;
   createdBy?: { id: number; name: string; email: string };
+  completedBy?: { id: number; name: string; email: string } | null;
 }
 
 export type StatusFilter = 'ALL' | TaskStatus;

@@ -23,6 +23,7 @@ import {
   EditOutlined,
   ArrowUpOutlined,
   ArrowDownOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import type { Task, Subtask, TaskStatus } from '../types/task.types';
 import type { User } from '../../auth/types/auth.types';
@@ -466,6 +467,29 @@ export function TaskSubtasksSection({
                         <Tag icon={<UserOutlined />} color="purple" style={{ fontSize: 11, margin: 0 }}>
                           {item.assignee.name}
                         </Tag>
+                      )}
+                      {item.status === 'DONE' && item.completedBy && (
+                        <Tooltip
+                          title={`Hoàn thành bởi: ${item.completedBy.name}${
+                            item.completedAt
+                              ? ` lúc ${new Date(item.completedAt).toLocaleString('vi-VN', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                })}`
+                              : ''
+                          }`}
+                        >
+                          <Tag
+                            icon={<CheckCircleOutlined />}
+                            color="green"
+                            style={{ fontSize: 11, margin: 0, cursor: 'help' }}
+                          >
+                            Hoàn thành bởi {item.completedBy.name}
+                          </Tag>
+                        </Tooltip>
                       )}
                     </div>
                     {item.description && (

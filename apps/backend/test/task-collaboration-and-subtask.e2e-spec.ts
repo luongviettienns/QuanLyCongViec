@@ -1032,13 +1032,124 @@ describe('Task Collaboration & Subtasks P0 (e2e)', () => {
       const dbSub4AfterRevoke = await prisma.subtask.findUnique({ where: { id: sub4.body.id } });
       const dbSub5AfterRevoke = await prisma.subtask.findUnique({ where: { id: sub5.body.id } });
 
-      // Historical completed subtask keeps assignee
+      // Historical completed subtask keeps assignee and completion audit record
       expect(dbSub4AfterRevoke?.status).toBe('DONE');
       expect(dbSub4AfterRevoke?.assigneeId).toBe(collabId);
+      expect(dbSub4AfterRevoke?.completedById).toBe(collabId);
+      expect(dbSub4AfterRevoke?.completedAt).not.toBeNull();
 
       // Unfinished subtask is unassigned
       expect(dbSub5AfterRevoke?.status).toBe('TODO');
       expect(dbSub5AfterRevoke?.assigneeId).toBeNull();
+    });
+
+    it('6c. Distinguishes assigneeId (person assigned) from completedById (person who marked DONE), and resets on reopen', async () => {
+      // Create an isolated team
+      const teamRes = await request(app.getHttpServer())
+        .post('/api/teams')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ name: `Isolation Team 6c ${Date.now()}` })
+        .expect(201);
+      const isoTeamId = teamRes.body.id;
+
+      await request(app.getHttpServer())
+        .post(`/api/teams/${isoTeamId}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p0_assignee_${ts}@test.local`, role: 'MEMBER' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/teams/${isoTeamId}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p0_collab_${ts}@test.local`, role: 'MEMBER' })
+        .expect(201);
+
+      // Create task assigned to Main Assignee
+      const taskRes = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `Audit Completion Task ${Date.now()}`, teamId: isoTeamId, assigneeId })
+        .expect(201);
+      const tId = taskRes.body.id;
+
+      // Add collabId as accepted collaborator
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ userId: collabId })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/collaborators/respond`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ action: 'ACCEPT' })
+        .expect(201);
+
+      // Create subtask assigned to Collab
+      const subRes = await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ title: 'Subtask for Collab to be closed by Manager', assigneeId: collabId })
+        .expect(201);
+      const subId = subRes.body.id;
+
+      // 1. Advance to IN_PROGRESS by Main Assignee
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/subtasks/${subId}/status`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'IN_PROGRESS' })
+        .expect(200);
+
+      // 2. Main Assignee marks subtask as DONE (Manager closes on behalf of Collaborator)
+      const doneByManager = await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/subtasks/${subId}/status`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'DONE' })
+        .expect(200);
+
+      // Verify response body: assignee is Collab, but completedBy is Main Assignee!
+      expect(doneByManager.body.status).toBe('DONE');
+      expect(doneByManager.body.assigneeId).toBe(collabId);
+      expect(doneByManager.body.assignee?.id).toBe(collabId);
+      expect(doneByManager.body.completedById).toBe(assigneeId);
+      expect(doneByManager.body.completedBy?.id).toBe(assigneeId);
+      expect(doneByManager.body.completedAt).toBeDefined();
+
+      // Verify in DB directly
+      const dbSubDone = await prisma.subtask.findUnique({ where: { id: subId } });
+      expect(dbSubDone?.assigneeId).toBe(collabId);
+      expect(dbSubDone?.completedById).toBe(assigneeId);
+      expect(dbSubDone?.completedAt).not.toBeNull();
+
+      // 3. Manager reopens subtask to IN_PROGRESS -> completedById and completedAt are reset to null
+      const reopened = await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/subtasks/${subId}/status`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'IN_PROGRESS' })
+        .expect(200);
+
+      expect(reopened.body.status).toBe('IN_PROGRESS');
+      expect(reopened.body.assigneeId).toBe(collabId);
+      expect(reopened.body.completedById).toBeNull();
+      expect(reopened.body.completedBy).toBeNull();
+      expect(reopened.body.completedAt).toBeNull();
+
+      const dbSubReopened = await prisma.subtask.findUnique({ where: { id: subId } });
+      expect(dbSubReopened?.completedById).toBeNull();
+      expect(dbSubReopened?.completedAt).toBeNull();
+
+      // 4. Now Collaborator themselves marks it as DONE
+      const doneByCollab = await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/subtasks/${subId}/status`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ status: 'DONE' })
+        .expect(200);
+
+      // Both assigneeId and completedById now reflect the Collaborator
+      expect(doneByCollab.body.status).toBe('DONE');
+      expect(doneByCollab.body.assigneeId).toBe(collabId);
+      expect(doneByCollab.body.completedById).toBe(collabId);
+      expect(doneByCollab.body.completedBy?.id).toBe(collabId);
+      expect(doneByCollab.body.completedAt).toBeDefined();
     });
 
     it('7. Reordering subtasks fails with 400 if list is incomplete or contains duplicates', async () => {

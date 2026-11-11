@@ -209,6 +209,9 @@ export class TaskQueryService {
             createdBy: {
               select: { id: true, name: true, email: true },
             },
+            completedBy: {
+              select: { id: true, name: true, email: true },
+            },
           },
           orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
         },
