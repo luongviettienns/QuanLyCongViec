@@ -832,5 +832,83 @@ describe('P0 & P1: Team Delete Protection & Activity Log Audit (e2e)', () => {
 
       emitSpy.mockRestore();
     });
+
+    it('P1-TaskUnassigned-Cycle: Xóa thành viên có task, thêm lại, giao lại rồi xóa lần hai không làm nuốt thông báo TASK_UNASSIGNED thứ hai', async () => {
+      const taskTeam = await createTeam(`TaskUnassignTeam_${ts}`);
+
+      // 1. Add member to team
+      const memberRes = await request(app.getHttpServer())
+        .post(`/api/teams/${taskTeam.id}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p01_member_${ts}@test.local`, role: 'MEMBER' })
+        .expect(201);
+      const membershipId1 = memberRes.body.id;
+
+      // 2. Create task assigned to member
+      const taskRes = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `Task for Member ${ts}`,
+          teamId: taskTeam.id,
+          assigneeId: memberId,
+        })
+        .expect(201);
+      const taskId = taskRes.body.id;
+
+      // 3. Owner removes member from team -> TASK_UNASSIGNED #1 created with timestamp
+      await request(app.getHttpServer())
+        .delete(`/api/teams/${taskTeam.id}/members/${membershipId1}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      // Verify task in DB has assigneeId: null
+      const taskAfterFirstRemoval = await prisma.task.findUnique({ where: { id: taskId } });
+      expect(taskAfterFirstRemoval?.assigneeId).toBeNull();
+
+      // Wait a few ms so updatedAt changes
+      await new Promise((resolve) => setTimeout(resolve, 15));
+
+      // 4. Owner adds member back to team
+      const memberRes2 = await request(app.getHttpServer())
+        .post(`/api/teams/${taskTeam.id}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p01_member_${ts}@test.local`, role: 'MEMBER' })
+        .expect(201);
+      const membershipId2 = memberRes2.body.id;
+
+      // 5. Re-assign task to member
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${taskId}/assignee`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ assigneeId: memberId })
+        .expect(200);
+
+      // Wait a few ms so next updatedAt changes
+      await new Promise((resolve) => setTimeout(resolve, 15));
+
+      // 6. Owner removes member from team AGAIN -> TASK_UNASSIGNED #2 must NOT be skipped!
+      await request(app.getHttpServer())
+        .delete(`/api/teams/${taskTeam.id}/members/${membershipId2}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      // Query TASK_UNASSIGNED notifications for member
+      const unassignedNotifs = await prisma.notification.findMany({
+        where: {
+          taskId,
+          userId: memberId,
+          type: 'TASK_UNASSIGNED',
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      // Both notifications must exist!
+      expect(unassignedNotifs).toHaveLength(2);
+      expect(unassignedNotifs[0].eventKey).not.toBe(unassignedNotifs[1].eventKey);
+      // Both eventKeys must include timestamp from updatedAt
+      expect(unassignedNotifs[0].eventKey).toMatch(/TASK_UNASSIGNED:\d+:\d+:\d+:\d+/);
+      expect(unassignedNotifs[1].eventKey).toMatch(/TASK_UNASSIGNED:\d+:\d+:\d+:\d+/);
+    });
   });
 });

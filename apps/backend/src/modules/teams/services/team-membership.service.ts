@@ -406,7 +406,7 @@ export class TeamMembershipService {
           );
         }
 
-        await tx.task.update({
+        const updatedTask = await tx.task.update({
           where: { id: t.id },
           data: {
             assigneeId: null,
@@ -425,6 +425,7 @@ export class TeamMembershipService {
             taskTitle: t.title,
             previousAssigneeId: targetMember.userId,
             teamId,
+            timestamp: updatedTask.updatedAt.getTime(),
           },
           tx,
         );
