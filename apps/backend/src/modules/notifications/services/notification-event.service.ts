@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService, POST_COMMIT_HOOKS } from '../../../database/prisma.service.js';
-import { Prisma } from '@prisma/client';
+import { Prisma, NotificationType } from '@prisma/client';
 import { NotificationRecipientService } from './notification-recipient.service.js';
 import { renderNotificationTemplate } from '../templates/notification-template.js';
 import type { DomainNotificationEvent } from '../types/notification-event.types.js';
@@ -55,7 +55,7 @@ export class NotificationEventService {
       // 3. Render template
       const { title, content } = renderNotificationTemplate(event, actorName);
 
-      // 4. Determine entity links safely against concurrent task deletion
+      // 4. Determine entity links safely against concurrent task/subtask deletion
       let validTaskId = 'taskId' in event ? event.taskId : null;
       if (validTaskId && tx.task?.findUnique) {
         const taskExists = await tx.task.findUnique({
@@ -66,59 +66,34 @@ export class NotificationEventService {
           validTaskId = null;
         }
       }
-      const teamId = 'teamId' in event ? event.teamId : null;
+
+      const rawSubtaskId =
+        'subtaskId' in event && typeof event.subtaskId === 'number' && event.subtaskId > 0
+          ? event.subtaskId
+          : null;
+      let validSubtaskId = rawSubtaskId;
+      if (validSubtaskId && tx.subtask?.findUnique) {
+        const subtaskExists = await tx.subtask.findUnique({
+          where: { id: validSubtaskId },
+          select: { id: true },
+        });
+        if (!subtaskExists) {
+          validSubtaskId = null;
+        }
+      }
+
+      const teamId =
+        'teamId' in event && typeof event.teamId === 'number' ? event.teamId : null;
 
       // 5. Prepare notification records for all recipients with deterministic, idempotent eventKey
       const notificationsData = recipientIds.map((recipientId) => {
-        let eventKey: string;
-        switch (event.type) {
-          case 'TASK_DEADLINE_SOON':
-          case 'TASK_OVERDUE':
-            eventKey = `${event.type}:${recipientId}:${validTaskId}:${event.dueDate}`;
-            break;
-          case 'TASK_COLLABORATOR_INVITED': {
-            const timeTag = event.invitedAt
-              ? new Date(event.invitedAt).toISOString()
-              : event.timestamp
-                ? Math.floor(event.timestamp / 10000)
-                : '';
-            eventKey = `${event.type}:${recipientId}:${validTaskId}:${event.invitedUserId}:${timeTag}`;
-            break;
-          }
-          case 'TASK_COLLABORATOR_ACCEPTED':
-          case 'TASK_COLLABORATOR_DECLINED': {
-            const timeTag = event.respondedAt
-              ? new Date(event.respondedAt).toISOString()
-              : event.timestamp
-                ? Math.floor(event.timestamp / 10000)
-                : '';
-            eventKey = `${event.type}:${recipientId}:${validTaskId}:${event.actorId}:${timeTag}`;
-            break;
-          }
-          case 'TASK_COLLABORATOR_REMOVED': {
-            const timeTag = event.removedAt
-              ? new Date(event.removedAt).toISOString()
-              : event.timestamp
-                ? Math.floor(event.timestamp / 10000)
-                : '';
-            eventKey = `${event.type}:${recipientId}:${validTaskId}:${event.removedUserId}:${timeTag}`;
-            break;
-          }
-          case 'SUBTASK_ASSIGNED': {
-            const timeTag = event.assignedAt
-              ? new Date(event.assignedAt).toISOString()
-              : event.timestamp
-                ? Math.floor(event.timestamp / 10000)
-                : '';
-            eventKey = `${event.type}:${recipientId}:${validTaskId}:${event.subtaskId}:${event.subtaskAssigneeId}:${timeTag}`;
-            break;
-          }
-          default: {
-            const eventTimestamp = event.timestamp || Date.now();
-            eventKey = `${event.type}:${recipientId}:${validTaskId ?? teamId ?? 'global'}:${eventTimestamp}`;
-            break;
-          }
-        }
+        const eventKey = this.buildEventKey(
+          event,
+          recipientId,
+          validTaskId,
+          rawSubtaskId,
+          teamId,
+        );
 
         return {
           userId: recipientId,
@@ -127,13 +102,14 @@ export class NotificationEventService {
           title,
           content,
           taskId: validTaskId,
+          subtaskId: validSubtaskId,
           teamId,
           eventKey,
           isRead: false,
         };
       });
 
-      // 6. Filter out duplicates so that skipDuplicates does NOT cause phantom SSE emissions
+      // 6. Pre-filter known duplicates
       const candidateKeys = notificationsData
         .map((n) => n.eventKey)
         .filter((k): k is string => typeof k === 'string' && k.length > 0);
@@ -159,25 +135,70 @@ export class NotificationEventService {
         return;
       }
 
-      // 7. Atomically insert only truly new notifications with skipDuplicates: true
-      await tx.notification.createMany({
-        data: trulyNewNotifications,
-        skipDuplicates: true,
-      });
+      // 7. Atomically insert and capture only rows actually created by THIS transaction
+      // so concurrent duplicate requests NEVER emit phantom SSE events.
+      type CreatedNotifSnapshot = {
+        id?: number;
+        userId: number;
+        actorId: number | null;
+        type: NotificationType;
+        title: string;
+        content: string;
+        taskId: number | null;
+        subtaskId: number | null;
+        teamId: number | null;
+        isRead: boolean;
+        createdAt?: Date;
+      };
+
+      let insertedNotifications: CreatedNotifSnapshot[];
+      if (typeof tx.notification.createManyAndReturn === 'function') {
+        insertedNotifications = await tx.notification.createManyAndReturn({
+          data: trulyNewNotifications,
+          skipDuplicates: true,
+          select: {
+            id: true,
+            userId: true,
+            actorId: true,
+            type: true,
+            title: true,
+            content: true,
+            taskId: true,
+            subtaskId: true,
+            teamId: true,
+            isRead: true,
+            createdAt: true,
+          },
+        });
+      } else {
+        await tx.notification.createMany({
+          data: trulyNewNotifications,
+          skipDuplicates: true,
+        });
+        insertedNotifications = trulyNewNotifications;
+      }
+
+      if (insertedNotifications.length === 0) {
+        return;
+      }
 
       const emitRealtimeNotifications = () => {
-        for (const notif of trulyNewNotifications) {
+        for (const notif of insertedNotifications) {
           void this.realtimeService.emit({
             type: 'NOTIFICATION_NEW',
             actorId: event.actorId > 0 ? event.actorId : undefined,
             targetUserIds: [notif.userId],
             teamId: notif.teamId,
             payload: {
+              id: notif.id,
               title: notif.title,
               content: notif.content,
               taskId: notif.taskId,
+              subtaskId: notif.subtaskId,
               teamId: notif.teamId,
               type: notif.type,
+              isRead: notif.isRead,
+              createdAt: notif.createdAt ? notif.createdAt.toISOString() : undefined,
             },
           });
         }
@@ -203,5 +224,118 @@ export class NotificationEventService {
     }
 
     return pendingEmit;
+  }
+
+  private formatTimestampTag(
+    entityDate?: number | string | Date,
+    fallbackTimestamp?: number,
+  ): string {
+    if (entityDate !== undefined && entityDate !== null) {
+      return new Date(entityDate).toISOString();
+    }
+    if (fallbackTimestamp !== undefined && fallbackTimestamp !== null) {
+      return String(Math.floor(fallbackTimestamp / 10000));
+    }
+    return '';
+  }
+
+  /**
+   * Generates a deterministic idempotency `eventKey` without ever calling `Date.now()`.
+   * Retries of the same logical mutation produce the exact same key, while distinct
+   * business transitions or entity timestamps produce distinct keys.
+   */
+  private buildEventKey(
+    event: DomainNotificationEvent,
+    recipientId: number,
+    validTaskId: number | null,
+    subtaskId: number | null,
+    teamId: number | null,
+  ): string {
+    if ('idempotencyKey' in event && event.idempotencyKey) {
+      return `${event.type}:${recipientId}:${validTaskId ?? teamId ?? 'global'}:${subtaskId ?? ''}:${event.idempotencyKey}`;
+    }
+
+    switch (event.type) {
+      case 'TASK_DEADLINE_SOON':
+      case 'TASK_OVERDUE':
+        return `${event.type}:${recipientId}:${validTaskId}:${event.dueDate}`;
+
+      case 'TASK_COLLABORATOR_INVITED': {
+        const timeTag = this.formatTimestampTag(event.invitedAt, event.timestamp);
+        return `${event.type}:${recipientId}:${validTaskId}:${event.invitedUserId}:${timeTag}`;
+      }
+
+      case 'TASK_COLLABORATOR_ACCEPTED':
+      case 'TASK_COLLABORATOR_DECLINED': {
+        const timeTag = this.formatTimestampTag(event.respondedAt, event.timestamp);
+        return `${event.type}:${recipientId}:${validTaskId}:${event.actorId}:${timeTag}`;
+      }
+
+      case 'TASK_COLLABORATOR_REMOVED': {
+        const timeTag = this.formatTimestampTag(event.removedAt, event.timestamp);
+        return `${event.type}:${recipientId}:${validTaskId}:${event.removedUserId}:${timeTag}`;
+      }
+
+      case 'SUBTASK_ASSIGNED': {
+        const timeTag = this.formatTimestampTag(event.assignedAt, event.timestamp);
+        const modeTag = event.isReassigned ? 'reassign' : 'assign';
+        return `${event.type}:${recipientId}:${validTaskId}:${event.subtaskId}:${event.subtaskAssigneeId}:${modeTag}:${timeTag}`;
+      }
+
+      case 'SUBTASK_UNASSIGNED': {
+        const timeTag = this.formatTimestampTag(event.unassignedAt, event.timestamp);
+        return `${event.type}:${recipientId}:${validTaskId}:${event.subtaskId}:${event.previousAssigneeId}:${timeTag}`;
+      }
+
+      case 'SUBTASK_STATUS_CHANGED': {
+        const timeTag = this.formatTimestampTag(event.changedAt, event.timestamp);
+        return `${event.type}:${recipientId}:${validTaskId}:${event.subtaskId}:${event.oldStatus}->${event.newStatus}:${timeTag}`;
+      }
+
+      case 'SUBTASK_COMPLETED': {
+        const timeTag = this.formatTimestampTag(event.completedAt, event.timestamp);
+        return `${event.type}:${recipientId}:${validTaskId}:${event.subtaskId}:${event.completedById}:${timeTag}`;
+      }
+
+      case 'SUBTASK_REOPENED': {
+        const timeTag = this.formatTimestampTag(event.reopenedAt, event.timestamp);
+        return `${event.type}:${recipientId}:${validTaskId}:${event.subtaskId}:${event.newStatus}:${timeTag}`;
+      }
+
+      case 'TASK_STATUS_CHANGED':
+        return `${event.type}:${recipientId}:${validTaskId}:${event.oldStatus}->${event.newStatus}:${event.timestamp ?? event.actorId}`;
+
+      case 'TASK_DEADLINE_CHANGED':
+        return `${event.type}:${recipientId}:${validTaskId}:${event.newDueDate ?? 'none'}:${event.timestamp ?? event.actorId}`;
+
+      case 'TASK_MOVED_TEAM':
+        return `${event.type}:${recipientId}:${validTaskId}:${event.targetTeamId}:${event.timestamp ?? event.actorId}`;
+
+      case 'TASK_UNASSIGNED':
+        return `${event.type}:${recipientId}:${validTaskId}:${event.previousAssigneeId}:${event.timestamp ?? event.actorId}`;
+
+      case 'TASK_ASSIGNED':
+        return `${event.type}:${recipientId}:${validTaskId}:${event.assigneeId}:${event.timestamp ?? event.actorId}`;
+
+      case 'TASK_RETURNED':
+        return `${event.type}:${recipientId}:${validTaskId}:${event.reason}:${event.timestamp ?? event.actorId}`;
+
+      case 'TEAM_MEMBER_ADDED':
+        return `${event.type}:${recipientId}:${teamId}:${event.newMemberId}:${event.timestamp ?? event.actorId}`;
+
+      case 'TEAM_MEMBER_REMOVED':
+        return `${event.type}:${recipientId}:${teamId}:${event.removedUserId}:${event.timestamp ?? event.actorId}`;
+
+      case 'TEAM_ROLE_CHANGED':
+        return `${event.type}:${recipientId}:${teamId}:${event.targetUserId}:${event.newRole}:${event.timestamp ?? event.actorId}`;
+
+      case 'TEAM_OWNERSHIP_TRANSFERRED':
+        return `${event.type}:${recipientId}:${teamId}:${event.newOwnerId}:${event.timestamp ?? event.actorId}`;
+
+      default: {
+        const deterministicTag = event.timestamp ?? event.actorId;
+        return `${event.type}:${recipientId}:${validTaskId ?? teamId ?? 'global'}:${deterministicTag}`;
+      }
+    }
   }
 }

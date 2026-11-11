@@ -197,6 +197,7 @@ export class TaskCrudService {
               taskTitle: createdTask.title,
               assigneeId: createdTask.assigneeId,
               teamId: createdTask.teamId,
+              timestamp: createdTask.createdAt.getTime(),
             },
             tx,
           );
@@ -394,6 +395,7 @@ export class TaskCrudService {
               teamId: updatedTask.teamId,
               assigneeId: updatedTask.assigneeId,
               creatorId: updatedTask.userId,
+              timestamp: updatedTask.updatedAt.getTime(),
             },
             tx,
           );

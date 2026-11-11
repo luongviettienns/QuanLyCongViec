@@ -72,6 +72,8 @@ export interface Task {
   position?: number;
   startDate?: string | null;
   dueDate?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
   collaborators?: TaskCollaborator[];
   subtasks?: Subtask[];
 }

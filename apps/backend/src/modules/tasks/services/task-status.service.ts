@@ -196,6 +196,7 @@ export class TaskStatusService {
             taskTitle: currentTask.title,
             previousAssigneeId: currentTask.assigneeId,
             teamId: currentTask.teamId,
+            timestamp: updatedCurrentTask.updatedAt.getTime(),
           },
           tx,
         );
@@ -211,6 +212,7 @@ export class TaskStatusService {
             teamId: updatedCurrentTask.teamId,
             creatorId: updatedCurrentTask.userId,
             assigneeId: updatedCurrentTask.assigneeId,
+            timestamp: updatedCurrentTask.updatedAt.getTime(),
           },
           tx,
         );
@@ -226,6 +228,7 @@ export class TaskStatusService {
             teamId: updatedCurrentTask.teamId,
             creatorId: updatedCurrentTask.userId,
             assigneeId: updatedCurrentTask.assigneeId,
+            timestamp: updatedCurrentTask.updatedAt.getTime(),
           },
           tx,
         );

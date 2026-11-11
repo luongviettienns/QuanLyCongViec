@@ -158,9 +158,45 @@ export function renderNotificationTemplate(
       };
 
     case 'SUBTASK_ASSIGNED':
+      if (event.isReassigned) {
+        return {
+          title: 'Bạn được giao lại việc con',
+          content: `${actorName} đã giao lại việc con "${event.subtaskTitle}" trong công việc "${event.taskTitle}" cho bạn.`,
+        };
+      }
       return {
         title: 'Bạn được phân công việc con mới',
         content: `${actorName} đã phân công việc con "${event.subtaskTitle}" trong công việc "${event.taskTitle}" cho bạn.`,
+      };
+
+    case 'SUBTASK_UNASSIGNED':
+      if (event.reassignedToUserId) {
+        return {
+          title: 'Việc con đã được chuyển giao',
+          content: `${actorName} đã chuyển giao việc con "${event.subtaskTitle}" trong công việc "${event.taskTitle}" cho người khác.`,
+        };
+      }
+      return {
+        title: 'Hủy phân công việc con',
+        content: `${actorName} đã hủy phân công bạn khỏi việc con "${event.subtaskTitle}" trong công việc "${event.taskTitle}".`,
+      };
+
+    case 'SUBTASK_STATUS_CHANGED':
+      return {
+        title: 'Cập nhật tiến độ việc con',
+        content: `${actorName} đã chuyển việc con "${event.subtaskTitle}" trong công việc "${event.taskTitle}" từ ${statusToVi(event.oldStatus)} sang ${statusToVi(event.newStatus)}.`,
+      };
+
+    case 'SUBTASK_COMPLETED':
+      return {
+        title: 'Việc con đã hoàn thành',
+        content: `${actorName} đã hoàn thành việc con "${event.subtaskTitle}" trong công việc "${event.taskTitle}".`,
+      };
+
+    case 'SUBTASK_REOPENED':
+      return {
+        title: 'Việc con được mở lại',
+        content: `${actorName} đã mở lại việc con "${event.subtaskTitle}" (${statusToVi(event.newStatus)}) trong công việc "${event.taskTitle}".`,
       };
 
     default:

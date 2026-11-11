@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import dayjs from 'dayjs';
 import {
   Modal,
@@ -8,6 +8,7 @@ import {
   DatePicker,
   Tag,
   Alert,
+  Button,
   message,
   Tabs,
 } from 'antd';
@@ -33,15 +34,36 @@ import { TaskSubtasksSection } from './TaskSubtasksSection';
 interface TaskFormModalProps {
   open: boolean;
   task: Task | null;
+  initialTab?: 'info' | 'collaborators' | 'subtasks';
+  highlightSubtaskId?: number | null;
   categories: Category[];
   teams?: Team[];
   onClose: () => void;
   onSuccess: () => Promise<void> | void;
 }
 
+function getTaskVersion(task: Task | null): string {
+  if (!task) return '';
+  return [
+    task.id,
+    task.updatedAt ?? '',
+    task.title,
+    task.description ?? '',
+    task.status,
+    task.priority ?? 'MEDIUM',
+    task.categoryId ?? '',
+    task.teamId ?? '',
+    task.assigneeId ?? '',
+    task.startDate ?? '',
+    task.dueDate ?? '',
+  ].join('|');
+}
+
 export default function TaskFormModal({
   open,
   task,
+  initialTab = 'info',
+  highlightSubtaskId = null,
   categories,
   teams = [],
   onClose,
@@ -50,7 +72,56 @@ export default function TaskFormModal({
   const { user } = useAuth();
   const [form] = Form.useForm<TaskFormValues>();
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'collaborators' | 'subtasks'>(
+    () => initialTab,
+  );
+  const [baseVersion, setBaseVersion] = useState<string>(() => getTaskVersion(task));
+  const [isFormDirty, setIsFormDirty] = useState(false);
+  const syncedVersionRef = useRef<string>('');
+
+  const applyTaskValues = useCallback(
+    (target: Task) => {
+      form.setFieldsValue({
+        title: target.title,
+        description: target.description,
+        status: target.status,
+        priority: target.priority || 'MEDIUM',
+        categoryId: target.categoryId ?? null,
+        teamId: target.teamId ?? null,
+        assigneeId: target.assigneeId ?? null,
+        startDate: target.startDate ? dayjs(target.startDate) : null,
+        dueDate: target.dueDate ? dayjs(target.dueDate) : null,
+      });
+    },
+    [form],
+  );
+
+  const currentVersion = getTaskVersion(task);
+  const hasRemoteConflict = Boolean(
+    open && task && isFormDirty && currentVersion !== baseVersion,
+  );
+
+  useEffect(() => {
+    if (!open || !task) {
+      return;
+    }
+    if (currentVersion === syncedVersionRef.current) {
+      return;
+    }
+    if (!isFormDirty) {
+      applyTaskValues(task);
+      syncedVersionRef.current = currentVersion;
+      let cancelled = false;
+      void Promise.resolve().then(() => {
+        if (!cancelled) {
+          setBaseVersion(currentVersion);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+  }, [open, task, currentVersion, isFormDirty, applyTaskValues]);
   const screens = useResponsive();
 
   const selectedTeamId = Form.useWatch('teamId', form);
@@ -172,6 +243,7 @@ export default function TaskFormModal({
       }
 
       form.resetFields();
+      setIsFormDirty(false);
       onClose();
       await onSuccess();
     } catch (error) {
@@ -182,11 +254,40 @@ export default function TaskFormModal({
   }
 
   const formContent = (
-    <Form
-      form={form}
-      layout="vertical"
-      onFinish={(values) => void handleSubmit(values)}
-      initialValues={{ status: 'TODO', priority: 'MEDIUM' }}
+    <>
+      {hasRemoteConflict && task && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="Công việc vừa được cập nhật từ người khác"
+          description="Bạn đang có thay đổi chưa lưu. Hãy tải lại dữ liệu mới nhất để tránh ghi đè nhầm."
+          action={
+            <Button
+              size="small"
+              type="primary"
+              onClick={() => {
+                applyTaskValues(task);
+                setIsFormDirty(false);
+                setBaseVersion(currentVersion);
+                syncedVersionRef.current = currentVersion;
+              }}
+            >
+              Tải dữ liệu mới nhất
+            </Button>
+          }
+        />
+      )}
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={(values) => void handleSubmit(values)}
+        onValuesChange={() => {
+          if (!isFormDirty) {
+            setIsFormDirty(true);
+          }
+        }}
+        initialValues={{ status: 'TODO', priority: 'MEDIUM' }}
     >
       {alertConfig && (
         <Alert
@@ -367,7 +468,8 @@ export default function TaskFormModal({
           }))}
         />
       </Form.Item>
-    </Form>
+      </Form>
+    </>
   );
 
   return (
@@ -384,30 +486,27 @@ export default function TaskFormModal({
       onCancel={onClose}
       afterOpenChange={(visible) => {
         if (visible) {
-          setActiveTab('info');
-          if (task) {
-            form.setFieldsValue({
-              title: task.title,
-              description: task.description,
-              status: task.status,
-              priority: task.priority || 'MEDIUM',
-              categoryId: task.categoryId ?? null,
-              teamId: task.teamId ?? null,
-              assigneeId: task.assigneeId ?? null,
-              startDate: task.startDate ? dayjs(task.startDate) : null,
-              dueDate: task.dueDate ? dayjs(task.dueDate) : null,
-            });
-          } else {
-            form.resetFields();
-            form.setFieldsValue({
-              status: 'TODO',
-              priority: 'MEDIUM',
-              categoryId: null,
-              teamId: null,
-              assigneeId: null,
-              startDate: null,
-              dueDate: null,
-            });
+          setActiveTab(initialTab ?? 'info');
+          if (!isFormDirty) {
+            if (task) {
+              const version = getTaskVersion(task);
+              syncedVersionRef.current = version;
+              setBaseVersion(version);
+              applyTaskValues(task);
+            } else {
+              syncedVersionRef.current = '';
+              setBaseVersion('');
+              form.resetFields();
+              form.setFieldsValue({
+                status: 'TODO',
+                priority: 'MEDIUM',
+                categoryId: null,
+                teamId: null,
+                assigneeId: null,
+                startDate: null,
+                dueDate: null,
+              });
+            }
           }
         }
       }}
@@ -426,7 +525,11 @@ export default function TaskFormModal({
       {task ? (
         <Tabs
           activeKey={activeTab}
-          onChange={setActiveTab}
+          onChange={(key) => {
+            if (key === 'info' || key === 'collaborators' || key === 'subtasks') {
+              setActiveTab(key);
+            }
+          }}
           items={[
             {
               key: 'info',
@@ -476,6 +579,7 @@ export default function TaskFormModal({
                   task={task}
                   currentUser={user}
                   canManage={canManage}
+                  highlightSubtaskId={highlightSubtaskId}
                   onChanged={onSuccess}
                 />
               ),

@@ -1,12 +1,17 @@
-import { useState, useCallback, useMemo, type ReactNode } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { Spin } from 'antd';
+import { Spin, message } from 'antd';
 import AppLayout from '../layouts/AppLayout';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import { useTasks } from '../../features/tasks/hooks/useTasks';
 import { getTaskById } from '../../features/tasks/api/tasks.api';
 import type { Task, TaskStatus } from '../../features/tasks/types/task.types';
-import { useRealtimeEvent, type RealtimeEventData } from '../../features/realtime';
+import type { NotificationDestination } from '../../features/notifications';
+import {
+  useRealtimeEvent,
+  useRealtimeReconnect,
+  type RealtimeEventData,
+} from '../../features/realtime';
 
 import TasksPage from '../../features/tasks/pages/TasksPage';
 import CategoryPage from '../../features/categories/pages/CategoryPage';
@@ -148,15 +153,122 @@ function TaskAppShell() {
 
   useRealtimeEvent('NOTIFICATION_NEW', handleRealtimeNotification);
 
-  const [modalState, setModalState] = useState<{ open: boolean; task: Task | null }>({
+  const [modalState, setModalState] = useState<{
+    open: boolean;
+    task: Task | null;
+    initialTab?: 'info' | 'collaborators' | 'subtasks';
+    highlightSubtaskId?: number | null;
+  }>({
     open: false,
     task: null,
   });
+  const [modalTaskOverride, setModalTaskOverride] = useState<Task | null>(null);
+  const modalTaskIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    modalTaskIdRef.current = modalState.open && modalState.task ? modalState.task.id : null;
+  }, [modalState.open, modalState.task]);
 
   const activeModalTask = useMemo(() => {
     if (!modalState.open || !modalState.task) return null;
-    return tasks.find((t) => t.id === modalState.task?.id) ?? modalState.task;
-  }, [modalState.open, modalState.task, tasks]);
+    const baseTask = tasks.find((t) => t.id === modalState.task?.id) ?? modalState.task;
+    if (modalTaskOverride && modalTaskOverride.id === modalState.task.id) {
+      if (!baseTask.updatedAt || !modalTaskOverride.updatedAt) {
+        return modalTaskOverride;
+      }
+      return new Date(modalTaskOverride.updatedAt).getTime() >=
+        new Date(baseTask.updatedAt).getTime()
+        ? modalTaskOverride
+        : baseTask;
+    }
+    return baseTask;
+  }, [modalState.open, modalState.task, tasks, modalTaskOverride]);
+
+  const refreshActiveModalTask = useCallback(
+    async (targetTaskId?: number, forceDeleted = false) => {
+      const openTaskId = targetTaskId ?? modalTaskIdRef.current;
+      if (!openTaskId || modalTaskIdRef.current !== openTaskId) {
+        return;
+      }
+      if (forceDeleted) {
+        setModalTaskOverride(null);
+        setModalState({ open: false, task: null });
+        message.warning('Công việc đang mở đã bị xóa.');
+        void refetch();
+        return;
+      }
+      try {
+        const freshTask = await getTaskById(openTaskId);
+        if (modalTaskIdRef.current !== openTaskId) {
+          return;
+        }
+        setModalTaskOverride(freshTask);
+      } catch (err: unknown) {
+        if (modalTaskIdRef.current !== openTaskId) {
+          return;
+        }
+        if (
+          err instanceof Error &&
+          (err.name === 'AbortError' || err.name === 'UnauthorizedError')
+        ) {
+          return;
+        }
+        const status = (err as { status?: number })?.status;
+        const msg = err instanceof Error ? err.message : '';
+        if (
+          status === 403 ||
+          status === 404 ||
+          /không tìm thấy|không tồn tại|không có quyền|not found|forbidden/i.test(msg)
+        ) {
+          setModalTaskOverride(null);
+          setModalState({ open: false, task: null });
+          message.warning(
+            msg || 'Công việc không còn tồn tại hoặc bạn không còn quyền truy cập.',
+          );
+          void refetch();
+        }
+      }
+    },
+    [refetch],
+  );
+
+  const handleRealtimeModalEvent = useCallback(
+    (event: RealtimeEventData) => {
+      if (event.actorId && event.actorId === user?.id && event.type !== 'TASK_DELETED') {
+        return;
+      }
+      const openTaskId = modalTaskIdRef.current;
+      if (!openTaskId) {
+        return;
+      }
+      const payload = event.payload as { taskId?: number } | undefined;
+      if (payload?.taskId !== undefined && payload.taskId !== openTaskId) {
+        return;
+      }
+      void refreshActiveModalTask(openTaskId, event.type === 'TASK_DELETED');
+    },
+    [user?.id, refreshActiveModalTask],
+  );
+
+  useRealtimeEvent('TASK_UPDATED', handleRealtimeModalEvent);
+  useRealtimeEvent('TASK_DELETED', handleRealtimeModalEvent);
+  useRealtimeEvent('TASK_STATUS_CHANGED', handleRealtimeModalEvent);
+  useRealtimeEvent('TASK_ASSIGNED', handleRealtimeModalEvent);
+  useRealtimeEvent('TASK_ASSIGNED', handleRealtimeTaskEvent);
+  useRealtimeEvent('TASK_RETURNED', handleRealtimeModalEvent);
+  useRealtimeEvent('TASK_RETURNED', handleRealtimeTaskEvent);
+  useRealtimeEvent('TASK_COLLABORATORS_CHANGED', handleRealtimeModalEvent);
+  useRealtimeEvent('TASK_COLLABORATORS_CHANGED', handleRealtimeTaskEvent);
+  useRealtimeEvent('SUBTASK_CREATED', handleRealtimeModalEvent);
+  useRealtimeEvent('SUBTASK_UPDATED', handleRealtimeModalEvent);
+  useRealtimeEvent('SUBTASK_DELETED', handleRealtimeModalEvent);
+  useRealtimeEvent('SUBTASK_REORDERED', handleRealtimeModalEvent);
+
+  useRealtimeReconnect(() => {
+    if (modalTaskIdRef.current) {
+      void refreshActiveModalTask(modalTaskIdRef.current);
+    }
+  });
 
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
 
@@ -190,19 +302,31 @@ function TaskAppShell() {
     navigate('/tasks');
   }
 
-  async function handleNotificationNavigate(dest: { type: 'task' | 'team'; id: number }) {
+  async function handleNotificationNavigate(dest: NotificationDestination) {
     if (dest.type === 'task') {
       navigate('/tasks');
-      let targetTask = tasks.find((t) => t.id === dest.id);
-      if (!targetTask) {
-        try {
-          targetTask = await getTaskById(dest.id);
-        } catch {
-          // Gracefully fallback: stays on tasks list if task was deleted or inaccessible
+      try {
+        const targetTask = await getTaskById(dest.id);
+        modalTaskIdRef.current = targetTask.id;
+        setModalTaskOverride(targetTask);
+        setModalState({
+          open: true,
+          task: targetTask,
+          initialTab: dest.subtaskId ? 'subtasks' : 'info',
+          highlightSubtaskId: dest.subtaskId ?? null,
+        });
+      } catch (err: unknown) {
+        if (
+          err instanceof Error &&
+          (err.name === 'AbortError' || err.name === 'UnauthorizedError')
+        ) {
+          return;
         }
-      }
-      if (targetTask) {
-        handleOpenEdit(targetTask);
+        message.error(
+          err instanceof Error
+            ? err.message
+            : 'Công việc không còn tồn tại hoặc bạn không có quyền truy cập.',
+        );
       }
     } else if (dest.type === 'team') {
       navigate('/teams');
@@ -279,11 +403,18 @@ function TaskAppShell() {
 
       {modalState.open && (
         <TaskFormModal
+          key={`${modalState.task?.id ?? 'new'}-${modalState.initialTab ?? 'info'}-${modalState.highlightSubtaskId ?? ''}`}
           open={modalState.open}
           task={activeModalTask}
+          initialTab={modalState.initialTab}
+          highlightSubtaskId={modalState.highlightSubtaskId}
           categories={categories}
           teams={teams}
-          onClose={handleCloseModal}
+          onClose={() => {
+            modalTaskIdRef.current = null;
+            setModalTaskOverride(null);
+            handleCloseModal();
+          }}
           onSuccess={refetch}
         />
       )}

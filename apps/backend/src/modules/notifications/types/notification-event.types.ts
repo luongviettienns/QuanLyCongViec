@@ -7,6 +7,7 @@ export interface TaskAssignedEvent {
   taskTitle: string;
   assigneeId: number;
   teamId?: number | null;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -17,6 +18,7 @@ export interface TaskUnassignedEvent {
   taskTitle: string;
   previousAssigneeId: number;
   teamId?: number | null;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -30,6 +32,7 @@ export interface TaskStatusChangedEvent {
   teamId?: number | null;
   creatorId: number;
   assigneeId?: number | null;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -41,6 +44,7 @@ export interface TaskCompletedEvent {
   teamId?: number | null;
   creatorId: number;
   assigneeId?: number | null;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -52,6 +56,7 @@ export interface TaskReturnedEvent {
   teamId?: number | null;
   creatorId: number;
   reason: string;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -64,6 +69,7 @@ export interface TaskDeadlineChangedEvent {
   teamId?: number | null;
   assigneeId?: number | null;
   creatorId: number;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -99,6 +105,7 @@ export interface TaskDeletedEvent {
   teamId?: number | null;
   assigneeId?: number | null;
   creatorId: number;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -110,6 +117,7 @@ export interface TaskMovedTeamEvent {
   targetTeamId: number;
   targetTeamName: string;
   assigneeId?: number | null;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -120,6 +128,7 @@ export interface TeamMemberAddedEvent {
   teamName: string;
   newMemberId: number;
   role: TeamRole;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -130,6 +139,7 @@ export interface TeamMemberRemovedEvent {
   teamName: string;
   removedUserId: number;
   isSelfLeave: boolean;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -140,6 +150,7 @@ export interface TeamRoleChangedEvent {
   teamName: string;
   targetUserId: number;
   newRole: TeamRole;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -150,6 +161,7 @@ export interface TeamOwnershipTransferredEvent {
   teamName: string;
   newOwnerId: number;
   previousOwnerId: number;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -158,6 +170,7 @@ export interface TeamDeletedEvent {
   actorId: number;
   teamId: number;
   teamName: string;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -169,6 +182,7 @@ export interface TaskCollaboratorInvitedEvent {
   teamId: number;
   invitedUserId: number;
   invitedAt?: number | string | Date;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -181,6 +195,7 @@ export interface TaskCollaboratorAcceptedEvent {
   invitedById: number;
   assigneeId?: number | null;
   respondedAt?: number | string | Date;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -193,6 +208,7 @@ export interface TaskCollaboratorDeclinedEvent {
   invitedById: number;
   assigneeId?: number | null;
   respondedAt?: number | string | Date;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -206,6 +222,7 @@ export interface TaskCollaboratorRemovedEvent {
   isSelfLeave: boolean;
   assigneeId?: number | null;
   removedAt?: number | string | Date;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -218,7 +235,77 @@ export interface SubtaskAssignedEvent {
   subtaskId: number;
   subtaskTitle: string;
   subtaskAssigneeId: number;
+  isReassigned?: boolean;
+  previousAssigneeId?: number | null;
   assignedAt?: number | string | Date;
+  idempotencyKey?: string;
+  timestamp?: number;
+}
+
+export interface SubtaskUnassignedEvent {
+  type: 'SUBTASK_UNASSIGNED';
+  actorId: number;
+  taskId: number;
+  taskTitle: string;
+  teamId?: number | null;
+  subtaskId: number;
+  subtaskTitle: string;
+  previousAssigneeId: number;
+  reassignedToUserId?: number | null;
+  unassignedAt?: number | string | Date;
+  idempotencyKey?: string;
+  timestamp?: number;
+}
+
+export interface SubtaskStatusChangedEvent {
+  type: 'SUBTASK_STATUS_CHANGED';
+  actorId: number;
+  taskId: number;
+  taskTitle: string;
+  teamId?: number | null;
+  subtaskId: number;
+  subtaskTitle: string;
+  oldStatus: TaskStatus;
+  newStatus: TaskStatus;
+  creatorId: number;
+  assigneeId?: number | null;
+  subtaskAssigneeId?: number | null;
+  changedAt?: number | string | Date;
+  idempotencyKey?: string;
+  timestamp?: number;
+}
+
+export interface SubtaskCompletedEvent {
+  type: 'SUBTASK_COMPLETED';
+  actorId: number;
+  taskId: number;
+  taskTitle: string;
+  teamId?: number | null;
+  subtaskId: number;
+  subtaskTitle: string;
+  creatorId: number;
+  assigneeId?: number | null;
+  subtaskAssigneeId?: number | null;
+  completedById: number;
+  completedAt?: number | string | Date;
+  idempotencyKey?: string;
+  timestamp?: number;
+}
+
+export interface SubtaskReopenedEvent {
+  type: 'SUBTASK_REOPENED';
+  actorId: number;
+  taskId: number;
+  taskTitle: string;
+  teamId?: number | null;
+  subtaskId: number;
+  subtaskTitle: string;
+  newStatus: TaskStatus;
+  creatorId: number;
+  assigneeId?: number | null;
+  subtaskAssigneeId?: number | null;
+  reopenedAt?: number | string | Date;
+  idempotencyKey?: string;
   timestamp?: number;
 }
 
@@ -242,4 +329,8 @@ export type DomainNotificationEvent =
   | TaskCollaboratorAcceptedEvent
   | TaskCollaboratorDeclinedEvent
   | TaskCollaboratorRemovedEvent
-  | SubtaskAssignedEvent;
+  | SubtaskAssignedEvent
+  | SubtaskUnassignedEvent
+  | SubtaskStatusChangedEvent
+  | SubtaskCompletedEvent
+  | SubtaskReopenedEvent;

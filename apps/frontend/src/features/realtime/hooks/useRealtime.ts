@@ -20,3 +20,11 @@ export function useRealtimeEvent(
     return subscribe(eventType, handler);
   }, [subscribe, eventType, handler]);
 }
+
+export function useRealtimeReconnect(handler: () => void) {
+  const { subscribeReconnect } = useRealtime();
+
+  useEffect(() => {
+    return subscribeReconnect(handler);
+  }, [subscribeReconnect, handler]);
+}

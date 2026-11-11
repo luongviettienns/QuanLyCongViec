@@ -273,6 +273,7 @@ export class TaskCollaboratorService {
   async remove(taskId: number, targetUserId: number, callerId: number) {
     let parentTask: any = null;
     let isSelfLeaving = false;
+    let affectedSubtaskIds: number[] = [];
     const updatedCollab = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT id, status FROM "Task" WHERE id = ${taskId} FOR UPDATE;`;
 
@@ -306,19 +307,30 @@ export class TaskCollaboratorService {
         },
       });
 
-      // Cleanup unfinished subtasks assigned to this collaborator on this task
-      await tx.subtask.updateMany({
+      // Identify unfinished subtasks assigned to this collaborator BEFORE bulk cleanup
+      const affectedSubtasks = await tx.subtask.findMany({
         where: {
           taskId,
           assigneeId: targetUserId,
           status: { in: [TaskStatus.TODO, TaskStatus.IN_PROGRESS] },
           deletedAt: null,
         },
-        data: {
-          assigneeId: null,
-          status: TaskStatus.TODO,
-        },
+        select: { id: true, title: true },
       });
+      affectedSubtaskIds = affectedSubtasks.map((s) => s.id);
+
+      // Cleanup unfinished subtasks assigned to this collaborator on this task
+      if (affectedSubtaskIds.length > 0) {
+        await tx.subtask.updateMany({
+          where: {
+            id: { in: affectedSubtaskIds },
+          },
+          data: {
+            assigneeId: null,
+            status: TaskStatus.TODO,
+          },
+        });
+      }
 
       await this.notificationEventService.publish(
         {
@@ -336,6 +348,25 @@ export class TaskCollaboratorService {
         tx,
       );
 
+      for (const affectedSubtask of affectedSubtasks) {
+        await this.notificationEventService.publish(
+          {
+            type: 'SUBTASK_UNASSIGNED',
+            actorId: callerId,
+            taskId,
+            taskTitle: task.title,
+            teamId: task.teamId!,
+            subtaskId: affectedSubtask.id,
+            subtaskTitle: affectedSubtask.title,
+            previousAssigneeId: targetUserId,
+            reassignedToUserId: null,
+            unassignedAt: updated.updatedAt,
+            timestamp: updated.updatedAt.getTime(),
+          },
+          tx,
+        );
+      }
+
       return updated;
     });
 
@@ -350,6 +381,18 @@ export class TaskCollaboratorService {
         status: updatedCollab.status,
       },
     });
+
+    for (const subId of affectedSubtaskIds) {
+      void this.realtimeService.emit({
+        type: 'SUBTASK_UPDATED',
+        actorId: callerId,
+        teamId: parentTask?.teamId,
+        payload: {
+          taskId,
+          subtaskId: subId,
+        },
+      });
+    }
 
     return updatedCollab;
   }

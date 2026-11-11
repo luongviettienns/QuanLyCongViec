@@ -277,6 +277,7 @@ export class TeamMembershipService {
     );
 
     const updatedTasks: Array<{ id: number; title: string }> = [];
+    const affectedSubtasks: Array<{ id: number; taskId: number }> = [];
 
     await this.prisma.$transaction(async (tx) => {
       // 1. Khóa phân tán scope Board của nhóm để đồng bộ hóa cập nhật vị trí
@@ -359,18 +360,28 @@ export class TeamMembershipService {
           },
         });
 
-        await tx.subtask.updateMany({
+        const subtasksToReset = await tx.subtask.findMany({
           where: {
             taskId: { in: teamTaskIds },
             assigneeId: targetMember.userId,
             status: { in: [TaskStatus.TODO, TaskStatus.IN_PROGRESS] },
             deletedAt: null,
           },
-          data: {
-            assigneeId: null,
-            status: TaskStatus.TODO,
-          },
+          select: { id: true, taskId: true },
         });
+        affectedSubtasks.push(...subtasksToReset);
+
+        if (subtasksToReset.length > 0) {
+          await tx.subtask.updateMany({
+            where: {
+              id: { in: subtasksToReset.map((s) => s.id) },
+            },
+            data: {
+              assigneeId: null,
+              status: TaskStatus.TODO,
+            },
+          });
+        }
       }
 
       // 4. Các công việc DONE được giữ nguyên vẹn để bảo toàn lịch sử người đã hoàn thành!
@@ -404,6 +415,18 @@ export class TeamMembershipService {
           taskId: ut.id,
           teamId,
           status: TaskStatus.TODO,
+        },
+      });
+    }
+
+    for (const sub of affectedSubtasks) {
+      void this.realtimeService.emit({
+        type: 'SUBTASK_UPDATED',
+        actorId: userId,
+        teamId,
+        payload: {
+          taskId: sub.taskId,
+          subtaskId: sub.id,
         },
       });
     }

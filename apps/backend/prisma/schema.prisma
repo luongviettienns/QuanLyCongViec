@@ -54,6 +54,10 @@ enum NotificationType {
   TASK_COLLABORATOR_DECLINED
   TASK_COLLABORATOR_REMOVED
   SUBTASK_ASSIGNED
+  SUBTASK_UNASSIGNED
+  SUBTASK_STATUS_CHANGED
+  SUBTASK_COMPLETED
+  SUBTASK_REOPENED
 }
 
 model User {
@@ -201,6 +205,9 @@ model Notification {
   taskId        Int?
   task          Task?            @relation(fields: [taskId], references: [id], onDelete: SetNull)
 
+  subtaskId     Int?
+  subtask       Subtask?         @relation(fields: [subtaskId], references: [id], onDelete: SetNull)
+
   teamId        Int?
   team          Team?            @relation(fields: [teamId], references: [id], onDelete: SetNull)
 
@@ -210,6 +217,7 @@ model Notification {
 
   @@index([userId, isRead, createdAt])
   @@index([userId, createdAt])
+  @@index([subtaskId])
   @@map("Notification")
 }
 
@@ -267,6 +275,8 @@ model Subtask {
   completedById Int?
   completedBy   User?      @relation("SubtaskCompleter", fields: [completedById], references: [id], onDelete: SetNull)
   completedAt   DateTime?
+
+  notifications   Notification[]
 
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt

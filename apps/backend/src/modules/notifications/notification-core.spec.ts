@@ -70,6 +70,110 @@ describe('Notification Core Module Unit Tests', () => {
       expect(template.title).toBe('Thay đổi vai trò trong nhóm');
       expect(template.content).toContain('Quản trị viên (ADMIN)');
     });
+
+    it('renders SUBTASK_ASSIGNED (fresh vs reassigned), SUBTASK_UNASSIGNED, SUBTASK_STATUS_CHANGED, SUBTASK_COMPLETED, SUBTASK_REOPENED', () => {
+      const freshAssign = renderNotificationTemplate(
+        {
+          type: 'SUBTASK_ASSIGNED',
+          actorId: 1,
+          taskId: 10,
+          taskTitle: 'Task Chính',
+          subtaskId: 21,
+          subtaskTitle: 'Việc con A',
+          subtaskAssigneeId: 2,
+          isReassigned: false,
+        },
+        'Quản lý',
+      );
+      expect(freshAssign.title).toContain('việc con');
+      expect(freshAssign.title).not.toContain('giao lại');
+      expect(freshAssign.content).toContain('Việc con A');
+      expect(freshAssign.content).toContain('Task Chính');
+
+      const reassigned = renderNotificationTemplate(
+        {
+          type: 'SUBTASK_ASSIGNED',
+          actorId: 1,
+          taskId: 10,
+          taskTitle: 'Task Chính',
+          subtaskId: 21,
+          subtaskTitle: 'Việc con A',
+          subtaskAssigneeId: 3,
+          previousAssigneeId: 2,
+          isReassigned: true,
+        },
+        'Quản lý',
+      );
+      expect(reassigned.title).toContain('giao lại');
+      expect(reassigned.content).toContain('giao lại việc con');
+
+      const unassigned = renderNotificationTemplate(
+        {
+          type: 'SUBTASK_UNASSIGNED',
+          actorId: 1,
+          taskId: 10,
+          taskTitle: 'Task Chính',
+          subtaskId: 21,
+          subtaskTitle: 'Việc con A',
+          previousAssigneeId: 2,
+        },
+        'Quản lý',
+      );
+      expect(unassigned.title).toContain('Hủy phân công');
+      expect(unassigned.content).toContain('Việc con A');
+
+      const inProgress = renderNotificationTemplate(
+        {
+          type: 'SUBTASK_STATUS_CHANGED',
+          actorId: 3,
+          taskId: 10,
+          taskTitle: 'Task Chính',
+          subtaskId: 21,
+          subtaskTitle: 'Việc con A',
+          oldStatus: TaskStatus.TODO,
+          newStatus: TaskStatus.IN_PROGRESS,
+          creatorId: 1,
+        },
+        'Cộng tác viên',
+      );
+      expect(inProgress.content).toContain('Cần làm (TODO)');
+      expect(inProgress.content).toContain('Đang làm (IN_PROGRESS)');
+
+      const completed = renderNotificationTemplate(
+        {
+          type: 'SUBTASK_COMPLETED',
+          actorId: 1,
+          taskId: 10,
+          taskTitle: 'Task Chính',
+          subtaskId: 21,
+          subtaskTitle: 'Việc con A',
+          creatorId: 2,
+          assigneeId: 3,
+          subtaskAssigneeId: 4,
+          completedById: 1,
+        },
+        'Quản lý B',
+      );
+      expect(completed.content).toContain('Quản lý B');
+      expect(completed.content).toContain('hoàn thành việc con');
+
+      const reopened = renderNotificationTemplate(
+        {
+          type: 'SUBTASK_REOPENED',
+          actorId: 1,
+          taskId: 10,
+          taskTitle: 'Task Chính',
+          subtaskId: 21,
+          subtaskTitle: 'Việc con A',
+          newStatus: TaskStatus.IN_PROGRESS,
+          creatorId: 2,
+          subtaskAssigneeId: 3,
+        },
+        'Quản lý B',
+      );
+      expect(reopened.title).toContain('mở lại');
+      expect(reopened.content).toContain('mở lại việc con');
+    });
   });
 
   describe('NotificationRecipientService', () => {
@@ -188,6 +292,47 @@ describe('Notification Core Module Unit Tests', () => {
 
       // User 10 was filtered out because they have no access to Team 5.
       expect(recipients).toEqual([]);
+    });
+
+    it('SUBTASK_COMPLETED & SUBTASK_REOPENED: notifies creator, main assignee, and subtask assignee without actor or non-members', async () => {
+      // Active members in Team 5: Owner 1, User 2, User 3, User 4. Non-member: 10.
+      mockPrisma.team.findUnique.mockResolvedValue({
+        ownerId: 1,
+        members: [{ userId: 2 }, { userId: 3 }, { userId: 4 }],
+      });
+
+      // Manager (User 2) completes subtask assigned to Collaborator (User 4) on task created by User 1 and Main Assignee User 3
+      const completedRecipients = await recipientService.resolveRecipients({
+        type: 'SUBTASK_COMPLETED',
+        actorId: 2,
+        taskId: 10,
+        taskTitle: 'Parent',
+        subtaskId: 50,
+        subtaskTitle: 'Sub',
+        creatorId: 1,
+        assigneeId: 3,
+        subtaskAssigneeId: 4,
+        completedById: 2,
+        teamId: 5,
+      });
+      // Main Assignee 3, Creator 1, Subtask Assignee 4 notified (actor 2 excluded)
+      expect(completedRecipients.sort((a, b) => a - b)).toEqual([1, 3, 4]);
+
+      // Reopen where Creator === Actor 1 -> notifies Main Assignee 3 & Subtask Assignee 4
+      const reopenRecipients = await recipientService.resolveRecipients({
+        type: 'SUBTASK_REOPENED',
+        actorId: 1,
+        taskId: 10,
+        taskTitle: 'Parent',
+        subtaskId: 50,
+        subtaskTitle: 'Sub',
+        newStatus: TaskStatus.IN_PROGRESS,
+        creatorId: 1,
+        assigneeId: 3,
+        subtaskAssigneeId: 4,
+        teamId: 5,
+      });
+      expect(reopenRecipients.sort((a, b) => a - b)).toEqual([3, 4]);
     });
   });
 
@@ -414,6 +559,114 @@ describe('Notification Core Module Unit Tests', () => {
       expect(mockTx.notification.createMany).not.toHaveBeenCalled();
       expect(postCommitHooks).toHaveLength(0);
       expect(mockRealtimeService.emit).not.toHaveBeenCalled();
+    });
+
+    it('uses deterministic eventKey (retry-stable) and emits ZERO phantom SSE when createManyAndReturn skips concurrent duplicate', async () => {
+      const mockRecipientService = {
+        resolveRecipients: vi.fn().mockResolvedValue([2]),
+      };
+      const postCommitHooks: Array<() => void> = [];
+      const { POST_COMMIT_HOOKS } = await import('../../database/prisma.service.js');
+      const capturedData: Array<Array<{ eventKey?: string }>> = [];
+      const createManyAndReturnMock = vi.fn().mockImplementation(({ data }) => {
+        capturedData.push(data);
+        // Simulate unique conflict ignored concurrently by PostgreSQL -> 0 rows returned
+        return Promise.resolve([]);
+      });
+      const mockTx: any = {
+        user: { findUnique: vi.fn().mockResolvedValue({ name: 'Manager A' }) },
+        task: { findUnique: vi.fn().mockResolvedValue({ id: 10 }) },
+        subtask: { findUnique: vi.fn().mockResolvedValue({ id: 77 }) },
+        notification: {
+          findMany: vi.fn().mockResolvedValue([]),
+          createManyAndReturn: createManyAndReturnMock,
+        },
+      };
+      mockTx[POST_COMMIT_HOOKS] = postCommitHooks;
+
+      const mockPrisma = {
+        $transaction: vi.fn((cb) => cb(mockTx)),
+      } as any;
+      const mockRealtimeService = {
+        emit: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const eventService = new NotificationEventService(
+        mockPrisma,
+        mockRecipientService as any,
+        mockRealtimeService as any,
+      );
+
+      const baseEvent = {
+        type: 'SUBTASK_COMPLETED' as const,
+        actorId: 1,
+        taskId: 10,
+        taskTitle: 'Parent Task',
+        subtaskId: 77,
+        subtaskTitle: 'Subtask X',
+        creatorId: 2,
+        completedById: 1,
+        completedAt: 1700000000000,
+      };
+
+      await eventService.publish(baseEvent, mockTx);
+      await eventService.publish(baseEvent, mockTx);
+
+      // Concurrent skip must emit zero phantom SSE and register zero hooks
+      expect(postCommitHooks).toHaveLength(0);
+      expect(mockRealtimeService.emit).not.toHaveBeenCalled();
+
+      // Same semantic operation yields identical deterministic eventKey across retries
+      expect(capturedData).toHaveLength(2);
+      expect(capturedData[0][0].eventKey).toBe(capturedData[1][0].eventKey);
+      expect(capturedData[0][0].eventKey).toContain('SUBTASK_COMPLETED:2:10:77:');
+
+      // Distinct timestamp/operation yields a distinct eventKey and emits subtaskId post-commit
+      const createdAt = new Date('2026-11-11T10:00:00.000Z');
+      createManyAndReturnMock.mockImplementationOnce(({ data }) => {
+        capturedData.push(data);
+        return Promise.resolve([
+          {
+            id: 501,
+            userId: 2,
+            actorId: 1,
+            type: 'SUBTASK_COMPLETED',
+            title: 'Hoàn thành việc con',
+            content: 'Manager A đã hoàn thành việc con...',
+            taskId: 10,
+            subtaskId: 77,
+            teamId: null,
+            isRead: false,
+            createdAt,
+          },
+        ]);
+      });
+
+      await eventService.publish(
+        {
+          ...baseEvent,
+          completedAt: 1700000005000,
+        },
+        mockTx,
+      );
+
+      expect(capturedData[2][0].eventKey).not.toBe(capturedData[0][0].eventKey);
+      expect(postCommitHooks).toHaveLength(1);
+      postCommitHooks[0]();
+
+      expect(mockRealtimeService.emit).toHaveBeenCalledTimes(1);
+      expect(mockRealtimeService.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'NOTIFICATION_NEW',
+          targetUserIds: [2],
+          payload: expect.objectContaining({
+            id: 501,
+            taskId: 10,
+            subtaskId: 77,
+            isRead: false,
+          }),
+        }),
+      );
     });
   });
 });
