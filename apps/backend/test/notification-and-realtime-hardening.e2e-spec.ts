@@ -52,7 +52,14 @@ function connectSse(baseUrl: string, token: string): Promise<SseSubscription> {
       timer: NodeJS.Timeout;
     }> = [];
 
-    const req = http.get(`${baseUrl}/api/realtime/stream?token=${encodeURIComponent(token)}`, (res) => {
+    const req = http.get(
+      `${baseUrl}/api/realtime/stream`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      },
+      (res) => {
       if (res.statusCode !== 200) {
         req.destroy();
         reject(new Error(`SSE connection rejected with status ${res.statusCode ?? 'unknown'}`));

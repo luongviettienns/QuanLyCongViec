@@ -139,7 +139,7 @@ export class TeamsService {
     return this.prisma.$transaction(async (tx) => {
       // 1. Khóa dòng Team trước tiên trong transaction
       const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
-        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR UPDATE
+        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR NO KEY UPDATE
       `;
 
       if (!lockedTeams || lockedTeams.length === 0) {
@@ -192,7 +192,7 @@ export class TeamsService {
     return this.prisma.$transaction(async (tx) => {
       // 1. Khóa dòng Team trước tiên trong transaction để tuần tự hóa các mutation
       const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
-        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR UPDATE
+        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR NO KEY UPDATE
       `;
 
       if (!lockedTeams || lockedTeams.length === 0) {
@@ -216,10 +216,10 @@ export class TeamsService {
 
       this.policy.assertCanDelete(isOwner);
 
-      // 4. Kiểm tra dữ liệu công việc và danh mục phụ thuộc
+      // 4. Kiểm tra dữ liệu công việc đang hoạt động và danh mục phụ thuộc
       const [taskCount, categoryCount] = await Promise.all([
         tx.task.count({
-          where: { teamId }, // KHÔNG lọc deletedAt, bảo toàn toàn bộ dữ liệu kể cả task đã xóa mềm
+          where: { teamId, deletedAt: null },
         }),
         tx.category.count({
           where: { teamId },
@@ -244,6 +244,11 @@ export class TeamsService {
         },
         tx,
       );
+
+      // Dọn sạch vĩnh viễn các task trong thùng rác (đã xóa mềm) trước khi giải tán nhóm
+      await tx.task.deleteMany({
+        where: { teamId, deletedAt: { not: null } },
+      });
 
       await tx.team.delete({
         where: { id: teamId },
@@ -312,6 +317,7 @@ export class TeamsService {
       orderBy: {
         createdAt: 'desc',
       },
+      take: 100,
     });
   }
 }

@@ -286,8 +286,14 @@ export class TaskCollaboratorService {
         },
       });
 
-      if (!collab || collab.status === CollaboratorStatus.REVOKED) {
-        throw new NotFoundException('Không tìm thấy người phối hợp hoặc lời mời đã bị thu hồi');
+      if (
+        !collab ||
+        collab.status === CollaboratorStatus.REVOKED ||
+        collab.status === CollaboratorStatus.DECLINED
+      ) {
+        throw new NotFoundException(
+          'Không tìm thấy người phối hợp hoặc lời mời đã bị thu hồi/từ chối',
+        );
       }
 
       isSelfLeaving = callerId === targetUserId;

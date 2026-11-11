@@ -69,41 +69,117 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         const remaining = getTokenRemainingTime();
         return remaining !== null && remaining <= 0;
       },
-      createEventSource: (url) => {
-        const es = new EventSource(url);
+      createEventSource: (url, token) => {
+        const controller = new AbortController();
+        const listeners = new Map<string, Set<(event: { data: string }) => void>>();
         let currentOpen: (() => void) | null = null;
         let currentMessage: ((event: { data: string }) => void) | null = null;
         let currentError: (() => void) | null = null;
+        let isClosed = false;
+
+        async function start() {
+          try {
+            const response = await fetch(url, {
+              headers: {
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                Accept: 'text/event-stream',
+              },
+              signal: controller.signal,
+            });
+
+            if (!response.ok || !response.body) {
+              if (!isClosed && currentError) {
+                currentError();
+              }
+              return;
+            }
+
+            if (!isClosed && currentOpen) {
+              currentOpen();
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (!isClosed) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const frames = buffer.split('\n\n');
+              buffer = frames.pop() ?? '';
+
+              for (const frame of frames) {
+                if (!frame.trim()) continue;
+                let eventType = 'message';
+                let data = '';
+
+                for (const line of frame.split('\n')) {
+                  if (line.startsWith('event:')) {
+                    eventType = line.slice(6).trim();
+                  } else if (line.startsWith('data:')) {
+                    data = line.slice(5).trim();
+                  }
+                }
+
+                if (data) {
+                  if (currentMessage) {
+                    currentMessage({ data });
+                  }
+                  const typeListeners = listeners.get(eventType);
+                  if (typeListeners) {
+                    for (const l of typeListeners) {
+                      l({ data });
+                    }
+                  }
+                }
+              }
+            }
+
+            if (!isClosed && currentError) {
+              currentError();
+            }
+          } catch (err: unknown) {
+            if (isClosed || (err instanceof DOMException && err.name === 'AbortError')) {
+              return;
+            }
+            if (currentError) {
+              currentError();
+            }
+          }
+        }
+
+        void start();
+
         return {
           get onopen() {
             return currentOpen;
           },
           set onopen(handler: (() => void) | null) {
             currentOpen = handler;
-            es.onopen = handler ? () => handler() : null;
           },
           get onmessage() {
             return currentMessage;
           },
           set onmessage(handler: ((event: { data: string }) => void) | null) {
             currentMessage = handler;
-            es.onmessage = handler ? (ev) => handler({ data: String(ev.data) }) : null;
           },
           get onerror() {
             return currentError;
           },
           set onerror(handler: (() => void) | null) {
             currentError = handler;
-            es.onerror = handler ? () => handler() : null;
           },
           addEventListener: (type, listener) => {
-            es.addEventListener(type, (ev) => {
-              if (ev instanceof MessageEvent) {
-                listener({ data: String(ev.data) });
-              }
-            });
+            if (!listeners.has(type)) {
+              listeners.set(type, new Set());
+            }
+            listeners.get(type)!.add(listener);
           },
-          close: () => es.close(),
+          close: () => {
+            isClosed = true;
+            controller.abort();
+          },
         };
       },
       onEvent: (data) => {

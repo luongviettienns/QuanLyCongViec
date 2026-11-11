@@ -170,7 +170,7 @@ describe('P0 & P1: Team Delete Protection & Activity Log Audit (e2e)', () => {
       expect(res.body.taskCount).toBe(1);
     });
 
-    it('P0-04: Từ chối xóa Team chỉ còn Task đã soft-delete (HTTP 409)', async () => {
+    it('P0-04: Cho phép xóa Team khi chỉ còn Task đã soft-delete (xóa cứng task thùng rác và giải tán nhóm)', async () => {
       const team = await createTeam(`TeamWithSoftDeleted_${ts}_04`);
 
       const taskRes = await request(app.getHttpServer())
@@ -193,14 +193,18 @@ describe('P0 & P1: Team Delete Protection & Activity Log Audit (e2e)', () => {
       const softDeleted = await prisma.task.findUnique({ where: { id: taskRes.body.id } });
       expect(softDeleted?.deletedAt).not.toBeNull();
 
-      // Deleting team must be blocked!
+      // Deleting team must succeed and clean up soft-deleted task!
       const res = await request(app.getHttpServer())
         .delete(`/api/teams/${team.id}`)
         .set('Authorization', `Bearer ${tokenOwner}`)
-        .expect(409);
+        .expect(200);
 
-      expect(res.body.code).toBe('TEAM_HAS_DEPENDENT_DATA');
-      expect(res.body.taskCount).toBe(1);
+      expect(res.body.message).toContain('Đã giải tán nhóm thành công');
+
+      const deletedTeam = await prisma.team.findUnique({ where: { id: team.id } });
+      expect(deletedTeam).toBeNull();
+      const permanentlyDeletedTask = await prisma.task.findUnique({ where: { id: taskRes.body.id } });
+      expect(permanentlyDeletedTask).toBeNull();
     });
 
     it('P0-05: Từ chối xóa Team không có Task nhưng còn Category (HTTP 409)', async () => {

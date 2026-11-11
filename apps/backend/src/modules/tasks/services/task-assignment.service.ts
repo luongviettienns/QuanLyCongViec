@@ -62,6 +62,7 @@ export class TaskAssignmentService {
     const targetAssigneeId: number | null = data.assigneeId;
 
     let previousAssigneeId: number | null = null;
+    let isUnchangedAssignee = false;
     let handoverResult: MainAssigneeHandoverResult = {
       affectedSubtaskIds: [],
       revokedCollaboratorUserId: null,
@@ -97,6 +98,23 @@ export class TaskAssignmentService {
               throw new BadRequestException('Công việc cá nhân chỉ có thể phân công cho chính bạn');
             }
           }
+        }
+
+        // Idempotent: nếu người được phân công không thay đổi thì trả về luôn, không ghi DB và không phát SSE
+        if (currentTask.assigneeId === targetAssigneeId) {
+          isUnchangedAssignee = true;
+          return tx.task.findUniqueOrThrow({
+            where: { id },
+            include: {
+              category: true,
+              assignee: {
+                select: { id: true, name: true, email: true },
+              },
+              team: {
+                select: { id: true, name: true },
+              },
+            },
+          });
         }
 
         previousAssigneeId = currentTask.assigneeId;
@@ -170,7 +188,7 @@ export class TaskAssignmentService {
         return savedTask;
       });
 
-      if (!externalTx) {
+      if (!externalTx && !isUnchangedAssignee) {
         void this.realtimeService.emit({
           type: 'TASK_ASSIGNED',
           actorId: userId,

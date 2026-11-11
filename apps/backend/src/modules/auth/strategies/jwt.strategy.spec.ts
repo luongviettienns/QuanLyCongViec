@@ -28,14 +28,14 @@ describe('JwtStrategy', () => {
       expect(extractor(req)).toBe('token-from-header');
     });
 
-    it('extracts token from query parameter ONLY for /realtime/stream', () => {
+    it('rejects token in query parameter for all endpoints including /realtime/stream', () => {
       const extractor = (strategy as any)._jwtFromRequest;
       const streamReq1 = {
         headers: {},
         url: '/realtime/stream?token=stream-token-123',
         query: { token: 'stream-token-123' },
       };
-      expect(extractor(streamReq1)).toBe('stream-token-123');
+      expect(extractor(streamReq1)).toBeNull();
 
       const streamReq2 = {
         headers: {},
@@ -43,7 +43,7 @@ describe('JwtStrategy', () => {
         path: '/realtime/stream',
         query: { token: 'stream-token-456' },
       };
-      expect(extractor(streamReq2)).toBe('stream-token-456');
+      expect(extractor(streamReq2)).toBeNull();
     });
 
     it('rejects token in query parameter for standard REST endpoints (/tasks, /categories, /teams)', () => {

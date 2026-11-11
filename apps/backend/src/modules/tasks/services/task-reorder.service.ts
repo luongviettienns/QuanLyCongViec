@@ -109,6 +109,17 @@ export class TaskReorderService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      // Kiểm tra tư cách thành viên nhóm trước khi khóa để người ngoài nhóm nhận 404 ngay lập tức
+      if (dto.teamId) {
+        const team = await tx.team.findUnique({
+          where: { id: dto.teamId },
+          include: { members: true },
+        });
+        if (!this.policy.isTeamMember(userId, team)) {
+          throw new NotFoundException('Không tìm thấy nhóm');
+        }
+      }
+
       await this.lockScope(tx, { teamId: dto.teamId ?? null, userId });
 
       if (dto.teamId) {

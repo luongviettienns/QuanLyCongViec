@@ -89,15 +89,40 @@ export class TaskCrudService {
 
     try {
       const createdTask = await this.prisma.$transaction(async (tx) => {
+        let targetTeam: any = null;
+        // 1. Kiểm tra quyền thành viên nhóm trước tiên (trả về 404 nếu không thuộc nhóm) để tránh rò rỉ dữ liệu
+        if (data.teamId) {
+          targetTeam = await tx.team.findUnique({
+            where: { id: data.teamId },
+            include: { members: true },
+          });
+          if (!this.policy.isTeamMember(userId, targetTeam)) {
+            throw new NotFoundException('Không tìm thấy nhóm');
+          }
+        }
+
+        // 2. Khóa phân tán phạm vi bảng
         await this.reorderService.lockScope(tx, {
           teamId: data.teamId ?? null,
           userId,
         });
 
+        // 3. Đọc lại quyền thành viên trong khóa để chống race condition
+        if (data.teamId) {
+          targetTeam = await tx.team.findUnique({
+            where: { id: data.teamId },
+            include: { members: true },
+          });
+          if (!this.policy.isTeamMember(userId, targetTeam)) {
+            throw new NotFoundException('Không tìm thấy nhóm');
+          }
+        }
+
         const titleScopeWhere: Prisma.TaskWhereInput = data.teamId
           ? { teamId: data.teamId, deletedAt: null }
           : { userId, teamId: null, deletedAt: null };
 
+        // 4. Kiểm tra trùng tiêu đề sau khi đã xác thực tư cách thành viên nhóm
         const existingTask = await tx.task.findFirst({
           where: {
             ...titleScopeWhere,
@@ -138,14 +163,6 @@ export class TaskCrudService {
         }
 
         if (data.teamId) {
-          const targetTeam = await tx.team.findUnique({
-            where: { id: data.teamId },
-            include: { members: true },
-          });
-          if (!this.policy.isTeamMember(userId, targetTeam)) {
-            throw new NotFoundException('Không tìm thấy nhóm');
-          }
-
           if (data.assigneeId) {
             if (!this.policy.isTeamMember(data.assigneeId, targetTeam)) {
               throw new BadRequestException('Người được phân công không thuộc nhóm này');

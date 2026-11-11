@@ -129,7 +129,7 @@ export interface TeamMemberAddedEvent {
   newMemberId: number;
   role: TeamRole;
   idempotencyKey?: string;
-  activityLogId?: number;
+  activityLogId: number;
   timestamp?: number;
 }
 
@@ -141,7 +141,7 @@ export interface TeamMemberRemovedEvent {
   removedUserId: number;
   isSelfLeave: boolean;
   idempotencyKey?: string;
-  activityLogId?: number;
+  activityLogId: number;
   timestamp?: number;
 }
 
@@ -153,7 +153,7 @@ export interface TeamRoleChangedEvent {
   targetUserId: number;
   newRole: TeamRole;
   idempotencyKey?: string;
-  activityLogId?: number;
+  activityLogId: number;
   timestamp?: number;
 }
 
@@ -165,7 +165,7 @@ export interface TeamOwnershipTransferredEvent {
   newOwnerId: number;
   previousOwnerId: number;
   idempotencyKey?: string;
-  activityLogId?: number;
+  activityLogId: number;
   timestamp?: number;
 }
 

@@ -209,6 +209,9 @@ export class NotificationEventService {
       if (hooks && Array.isArray(hooks)) {
         hooks.push(emitRealtimeNotifications);
       } else {
+        this.logger.warn(
+          'Transaction client was not initialized via PrismaService.$transaction; post-commit hooks may not execute automatically.',
+        );
         (tx as any)[POST_COMMIT_HOOKS] = [emitRealtimeNotifications];
       }
 
@@ -240,23 +243,32 @@ export class NotificationEventService {
   }
 
   /**
+   * Sanitizes any activity prefix to guarantee exactly one `activity:` prefix
+   * across both task and team event branches.
+   */
+  private sanitizeActivityTag(tag: string): string {
+    return tag.replace(/^(activity:)+/, 'activity:');
+  }
+
+  /**
    * Formats an activity tag ensuring no double `activity:` prefix
    * whether passed via activityLogId or idempotencyKey.
    */
   private formatActivityTag(
     activityLogId?: number,
     idempotencyKey?: string,
-    fallback?: number,
   ): string {
     if (activityLogId !== undefined && activityLogId !== null) {
       return `activity:${activityLogId}`;
     }
     if (idempotencyKey) {
-      return idempotencyKey.startsWith('activity:')
-        ? idempotencyKey
-        : `activity:${idempotencyKey}`;
+      return this.sanitizeActivityTag(
+        idempotencyKey.startsWith('activity:')
+          ? idempotencyKey
+          : `activity:${idempotencyKey}`,
+      );
     }
-    return String(fallback ?? 0);
+    return '';
   }
 
   /**
@@ -272,7 +284,7 @@ export class NotificationEventService {
     teamId: number | null,
   ): string {
     // 1. Team activity events always preserve their domain attributes (newMemberId, newRole, etc.)
-    // and format uniqueTag from activityLogId or idempotencyKey without double prefix.
+    // and format uniqueTag from activityLogId (guaranteed required) or idempotencyKey.
     if (
       event.type === 'TEAM_MEMBER_ADDED' ||
       event.type === 'TEAM_MEMBER_REMOVED' ||
@@ -282,7 +294,6 @@ export class NotificationEventService {
       const uniqueTag = this.formatActivityTag(
         event.activityLogId,
         event.idempotencyKey,
-        event.timestamp ?? event.actorId,
       );
       if (event.type === 'TEAM_MEMBER_ADDED') {
         return `${event.type}:${recipientId}:${teamId}:${event.newMemberId}:${uniqueTag}`;
@@ -300,7 +311,7 @@ export class NotificationEventService {
 
     // 2. Explicit idempotency key for task/subtask events
     if ('idempotencyKey' in event && event.idempotencyKey) {
-      const sanitizedKey = event.idempotencyKey.replace(/^(activity:)+/, 'activity:');
+      const sanitizedKey = this.sanitizeActivityTag(event.idempotencyKey);
       return `${event.type}:${recipientId}:${validTaskId ?? teamId ?? 'global'}:${subtaskId ?? ''}:${sanitizedKey}`;
     }
 

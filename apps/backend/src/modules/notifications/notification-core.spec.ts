@@ -64,6 +64,7 @@ describe('Notification Core Module Unit Tests', () => {
           teamName: 'Frontend Team',
           targetUserId: 3,
           newRole: TeamRole.ADMIN,
+          activityLogId: 10,
         },
         'Chủ Nhóm',
       );

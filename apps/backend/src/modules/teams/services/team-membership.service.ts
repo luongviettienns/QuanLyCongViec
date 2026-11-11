@@ -27,7 +27,7 @@ export class TeamMembershipService {
     return this.prisma.$transaction(async (tx) => {
       // 1. Khóa dòng Team trong transaction để tuần tự hóa và chống race condition
       const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
-        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR UPDATE
+        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR NO KEY UPDATE
       `;
 
       if (!lockedTeams || lockedTeams.length === 0) {
@@ -126,7 +126,7 @@ export class TeamMembershipService {
     return this.prisma.$transaction(async (tx) => {
       // 1. Khóa dòng Team trong transaction
       const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
-        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR UPDATE
+        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR NO KEY UPDATE
       `;
 
       if (!lockedTeams || lockedTeams.length === 0) {
@@ -159,6 +159,18 @@ export class TeamMembershipService {
         team.ownerId,
         userId,
       );
+
+      // 4.1. Thao tác idempotent: nếu role không thay đổi thì trả về luôn, không ghi log hay phát notification
+      if (targetMember.role === dto.role) {
+        return tx.teamMember.findUniqueOrThrow({
+          where: { id: memberId },
+          include: {
+            user: {
+              select: { id: true, name: true, email: true },
+            },
+          },
+        });
+      }
 
       // 5. Cập nhật role
       const res = await tx.teamMember.update({
@@ -210,7 +222,7 @@ export class TeamMembershipService {
     return this.prisma.$transaction(async (tx) => {
       // 1. Khóa dòng Team trong transaction để tuần tự hóa chuyển quyền
       const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
-        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR UPDATE
+        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR NO KEY UPDATE
       `;
 
       if (!lockedTeams || lockedTeams.length === 0) {
@@ -327,7 +339,7 @@ export class TeamMembershipService {
     await this.prisma.$transaction(async (tx) => {
       // 1. Khóa dòng Team trong transaction để tuần tự hóa xóa thành viên
       const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
-        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR UPDATE
+        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR NO KEY UPDATE
       `;
 
       if (!lockedTeams || lockedTeams.length === 0) {

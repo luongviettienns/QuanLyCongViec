@@ -107,6 +107,31 @@ function TaskAppShell() {
   const [dashboardReloadCounter, setDashboardReloadCounter] = useState(0);
   const [dashboardLoading, setDashboardLoading] = useState(false);
 
+  const refetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleRefetch = useCallback(() => {
+    if (refetchTimerRef.current !== null) {
+      clearTimeout(refetchTimerRef.current);
+    }
+    refetchTimerRef.current = setTimeout(() => {
+      refetchTimerRef.current = null;
+      if (currentNav === 'tasks') {
+        void refetch();
+      } else if (currentNav === 'dashboard') {
+        setDashboardReloadCounter((c) => c + 1);
+      }
+    }, 400);
+  }, [currentNav, refetch]);
+
+  useEffect(() => {
+    return () => {
+      if (refetchTimerRef.current !== null) {
+        clearTimeout(refetchTimerRef.current);
+        refetchTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const handleGlobalReload = useCallback(() => {
     if (currentNav === 'dashboard') {
       setDashboardReloadCounter((c) => c + 1);
@@ -121,13 +146,9 @@ function TaskAppShell() {
       if (event.actorId && event.actorId === user?.id) {
         return;
       }
-      if (currentNav === 'tasks') {
-        void refetch();
-      } else if (currentNav === 'dashboard') {
-        setDashboardReloadCounter((c) => c + 1);
-      }
+      scheduleRefetch();
     },
-    [user?.id, currentNav, refetch],
+    [user?.id, scheduleRefetch],
   );
 
   useRealtimeEvent('TASK_STATUS_CHANGED', handleRealtimeTaskEvent);
@@ -144,12 +165,8 @@ function TaskAppShell() {
   useRealtimeEvent('TASK_COLLABORATORS_CHANGED', handleRealtimeTaskEvent);
 
   const handleRealtimeNotification = useCallback(() => {
-    if (currentNav === 'tasks') {
-      void refetch();
-    } else if (currentNav === 'dashboard') {
-      setDashboardReloadCounter((c) => c + 1);
-    }
-  }, [currentNav, refetch]);
+    scheduleRefetch();
+  }, [scheduleRefetch]);
 
   useRealtimeEvent('NOTIFICATION_NEW', handleRealtimeNotification);
 

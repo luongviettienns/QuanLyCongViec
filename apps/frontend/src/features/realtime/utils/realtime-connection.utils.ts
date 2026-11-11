@@ -14,7 +14,7 @@ export interface RealtimeConnectionConfig {
   reconnectDelayMs?: number;
   getToken: () => string | null;
   isTokenExpired: () => boolean;
-  createEventSource: (url: string) => EventSourceLike;
+  createEventSource: (url: string, token?: string) => EventSourceLike;
   scheduleTimer?: (callback: () => void, delayMs: number) => unknown;
   cancelTimer?: (timerId: unknown) => void;
   onEvent: (event: RealtimeEventData) => void;
@@ -90,8 +90,8 @@ export function createRealtimeConnectionManager(config: RealtimeConnectionConfig
 
     setStatus(wasDisconnected ? 'reconnecting' : 'connecting');
 
-    const url = `/api/realtime/stream?token=${encodeURIComponent(token)}`;
-    const es = config.createEventSource(url);
+    const url = '/api/realtime/stream';
+    const es = config.createEventSource(url, token);
     activeSource = es;
 
     const dispatchRaw = (raw: string) => {
