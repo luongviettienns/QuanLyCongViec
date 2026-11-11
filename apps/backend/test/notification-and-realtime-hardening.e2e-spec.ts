@@ -636,9 +636,18 @@ describe('Phase 2 & 3: Notification & Realtime Hardening (e2e)', () => {
   });
 
   describe('Phase 3: Realtime Completeness, Multi-User Sync & SSE Security', () => {
-    it('rejects unauthenticated or invalid JWT connections to SSE /api/realtime/stream', async () => {
+    it('rejects unauthenticated, invalid JWT, or JWT without exp from connecting to SSE', async () => {
       await expect(connectSse(baseUrl, '')).rejects.toThrow(/401/);
       await expect(connectSse(baseUrl, 'invalid.jwt.token')).rejects.toThrow(/401/);
+
+      // Token without exp claim must be rejected with 401 on SSE endpoint
+      const rawJwtService = new JwtService({ secret: process.env.JWT_SECRET });
+      const tokenWithoutExp = rawJwtService.sign({
+        sub: userAId,
+        email: `p23_CreatorA_${ts}@test.local`,
+      });
+      await expect(connectSse(baseUrl, tokenWithoutExp)).rejects.toThrow(/401/);
+
       expect(userOId).toBeGreaterThan(0);
     });
 
@@ -866,11 +875,32 @@ describe('Phase 2 & 3: Notification & Realtime Hardening (e2e)', () => {
         .expect(201);
       const remSubId = remSubRes.body.id as number;
 
-      // Remove user R from team -> clears subtask assigneeId & notifies remaining team members via SUBTASK_UPDATED
+      // Also invite user R as collaborator on taskId (status: PENDING)
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${taskId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenB}`)
+        .send({ userId: removed.id })
+        .expect(201);
+
+      // Remove user R from team -> clears subtask assigneeId, revokes collaborators & emits realtime events
       await request(app.getHttpServer())
         .delete(`/api/teams/${teamId}/members/${removedMembership.id}`)
         .set('Authorization', `Bearer ${tokenA}`)
         .expect(200);
+
+      // Stream B (Manager) must receive TASK_COLLABORATORS_CHANGED with REVOKED status
+      await streamB.waitFor(
+        (evt) =>
+          evt.type === 'TASK_COLLABORATORS_CHANGED' &&
+          Number(evt.payload?.taskId) === taskId &&
+          Number(evt.payload?.userId) === removed.id &&
+          evt.payload?.status === 'REVOKED',
+      );
+
+      const revokedCollab = await prisma.taskCollaborator.findFirst({
+        where: { taskId, userId: removed.id },
+      });
+      expect(revokedCollab?.status).toBe('REVOKED');
 
       await streamB.waitFor(
         (evt) =>

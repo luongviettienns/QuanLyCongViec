@@ -278,6 +278,7 @@ export class TeamMembershipService {
 
     const updatedTasks: Array<{ id: number; title: string }> = [];
     const affectedSubtasks: Array<{ id: number; taskId: number }> = [];
+    const revokedCollabTaskIds: number[] = [];
 
     await this.prisma.$transaction(async (tx) => {
       // 1. Khóa phân tán scope Board của nhóm để đồng bộ hóa cập nhật vị trí
@@ -349,16 +350,28 @@ export class TeamMembershipService {
       const teamTaskIds = teamTaskRecords.map((t) => t.id);
 
       if (teamTaskIds.length > 0) {
-        await tx.taskCollaborator.updateMany({
+        const collabsToRevoke = await tx.taskCollaborator.findMany({
           where: {
             taskId: { in: teamTaskIds },
             userId: targetMember.userId,
             status: { in: ['PENDING', 'ACCEPTED'] },
           },
-          data: {
-            status: 'REVOKED',
-          },
+          select: { taskId: true },
         });
+        revokedCollabTaskIds.push(...collabsToRevoke.map((c) => c.taskId));
+
+        if (collabsToRevoke.length > 0) {
+          await tx.taskCollaborator.updateMany({
+            where: {
+              taskId: { in: teamTaskIds },
+              userId: targetMember.userId,
+              status: { in: ['PENDING', 'ACCEPTED'] },
+            },
+            data: {
+              status: 'REVOKED',
+            },
+          });
+        }
 
         const subtasksToReset = await tx.subtask.findMany({
           where: {
@@ -427,6 +440,20 @@ export class TeamMembershipService {
         payload: {
           taskId: sub.taskId,
           subtaskId: sub.id,
+        },
+      });
+    }
+
+    for (const collabTaskId of Array.from(new Set(revokedCollabTaskIds))) {
+      void this.realtimeService.emit({
+        type: 'TASK_COLLABORATORS_CHANGED',
+        actorId: userId,
+        teamId,
+        payload: {
+          taskId: collabTaskId,
+          action: isSelfLeaving ? 'LEAVE' : 'REMOVE',
+          userId: targetMember.userId,
+          status: 'REVOKED',
         },
       });
     }
