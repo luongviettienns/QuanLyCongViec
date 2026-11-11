@@ -240,6 +240,26 @@ export class NotificationEventService {
   }
 
   /**
+   * Formats an activity tag ensuring no double `activity:` prefix
+   * whether passed via activityLogId or idempotencyKey.
+   */
+  private formatActivityTag(
+    activityLogId?: number,
+    idempotencyKey?: string,
+    fallback?: number,
+  ): string {
+    if (activityLogId !== undefined && activityLogId !== null) {
+      return `activity:${activityLogId}`;
+    }
+    if (idempotencyKey) {
+      return idempotencyKey.startsWith('activity:')
+        ? idempotencyKey
+        : `activity:${idempotencyKey}`;
+    }
+    return String(fallback ?? 0);
+  }
+
+  /**
    * Generates a deterministic idempotency `eventKey` without ever calling `Date.now()`.
    * Retries of the same logical mutation produce the exact same key, while distinct
    * business transitions or entity timestamps produce distinct keys.
@@ -251,8 +271,37 @@ export class NotificationEventService {
     subtaskId: number | null,
     teamId: number | null,
   ): string {
+    // 1. Team activity events always preserve their domain attributes (newMemberId, newRole, etc.)
+    // and format uniqueTag from activityLogId or idempotencyKey without double prefix.
+    if (
+      event.type === 'TEAM_MEMBER_ADDED' ||
+      event.type === 'TEAM_MEMBER_REMOVED' ||
+      event.type === 'TEAM_ROLE_CHANGED' ||
+      event.type === 'TEAM_OWNERSHIP_TRANSFERRED'
+    ) {
+      const uniqueTag = this.formatActivityTag(
+        event.activityLogId,
+        event.idempotencyKey,
+        event.timestamp ?? event.actorId,
+      );
+      if (event.type === 'TEAM_MEMBER_ADDED') {
+        return `${event.type}:${recipientId}:${teamId}:${event.newMemberId}:${uniqueTag}`;
+      }
+      if (event.type === 'TEAM_MEMBER_REMOVED') {
+        return `${event.type}:${recipientId}:${teamId}:${event.removedUserId}:${uniqueTag}`;
+      }
+      if (event.type === 'TEAM_ROLE_CHANGED') {
+        return `${event.type}:${recipientId}:${teamId}:${event.targetUserId}:${event.newRole}:${uniqueTag}`;
+      }
+      if (event.type === 'TEAM_OWNERSHIP_TRANSFERRED') {
+        return `${event.type}:${recipientId}:${teamId}:${event.newOwnerId}:${uniqueTag}`;
+      }
+    }
+
+    // 2. Explicit idempotency key for task/subtask events
     if ('idempotencyKey' in event && event.idempotencyKey) {
-      return `${event.type}:${recipientId}:${validTaskId ?? teamId ?? 'global'}:${subtaskId ?? ''}:${event.idempotencyKey}`;
+      const sanitizedKey = event.idempotencyKey.replace(/^(activity:)+/, 'activity:');
+      return `${event.type}:${recipientId}:${validTaskId ?? teamId ?? 'global'}:${subtaskId ?? ''}:${sanitizedKey}`;
     }
 
     switch (event.type) {
@@ -319,34 +368,6 @@ export class NotificationEventService {
 
       case 'TASK_RETURNED':
         return `${event.type}:${recipientId}:${validTaskId}:${event.reason}:${event.timestamp ?? event.actorId}`;
-
-      case 'TEAM_MEMBER_ADDED': {
-        const uniqueTag = event.activityLogId
-          ? `activity:${event.activityLogId}`
-          : (event.timestamp ?? event.actorId);
-        return `${event.type}:${recipientId}:${teamId}:${event.newMemberId}:${uniqueTag}`;
-      }
-
-      case 'TEAM_MEMBER_REMOVED': {
-        const uniqueTag = event.activityLogId
-          ? `activity:${event.activityLogId}`
-          : (event.timestamp ?? event.actorId);
-        return `${event.type}:${recipientId}:${teamId}:${event.removedUserId}:${uniqueTag}`;
-      }
-
-      case 'TEAM_ROLE_CHANGED': {
-        const uniqueTag = event.activityLogId
-          ? `activity:${event.activityLogId}`
-          : (event.timestamp ?? event.actorId);
-        return `${event.type}:${recipientId}:${teamId}:${event.targetUserId}:${event.newRole}:${uniqueTag}`;
-      }
-
-      case 'TEAM_OWNERSHIP_TRANSFERRED': {
-        const uniqueTag = event.activityLogId
-          ? `activity:${event.activityLogId}`
-          : (event.timestamp ?? event.actorId);
-        return `${event.type}:${recipientId}:${teamId}:${event.newOwnerId}:${uniqueTag}`;
-      }
 
       default: {
         const deterministicTag = event.timestamp ?? event.actorId;

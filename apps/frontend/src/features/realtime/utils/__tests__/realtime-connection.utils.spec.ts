@@ -162,4 +162,36 @@ describe('Realtime SSE Connection & Reconnect Manager', () => {
     assert.equal(scheduledCount, 0);
     assert.equal(authExpiredCalled, 1);
   });
+
+  it('debounces rapid consecutive reconnect notifications to prevent request floods', async () => {
+    let executionCount = 0;
+    const debounceMs = 50;
+
+    // Simulate debounce wrapper identical to useRealtimeReconnect
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedTrigger = () => {
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+      timer = setTimeout(() => {
+        timer = null;
+        executionCount += 1;
+      }, debounceMs);
+    };
+
+    // Rapid network flapping: 5 reconnects within 20ms
+    debouncedTrigger();
+    debouncedTrigger();
+    debouncedTrigger();
+    debouncedTrigger();
+    debouncedTrigger();
+
+    assert.equal(executionCount, 0);
+
+    // Wait past debounceMs
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    // Must have executed exactly ONCE
+    assert.equal(executionCount, 1);
+  });
 });

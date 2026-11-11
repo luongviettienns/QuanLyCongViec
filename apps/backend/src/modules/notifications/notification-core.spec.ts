@@ -668,5 +668,138 @@ describe('Notification Core Module Unit Tests', () => {
         }),
       );
     });
+
+    it('guarantees distinct eventKey per recipient for multi-recipient events and avoids double activity: prefix', async () => {
+      const mockRecipientService = {
+        resolveRecipients: vi.fn().mockResolvedValue([101, 102]), // two recipients
+      };
+      const postCommitHooks: Array<() => void> = [];
+      const { POST_COMMIT_HOOKS } = await import('../../database/prisma.service.js');
+      let createdData: any[] = [];
+      const mockTx: any = {
+        user: { findUnique: vi.fn().mockResolvedValue({ name: 'Owner A' }) },
+        notification: {
+          findMany: vi.fn().mockResolvedValue([]),
+          createManyAndReturn: vi.fn().mockImplementation(({ data }) => {
+            createdData = data;
+            return Promise.resolve(data.map((d: any, idx: number) => ({ id: idx + 1, ...d })));
+          }),
+        },
+      };
+      mockTx[POST_COMMIT_HOOKS] = postCommitHooks;
+
+      const mockPrisma = {
+        $transaction: vi.fn((cb) => cb(mockTx)),
+      } as any;
+      const mockRealtimeService = {
+        emit: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const eventService = new NotificationEventService(
+        mockPrisma,
+        mockRecipientService as any,
+        mockRealtimeService as any,
+      );
+
+      // Pass activityLogId AND idempotencyKey starting with activity:
+      await eventService.publish(
+        {
+          type: 'TEAM_OWNERSHIP_TRANSFERRED',
+          actorId: 101,
+          teamId: 5,
+          teamName: 'Core Team',
+          newOwnerId: 102,
+          previousOwnerId: 101,
+          activityLogId: 999,
+          idempotencyKey: 'activity:999',
+        },
+        mockTx,
+      );
+
+      expect(createdData).toHaveLength(2);
+      // Recipient 101
+      expect(createdData[0].userId).toBe(101);
+      expect(createdData[0].eventKey).toContain('TEAM_OWNERSHIP_TRANSFERRED:101:5:102:activity:999');
+      // Recipient 102
+      expect(createdData[1].userId).toBe(102);
+      expect(createdData[1].eventKey).toContain('TEAM_OWNERSHIP_TRANSFERRED:102:5:102:activity:999');
+      // Must NOT collide
+      expect(createdData[0].eventKey).not.toBe(createdData[1].eventKey);
+      // Must NOT contain double prefix
+      expect(createdData[0].eventKey).not.toContain('activity:activity:');
+      expect(createdData[1].eventKey).not.toContain('activity:activity:');
+    });
+
+    it('publishes without txClient by wrapping in $transaction and executing post-commit hook', async () => {
+      const mockRecipientService = {
+        resolveRecipients: vi.fn().mockResolvedValue([5]),
+      };
+      const { POST_COMMIT_HOOKS } = await import('../../database/prisma.service.js');
+      const mockTx: any = {
+        user: { findUnique: vi.fn().mockResolvedValue({ name: 'Admin' }) },
+        notification: {
+          findMany: vi.fn().mockResolvedValue([]),
+          createManyAndReturn: vi.fn().mockResolvedValue([
+            {
+              id: 777,
+              userId: 5,
+              actorId: 1,
+              type: 'TEAM_MEMBER_ADDED',
+              title: 'Chào mừng thành viên',
+              content: 'Nội dung',
+              teamId: 3,
+              isRead: false,
+            },
+          ]),
+        },
+      };
+
+      const mockRealtimeService = {
+        emit: vi.fn().mockResolvedValue(undefined),
+      };
+
+      // Simulate PrismaService.$transaction which executes post-commit hooks after commit
+      const mockPrisma = {
+        $transaction: vi.fn(async (cb: (tx: any) => Promise<any>) => {
+          const hooks: Array<() => void> = [];
+          mockTx[POST_COMMIT_HOOKS] = hooks;
+          const res = await cb(mockTx);
+          for (const hook of hooks) {
+            hook();
+          }
+          return res;
+        }),
+      } as any;
+
+      const eventService = new NotificationEventService(
+        mockPrisma,
+        mockRecipientService as any,
+        mockRealtimeService as any,
+      );
+
+      // Call publish WITHOUT txClient
+      await eventService.publish({
+        type: 'TEAM_MEMBER_ADDED',
+        actorId: 1,
+        teamId: 3,
+        teamName: 'Designers',
+        newMemberId: 5,
+        role: TeamRole.MEMBER,
+        activityLogId: 888,
+      });
+
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+      // Realtime emit should have fired via post-commit hook
+      expect(mockRealtimeService.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'NOTIFICATION_NEW',
+          targetUserIds: [5],
+          payload: expect.objectContaining({
+            id: 777,
+            teamId: 3,
+          }),
+        }),
+      );
+    });
   });
 });

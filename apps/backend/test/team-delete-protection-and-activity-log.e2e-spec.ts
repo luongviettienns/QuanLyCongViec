@@ -6,6 +6,7 @@ import { vi } from 'vitest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/database/prisma.service.js';
 import { NotificationEventService } from '../src/modules/notifications/services/notification-event.service.js';
+import { RealtimeService } from '../src/modules/realtime/realtime.service.js';
 import { configureTestApp } from './test-app.helper.js';
 
 describe('P0 & P1: Team Delete Protection & Activity Log Audit (e2e)', () => {
@@ -676,6 +677,160 @@ describe('P0 & P1: Team Delete Protection & Activity Log Audit (e2e)', () => {
       expect(memberNotifs[0].eventKey).not.toBe(memberNotifs[1].eventKey);
       expect(memberNotifs[0].eventKey).toContain('activity:');
       expect(memberNotifs[1].eventKey).toContain('activity:');
+    });
+
+    it('P1-Role-Cycle: Đổi vai trò qua lại nhiều lần (MEMBER -> ADMIN -> MEMBER) sinh đủ thông báo, không bị trùng eventKey', async () => {
+      const roleTeam = await createTeam(`RoleTeam_${ts}`);
+
+      // Add member
+      const addRes = await request(app.getHttpServer())
+        .post(`/api/teams/${roleTeam.id}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p01_member_${ts}@test.local`, role: 'MEMBER' })
+        .expect(201);
+      const membershipId = addRes.body.id;
+
+      // 1. MEMBER -> ADMIN
+      await request(app.getHttpServer())
+        .patch(`/api/teams/${roleTeam.id}/members/${membershipId}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ role: 'ADMIN' })
+        .expect(200);
+
+      // 2. ADMIN -> MEMBER
+      await request(app.getHttpServer())
+        .patch(`/api/teams/${roleTeam.id}/members/${membershipId}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ role: 'MEMBER' })
+        .expect(200);
+
+      // 3. MEMBER -> ADMIN again
+      await request(app.getHttpServer())
+        .patch(`/api/teams/${roleTeam.id}/members/${membershipId}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ role: 'ADMIN' })
+        .expect(200);
+
+      // Query notifications
+      const roleNotifs = await prisma.notification.findMany({
+        where: {
+          teamId: roleTeam.id,
+          userId: memberId,
+          type: 'TEAM_ROLE_CHANGED',
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      // Must have all 3 notifications
+      expect(roleNotifs).toHaveLength(3);
+      const keys = roleNotifs.map((n) => n.eventKey);
+      const uniqueKeys = new Set(keys);
+      expect(uniqueKeys.size).toBe(3);
+      for (const k of keys) {
+        expect(k).toContain('activity:');
+        expect(k).not.toContain('activity:activity:');
+      }
+    });
+
+    it('P1-MultiRecipient-Transfer: Chuyển quyền sở hữu gửi thông báo cho Owner mới, và sự kiện multi-recipient không bị skip lẫn nhau', async () => {
+      const transferTeam = await createTeam(`TransferTeam_${ts}`);
+
+      // Add admin to team
+      await request(app.getHttpServer())
+        .post(`/api/teams/${transferTeam.id}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p01_admin_${ts}@test.local`, role: 'ADMIN' })
+        .expect(201);
+
+      // Add member to team
+      await request(app.getHttpServer())
+        .post(`/api/teams/${transferTeam.id}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p01_member_${ts}@test.local`, role: 'MEMBER' })
+        .expect(201);
+
+      // Transfer ownership to Admin
+      await request(app.getHttpServer())
+        .patch(`/api/teams/${transferTeam.id}/transfer-ownership`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ newOwnerId: adminId })
+        .expect(200);
+
+      // Check notification for new owner (adminId)
+      const newOwnerNotif = await prisma.notification.findFirst({
+        where: {
+          teamId: transferTeam.id,
+          userId: adminId,
+          type: 'TEAM_OWNERSHIP_TRANSFERRED',
+        },
+      });
+      expect(newOwnerNotif).not.toBeNull();
+      expect(newOwnerNotif?.eventKey).toContain(`TEAM_OWNERSHIP_TRANSFERRED:${adminId}:`);
+      expect(newOwnerNotif?.eventKey).toContain('activity:');
+
+      // Actor (ownerId) does not receive self-notification per system policy
+      const actorNotif = await prisma.notification.findFirst({
+        where: {
+          teamId: transferTeam.id,
+          userId: ownerId,
+          type: 'TEAM_OWNERSHIP_TRANSFERRED',
+        },
+      });
+      expect(actorNotif).toBeNull();
+    });
+
+    it('P1-PostCommit-Rollback: publish() thành công nhưng câu lệnh DB sau đó quăng lỗi -> rollback và KHÔNG phát SSE ma', async () => {
+      const rollbackTeam = await createTeam(`PostCommitRbTeam_${ts}`);
+      const notificationEventService = app.get(NotificationEventService);
+      const realtimeService = app.get(RealtimeService);
+
+      const emitSpy = vi.spyOn(realtimeService, 'emit');
+
+      // Execute transaction where publish() succeeds but a subsequent error aborts the transaction
+      let caughtError: any = null;
+      try {
+        await prisma.$transaction(async (tx) => {
+          // 1. publish() succeeds and registers post-commit hook
+          await notificationEventService.publish(
+            {
+              type: 'TEAM_MEMBER_ADDED',
+              actorId: ownerId,
+              teamId: rollbackTeam.id,
+              teamName: rollbackTeam.name,
+              newMemberId: memberId,
+              role: 'MEMBER',
+              activityLogId: 999999,
+            },
+            tx,
+          );
+
+          // 2. A subsequent DB error occurs inside the transaction
+          throw new Error('Simulated query failure after publish in same transaction');
+        });
+      } catch (err) {
+        caughtError = err;
+      }
+
+      expect(caughtError).not.toBeNull();
+      expect(caughtError.message).toBe('Simulated query failure after publish in same transaction');
+
+      // 3. Database must have rolled back: no notification exists!
+      const notifInDb = await prisma.notification.findFirst({
+        where: {
+          teamId: rollbackTeam.id,
+          userId: memberId,
+          type: 'TEAM_MEMBER_ADDED',
+        },
+      });
+      expect(notifInDb).toBeNull();
+
+      // 4. Realtime emit must NEVER have been called (zero phantom SSE!)
+      const notifCalls = emitSpy.mock.calls.filter(
+        ([payload]) => payload.type === 'NOTIFICATION_NEW' && payload.teamId === rollbackTeam.id,
+      );
+      expect(notifCalls).toHaveLength(0);
+
+      emitSpy.mockRestore();
     });
   });
 });
