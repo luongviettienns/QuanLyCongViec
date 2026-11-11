@@ -9,11 +9,12 @@ import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { TaskQueryService } from './task-query.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
 import { RealtimeService } from '../../realtime/realtime.service.js';
+import { TeamActivityService } from '../../team-activity/team-activity.service.js';
 import { CreateSubtaskDto } from '../dto/create-subtask.dto.js';
 import { UpdateSubtaskDto } from '../dto/update-subtask.dto.js';
 import { UpdateSubtaskStatusDto } from '../dto/update-subtask-status.dto.js';
 import { ReorderSubtasksDto } from '../dto/reorder-subtasks.dto.js';
-import { TaskStatus, CollaboratorStatus } from '@prisma/client';
+import { TaskStatus, CollaboratorStatus, TeamActivityAction } from '@prisma/client';
 
 @Injectable()
 export class SubtaskService {
@@ -23,6 +24,7 @@ export class SubtaskService {
     private readonly queryService: TaskQueryService,
     private readonly notificationEventService: NotificationEventService,
     private readonly realtimeService: RealtimeService,
+    private readonly teamActivityService: TeamActivityService,
   ) {}
 
   async getSubtasks(taskId: number, callerId: number) {
@@ -331,6 +333,21 @@ export class SubtaskService {
 
       if (dto.status !== undefined && dto.status !== subtask.status) {
         if (subtask.status === TaskStatus.DONE && updated.status !== TaskStatus.DONE) {
+          if (task.teamId) {
+            await this.teamActivityService.logActivity(tx, {
+              teamId: task.teamId,
+              actorId: callerId,
+              action: TeamActivityAction.SUBTASK_REOPENED,
+              metadata: {
+                taskId,
+                taskTitle: task.title,
+                subtaskId: updated.id,
+                subtaskTitle: updated.title,
+                newStatus: updated.status,
+              },
+            });
+          }
+
           await this.notificationEventService.publish(
             {
               type: 'SUBTASK_REOPENED',
@@ -350,6 +367,20 @@ export class SubtaskService {
             tx,
           );
         } else if (updated.status === TaskStatus.DONE) {
+          if (task.teamId) {
+            await this.teamActivityService.logActivity(tx, {
+              teamId: task.teamId,
+              actorId: callerId,
+              action: TeamActivityAction.SUBTASK_COMPLETED,
+              metadata: {
+                taskId,
+                taskTitle: task.title,
+                subtaskId: updated.id,
+                subtaskTitle: updated.title,
+              },
+            });
+          }
+
           const completedStamp = updated.completedAt ?? updated.updatedAt;
           await this.notificationEventService.publish(
             {

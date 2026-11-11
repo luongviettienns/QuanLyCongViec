@@ -304,7 +304,13 @@ export function TeamDetailCard({
                   <HistoryOutlined /> Lịch sử hoạt động
                 </span>
               ),
-              children: <TeamActivitySection teamId={selectedTeam.id} />,
+              children: (
+                <TeamActivitySection
+                  teamId={selectedTeam.id}
+                  members={selectedTeam.members}
+                  owner={selectedTeam.owner}
+                />
+              ),
             },
           ]}
         />

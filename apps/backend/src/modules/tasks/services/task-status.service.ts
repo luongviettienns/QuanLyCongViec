@@ -12,7 +12,8 @@ import { TaskQueryService } from './task-query.service.js';
 import { TaskReorderService } from './task-reorder.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
 import { RealtimeService } from '../../realtime/realtime.service.js';
-import { type Task, Prisma, TaskStatus } from '@prisma/client';
+import { TeamActivityService } from '../../team-activity/team-activity.service.js';
+import { type Task, Prisma, TaskStatus, TeamActivityAction } from '@prisma/client';
 
 @Injectable()
 export class TaskStatusService {
@@ -24,6 +25,7 @@ export class TaskStatusService {
     private readonly reorderService: TaskReorderService,
     private readonly notificationEventService: NotificationEventService,
     private readonly realtimeService: RealtimeService,
+    private readonly teamActivityService: TeamActivityService,
   ) {}
 
   private executeInTransaction<T>(
@@ -187,7 +189,34 @@ export class TaskStatusService {
         }
       }
 
+      if (currentTask.teamId && currentTask.status !== data.status) {
+        await this.teamActivityService.logActivity(tx, {
+          teamId: currentTask.teamId,
+          actorId: userId,
+          action: TeamActivityAction.TASK_STATUS_CHANGED,
+          metadata: {
+            taskId: currentTask.id,
+            taskTitle: currentTask.title,
+            oldStatus: currentTask.status,
+            newStatus: data.status,
+          },
+        });
+      }
+
       if (shouldUnassign && currentTask.assigneeId) {
+        if (currentTask.teamId) {
+          await this.teamActivityService.logActivity(tx, {
+            teamId: currentTask.teamId,
+            actorId: userId,
+            action: TeamActivityAction.TASK_UNASSIGNED,
+            targetUserId: currentTask.assigneeId,
+            metadata: {
+              taskId: currentTask.id,
+              taskTitle: currentTask.title,
+            },
+          });
+        }
+
         await this.notificationEventService.publish(
           {
             type: 'TASK_UNASSIGNED',

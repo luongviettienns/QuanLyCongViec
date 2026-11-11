@@ -13,7 +13,8 @@ import { TaskQueryService } from './task-query.service.js';
 import { TaskReorderService } from './task-reorder.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
 import { RealtimeService } from '../../realtime/realtime.service.js';
-import { type Task, Prisma, TaskStatus, TaskPriority } from '@prisma/client';
+import { TeamActivityService } from '../../team-activity/team-activity.service.js';
+import { type Task, Prisma, TaskStatus, TaskPriority, TeamActivityAction } from '@prisma/client';
 
 @Injectable()
 export class TaskCrudService {
@@ -24,6 +25,7 @@ export class TaskCrudService {
     private readonly reorderService: TaskReorderService,
     private readonly notificationEventService: NotificationEventService,
     private readonly realtimeService: RealtimeService,
+    private readonly teamActivityService: TeamActivityService,
   ) {}
 
   private executeInTransaction<T>(
@@ -205,7 +207,34 @@ export class TaskCrudService {
           },
         });
 
+        if (createdTask.teamId) {
+          await this.teamActivityService.logActivity(tx, {
+            teamId: createdTask.teamId,
+            actorId: userId,
+            action: TeamActivityAction.TASK_CREATED,
+            metadata: {
+              taskId: createdTask.id,
+              taskTitle: createdTask.title,
+              priority: createdTask.priority,
+              status: createdTask.status,
+            },
+          });
+        }
+
         if (createdTask.assigneeId && createdTask.assigneeId !== userId) {
+          if (createdTask.teamId) {
+            await this.teamActivityService.logActivity(tx, {
+              teamId: createdTask.teamId,
+              actorId: userId,
+              action: TeamActivityAction.TASK_ASSIGNED,
+              targetUserId: createdTask.assigneeId,
+              metadata: {
+                taskId: createdTask.id,
+                taskTitle: createdTask.title,
+              },
+            });
+          }
+
           await this.notificationEventService.publish(
             {
               type: 'TASK_ASSIGNED',
@@ -500,6 +529,18 @@ export class TaskCrudService {
 
       await this.reorderService.reindexColumn(tx, remainingTasksScope, taskToDelete.status, [id]);
 
+      if (taskToDelete.teamId) {
+        await this.teamActivityService.logActivity(tx, {
+          teamId: taskToDelete.teamId,
+          actorId: userId,
+          action: TeamActivityAction.TASK_DELETED,
+          metadata: {
+            taskId: taskToDelete.id,
+            taskTitle: taskToDelete.title,
+          },
+        });
+      }
+
       return {
         success: true,
         message: `Đã xoá thành công công việc #${id} - "${taskToDelete.title}"`,
@@ -622,6 +663,18 @@ export class TaskCrudService {
           deletedWithTask: false,
         },
       });
+
+      if (restoredTask.teamId) {
+        await this.teamActivityService.logActivity(tx, {
+          teamId: restoredTask.teamId,
+          actorId: userId,
+          action: TeamActivityAction.TASK_RESTORED,
+          metadata: {
+            taskId: restoredTask.id,
+            taskTitle: restoredTask.title,
+          },
+        });
+      }
 
       return restoredTask;
     });

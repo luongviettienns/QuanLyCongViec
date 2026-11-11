@@ -13,6 +13,8 @@ import { TeamRole } from '@prisma/client';
 import { NotificationEventService } from '../notifications/services/notification-event.service.js';
 import { TeamPolicyService } from './policies/team-policy.service.js';
 import { TeamMembershipService } from './services/team-membership.service.js';
+import { TeamActivityService } from '../team-activity/team-activity.service.js';
+import { GetTeamActivityLogsDto } from '../team-activity/dto/get-activity-logs.dto.js';
 
 @Injectable()
 export class TeamsService {
@@ -21,6 +23,7 @@ export class TeamsService {
     private readonly notificationEventService: NotificationEventService,
     private readonly policy: TeamPolicyService,
     private readonly membershipService: TeamMembershipService,
+    private readonly teamActivityService: TeamActivityService,
   ) {}
 
   async create(userId: number, dto: CreateTeamDto) {
@@ -279,7 +282,7 @@ export class TeamsService {
     return this.membershipService.removeMember(userId, teamId, memberId);
   }
 
-  async getActivityLogs(userId: number, teamId: number) {
+  async getActivityLogs(userId: number, teamId: number, query?: GetTeamActivityLogsDto) {
     const team = await this.prisma.team.findUnique({
       where: { id: teamId },
     });
@@ -302,22 +305,6 @@ export class TeamsService {
 
     this.policy.assertCanViewActivityLogs(isOwner, callerRole);
 
-    return this.prisma.teamActivityLog.findMany({
-      where: {
-        teamIdSnapshot: teamId,
-      },
-      include: {
-        actor: {
-          select: { id: true, name: true, email: true },
-        },
-        targetUser: {
-          select: { id: true, name: true, email: true },
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      take: 100,
-    });
+    return this.teamActivityService.getPaginatedLogs(teamId, query);
   }
 }

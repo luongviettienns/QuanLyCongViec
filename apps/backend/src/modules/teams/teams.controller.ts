@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   ParseIntPipe,
   UseGuards,
 } from '@nestjs/common';
@@ -16,6 +17,7 @@ import { UpdateTeamDto } from './dto/update-team.dto.js';
 import { AddMemberDto } from './dto/add-member.dto.js';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto.js';
 import { TransferOwnershipDto } from './dto/transfer-ownership.dto.js';
+import { GetTeamActivityLogsDto } from '../team-activity/dto/get-activity-logs.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js';
 
@@ -55,8 +57,9 @@ export class TeamsController {
   getActivityLogs(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseIntPipe) id: number,
+    @Query() query?: GetTeamActivityLogsDto,
   ) {
-    return this.teamsService.getActivityLogs(user.id, id);
+    return this.teamsService.getActivityLogs(user.id, id, query);
   }
 
   @ApiOperation({ summary: 'Cập nhật thông tin nhóm' })

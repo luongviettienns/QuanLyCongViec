@@ -5,7 +5,8 @@ import type {
   CreateTeamPayload,
   UpdateTeamPayload,
   AddMemberPayload,
-  TeamActivityLog,
+  PaginatedTeamActivityLogs,
+  GetTeamActivityLogsQuery,
 } from '../types/team.types';
 import {
   getAuthHeaders,
@@ -134,9 +135,18 @@ export async function removeTeamMember(teamId: number, memberId: number): Promis
 
 export async function getTeamActivityLogs(
   teamId: number,
+  query?: GetTeamActivityLogsQuery,
   signal?: AbortSignal,
-): Promise<TeamActivityLog[]> {
-  const response = await fetch(`/api/teams/${teamId}/activity-logs`, {
+): Promise<PaginatedTeamActivityLogs> {
+  const searchParams = new URLSearchParams();
+  if (query?.page) searchParams.set('page', String(query.page));
+  if (query?.limit) searchParams.set('limit', String(query.limit));
+  if (query?.action) searchParams.set('action', query.action);
+  if (query?.actorId) searchParams.set('actorId', String(query.actorId));
+  const qs = searchParams.toString();
+  const url = `/api/teams/${teamId}/activity-logs${qs ? `?${qs}` : ''}`;
+
+  const response = await fetch(url, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -145,7 +155,7 @@ export async function getTeamActivityLogs(
     signal,
   });
 
-  return handleApiResponse<TeamActivityLog[]>(
+  return handleApiResponse<PaginatedTeamActivityLogs>(
     response,
     'Không thể tải lịch sử hoạt động của nhóm',
   );

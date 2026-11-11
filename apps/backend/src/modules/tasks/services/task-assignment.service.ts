@@ -12,7 +12,8 @@ import { TaskQueryService } from './task-query.service.js';
 import { TaskReorderService } from './task-reorder.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
 import { RealtimeService } from '../../realtime/realtime.service.js';
-import { type Task, Prisma, TaskStatus } from '@prisma/client';
+import { TeamActivityService } from '../../team-activity/team-activity.service.js';
+import { type Task, Prisma, TaskStatus, TeamActivityAction } from '@prisma/client';
 
 export interface MainAssigneeHandoverResult {
   affectedSubtaskIds: number[];
@@ -35,6 +36,7 @@ export class TaskAssignmentService {
     private readonly reorderService: TaskReorderService,
     private readonly notificationEventService: NotificationEventService,
     private readonly realtimeService: RealtimeService,
+    private readonly teamActivityService: TeamActivityService,
   ) {}
 
   private executeInTransaction<T>(
@@ -154,6 +156,33 @@ export class TaskAssignmentService {
         );
 
         if (previousAssigneeId !== targetAssigneeId) {
+          if (currentTask.teamId) {
+            if (previousAssigneeId && !targetAssigneeId) {
+              await this.teamActivityService.logActivity(tx, {
+                teamId: currentTask.teamId,
+                actorId: userId,
+                action: TeamActivityAction.TASK_UNASSIGNED,
+                targetUserId: previousAssigneeId,
+                metadata: {
+                  taskId: currentTask.id,
+                  taskTitle: currentTask.title,
+                },
+              });
+            } else if (targetAssigneeId) {
+              await this.teamActivityService.logActivity(tx, {
+                teamId: currentTask.teamId,
+                actorId: userId,
+                action: TeamActivityAction.TASK_ASSIGNED,
+                targetUserId: targetAssigneeId,
+                metadata: {
+                  taskId: currentTask.id,
+                  taskTitle: currentTask.title,
+                  previousAssigneeId,
+                },
+              });
+            }
+          }
+
           if (previousAssigneeId) {
             await this.notificationEventService.publish(
               {

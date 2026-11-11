@@ -12,11 +12,11 @@ describe('Hardening, Correctness & Security Specifications', () => {
 
   const ts = Date.now();
   let ownerToken: string;
-  let ownerId: number;
+  let _ownerId: number;
   let memberToken: string;
   let memberId: number;
   let outsiderToken: string;
-  let outsiderId: number;
+  let _outsiderId: number;
 
   let teamId: number;
   let teamMemberRecordId: number;
@@ -40,7 +40,7 @@ describe('Hardening, Correctness & Security Specifications', () => {
       })
       .expect(201);
     ownerToken = ownerRes.body.accessToken;
-    ownerId = ownerRes.body.user.id;
+    _ownerId = ownerRes.body.user.id;
 
     const memberRes = await request(app.getHttpServer())
       .post('/api/auth/register')
@@ -62,7 +62,7 @@ describe('Hardening, Correctness & Security Specifications', () => {
       })
       .expect(201);
     outsiderToken = outsiderRes.body.accessToken;
-    outsiderId = outsiderRes.body.user.id;
+    _outsiderId = outsiderRes.body.user.id;
 
     // Create Team
     const teamRes = await request(app.getHttpServer())

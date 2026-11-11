@@ -10,9 +10,10 @@ import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { TaskQueryService } from './task-query.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
 import { RealtimeService } from '../../realtime/realtime.service.js';
+import { TeamActivityService } from '../../team-activity/team-activity.service.js';
 import { InviteCollaboratorDto } from '../dto/invite-collaborator.dto.js';
 import { RespondCollaboratorDto } from '../dto/respond-collaborator.dto.js';
-import { CollaboratorStatus, TaskStatus } from '@prisma/client';
+import { CollaboratorStatus, TaskStatus, TeamActivityAction } from '@prisma/client';
 
 @Injectable()
 export class TaskCollaboratorService {
@@ -22,6 +23,7 @@ export class TaskCollaboratorService {
     private readonly queryService: TaskQueryService,
     private readonly notificationEventService: NotificationEventService,
     private readonly realtimeService: RealtimeService,
+    private readonly teamActivityService: TeamActivityService,
   ) {}
 
   async getCollaborators(taskId: number, callerId: number) {
@@ -137,6 +139,19 @@ export class TaskCollaboratorService {
           invitedBy: { select: { id: true, name: true, email: true } },
         },
       });
+
+      if (task.teamId) {
+        await this.teamActivityService.logActivity(tx, {
+          teamId: task.teamId,
+          actorId: callerId,
+          action: TeamActivityAction.COLLABORATOR_ADDED,
+          targetUserId: dto.userId,
+          metadata: {
+            taskId,
+            taskTitle: task.title,
+          },
+        });
+      }
 
       await this.notificationEventService.publish(
         {
@@ -334,6 +349,20 @@ export class TaskCollaboratorService {
           data: {
             assigneeId: null,
             status: TaskStatus.TODO,
+          },
+        });
+      }
+
+      if (task.teamId) {
+        await this.teamActivityService.logActivity(tx, {
+          teamId: task.teamId,
+          actorId: callerId,
+          action: TeamActivityAction.COLLABORATOR_REMOVED,
+          targetUserId,
+          metadata: {
+            taskId,
+            taskTitle: task.title,
+            isSelfLeave: isSelfLeaving,
           },
         });
       }

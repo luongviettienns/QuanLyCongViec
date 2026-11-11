@@ -318,8 +318,9 @@ describe('P0 & P1: Team Delete Protection & Activity Log Audit (e2e)', () => {
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(200);
 
-      expect(logsRes.body).toHaveLength(1);
-      const log = logsRes.body[0];
+      const logs1 = logsRes.body.data ?? logsRes.body;
+      expect(logs1).toHaveLength(1);
+      const log = logs1[0];
       expect(log.action).toBe('ADD_MEMBER');
       expect(log.actorId).toBe(ownerId);
       expect(log.targetUserId).toBe(memberId);
@@ -340,8 +341,9 @@ describe('P0 & P1: Team Delete Protection & Activity Log Audit (e2e)', () => {
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(200);
 
-      expect(logsRes.body).toHaveLength(2);
-      const latestLog = logsRes.body[0];
+      const logs2 = logsRes.body.data ?? logsRes.body;
+      expect(logs2).toHaveLength(2);
+      const latestLog = logs2[0];
       expect(latestLog.action).toBe('CHANGE_ROLE');
       expect(latestLog.oldRole).toBe('MEMBER');
       expect(latestLog.newRole).toBe('ADMIN');
@@ -401,7 +403,7 @@ describe('P0 & P1: Team Delete Protection & Activity Log Audit (e2e)', () => {
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(200);
 
-      const removeLog = logsRes.body[0];
+      const removeLog = (logsRes.body.data ?? logsRes.body)[0];
       expect(removeLog.action).toBe('REMOVE_MEMBER');
       expect(removeLog.actorId).toBe(ownerId);
       expect(removeLog.targetUserId).toBe(memberId);
@@ -432,7 +434,7 @@ describe('P0 & P1: Team Delete Protection & Activity Log Audit (e2e)', () => {
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(200);
 
-      const leaveLog = logsRes.body[0];
+      const leaveLog = (logsRes.body.data ?? logsRes.body)[0];
       expect(leaveLog.action).toBe('LEAVE_TEAM');
       expect(leaveLog.actorId).toBe(outsiderId);
       expect(leaveLog.targetUserId).toBe(outsiderId);
@@ -481,12 +483,13 @@ describe('P0 & P1: Team Delete Protection & Activity Log Audit (e2e)', () => {
         .set('Authorization', `Bearer ${tokenOwner}`)
         .expect(200);
 
+      const logs6 = logsRes.body.data ?? logsRes.body;
       // Verify new ADD_MEMBER is at the top
-      expect(logsRes.body[0].action).toBe('ADD_MEMBER');
-      expect(logsRes.body[0].targetUserId).toBe(memberId);
+      expect(logs6[0].action).toBe('ADD_MEMBER');
+      expect(logs6[0].targetUserId).toBe(memberId);
 
       // Verify older records for memberId (REMOVE_MEMBER, CHANGE_ROLE, initial ADD_MEMBER) are still present
-      const memberLogs = logsRes.body.filter((l: any) => l.targetUserId === memberId);
+      const memberLogs = logs6.filter((l: any) => l.targetUserId === memberId);
       const actions = memberLogs.map((l: any) => l.action);
       expect(actions).toContain('ADD_MEMBER');
       expect(actions).toContain('CHANGE_ROLE');
@@ -538,7 +541,7 @@ describe('P0 & P1: Team Delete Protection & Activity Log Audit (e2e)', () => {
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .expect(200);
 
-      const transferLog = logsRes.body[0];
+      const transferLog = (logsRes.body.data ?? logsRes.body)[0];
       expect(transferLog.action).toBe('TRANSFER_OWNER');
       expect(transferLog.actorId).toBe(ownerId);
       expect(transferLog.targetUserId).toBe(adminId);

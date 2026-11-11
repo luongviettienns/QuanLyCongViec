@@ -15,9 +15,10 @@ import { TaskCollaboratorService } from './services/task-collaborator.service.js
 import { SubtaskService } from './services/subtask.service.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
+import { TeamActivityModule } from '../team-activity/team-activity.module.js';
 
 @Module({
-  imports: [AuthModule, NotificationsModule],
+  imports: [AuthModule, NotificationsModule, TeamActivityModule],
   controllers: [TasksController],
   providers: [
     TasksService,

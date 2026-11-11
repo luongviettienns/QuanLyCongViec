@@ -59,7 +59,17 @@ export type TeamActivityAction =
   | 'REMOVE_MEMBER'
   | 'LEAVE_TEAM'
   | 'CHANGE_ROLE'
-  | 'TRANSFER_OWNER';
+  | 'TRANSFER_OWNER'
+  | 'TASK_CREATED'
+  | 'TASK_STATUS_CHANGED'
+  | 'TASK_ASSIGNED'
+  | 'TASK_UNASSIGNED'
+  | 'TASK_DELETED'
+  | 'TASK_RESTORED'
+  | 'SUBTASK_COMPLETED'
+  | 'SUBTASK_REOPENED'
+  | 'COLLABORATOR_ADDED'
+  | 'COLLABORATOR_REMOVED';
 
 export interface TeamActivityLog {
   id: number;
@@ -77,8 +87,32 @@ export interface TeamActivityLog {
     revokedCollaboratorCount?: number;
     previousOwnerId?: number;
     newOwnerId?: number;
+    taskId?: number;
+    taskTitle?: string;
+    oldStatus?: string;
+    newStatus?: string;
+    subtaskId?: number;
+    subtaskTitle?: string;
+    priority?: string;
+    isSelfLeave?: boolean;
+    [key: string]: unknown;
   } | null;
   createdAt: string;
   actor?: TeamMemberUser | null;
   targetUser?: TeamMemberUser | null;
+}
+
+export interface PaginatedTeamActivityLogs {
+  data: TeamActivityLog[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface GetTeamActivityLogsQuery {
+  page?: number;
+  limit?: number;
+  action?: TeamActivityAction | string;
+  actorId?: number;
 }
