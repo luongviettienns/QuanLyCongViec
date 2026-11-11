@@ -2,8 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
+import { vi } from 'vitest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/database/prisma.service.js';
+import { NotificationEventService } from '../src/modules/notifications/services/notification-event.service.js';
 import { configureTestApp } from './test-app.helper.js';
 
 describe('P0 & P1: Team Delete Protection & Activity Log Audit (e2e)', () => {
@@ -596,6 +598,84 @@ describe('P0 & P1: Team Delete Protection & Activity Log Audit (e2e)', () => {
       });
       expect(notifOutsider).not.toBeNull();
       expect(notifOutsider?.actorId).toBe(ownerId);
+    });
+
+    it('P1-Atomicity-Failure: Thao tác tạo Notification thất bại làm rollback toàn bộ TeamMember và TeamActivityLog', async () => {
+      const atomTeam = await createTeam(`AtomFailureTeam_${ts}`);
+      const notificationEventService = app.get(NotificationEventService);
+
+      // Spy on publish to throw an intentional error once
+      const publishSpy = vi
+        .spyOn(notificationEventService, 'publish')
+        .mockRejectedValueOnce(new Error('Simulated atomic notification failure'));
+
+      // Attempt to add admin to atomTeam -> must fail with 500
+      await request(app.getHttpServer())
+        .post(`/api/teams/${atomTeam.id}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p01_admin_${ts}@test.local`, role: 'MEMBER' })
+        .expect(500);
+
+      publishSpy.mockRestore();
+
+      // Verify that TeamMember was NOT created in DB (rolled back!)
+      const memberInDb = await prisma.teamMember.findFirst({
+        where: { teamId: atomTeam.id, userId: adminId },
+      });
+      expect(memberInDb).toBeNull();
+
+      // Verify that TeamActivityLog was NOT created in DB (rolled back!)
+      const activityInDb = await prisma.teamActivityLog.findFirst({
+        where: { teamIdSnapshot: atomTeam.id, targetUserId: adminId },
+      });
+      expect(activityInDb).toBeNull();
+
+      // Verify that Notification was NOT created
+      const notifInDb = await prisma.notification.findFirst({
+        where: { teamId: atomTeam.id, userId: adminId },
+      });
+      expect(notifInDb).toBeNull();
+    });
+
+    it('P1-Idempotency: Thêm lại thành viên hoặc đổi vai trò qua lại không bị lỗi trùng eventKey / không bị skipDuplicates bỏ qua', async () => {
+      const cycleTeam = await createTeam(`CycleTeam_${ts}`);
+
+      // 1. Owner adds Member to cycleTeam -> Notification 1
+      const addRes = await request(app.getHttpServer())
+        .post(`/api/teams/${cycleTeam.id}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p01_member_${ts}@test.local`, role: 'MEMBER' })
+        .expect(201);
+      const membershipId = addRes.body.id;
+
+      // 2. Owner removes Member -> Notification 2
+      await request(app.getHttpServer())
+        .delete(`/api/teams/${cycleTeam.id}/members/${membershipId}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      // 3. Owner adds Member BACK to cycleTeam -> Notification 3 must NOT be skipped!
+      await request(app.getHttpServer())
+        .post(`/api/teams/${cycleTeam.id}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p01_member_${ts}@test.local`, role: 'MEMBER' })
+        .expect(201);
+
+      // Query notifications for member in cycleTeam
+      const memberNotifs = await prisma.notification.findMany({
+        where: {
+          teamId: cycleTeam.id,
+          userId: memberId,
+          type: 'TEAM_MEMBER_ADDED',
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      // Must have exactly 2 distinct TEAM_MEMBER_ADDED notifications!
+      expect(memberNotifs).toHaveLength(2);
+      expect(memberNotifs[0].eventKey).not.toBe(memberNotifs[1].eventKey);
+      expect(memberNotifs[0].eventKey).toContain('activity:');
+      expect(memberNotifs[1].eventKey).toContain('activity:');
     });
   });
 });

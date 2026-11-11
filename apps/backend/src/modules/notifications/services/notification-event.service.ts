@@ -320,17 +320,33 @@ export class NotificationEventService {
       case 'TASK_RETURNED':
         return `${event.type}:${recipientId}:${validTaskId}:${event.reason}:${event.timestamp ?? event.actorId}`;
 
-      case 'TEAM_MEMBER_ADDED':
-        return `${event.type}:${recipientId}:${teamId}:${event.newMemberId}:${event.timestamp ?? event.actorId}`;
+      case 'TEAM_MEMBER_ADDED': {
+        const uniqueTag = event.activityLogId
+          ? `activity:${event.activityLogId}`
+          : (event.timestamp ?? event.actorId);
+        return `${event.type}:${recipientId}:${teamId}:${event.newMemberId}:${uniqueTag}`;
+      }
 
-      case 'TEAM_MEMBER_REMOVED':
-        return `${event.type}:${recipientId}:${teamId}:${event.removedUserId}:${event.timestamp ?? event.actorId}`;
+      case 'TEAM_MEMBER_REMOVED': {
+        const uniqueTag = event.activityLogId
+          ? `activity:${event.activityLogId}`
+          : (event.timestamp ?? event.actorId);
+        return `${event.type}:${recipientId}:${teamId}:${event.removedUserId}:${uniqueTag}`;
+      }
 
-      case 'TEAM_ROLE_CHANGED':
-        return `${event.type}:${recipientId}:${teamId}:${event.targetUserId}:${event.newRole}:${event.timestamp ?? event.actorId}`;
+      case 'TEAM_ROLE_CHANGED': {
+        const uniqueTag = event.activityLogId
+          ? `activity:${event.activityLogId}`
+          : (event.timestamp ?? event.actorId);
+        return `${event.type}:${recipientId}:${teamId}:${event.targetUserId}:${event.newRole}:${uniqueTag}`;
+      }
 
-      case 'TEAM_OWNERSHIP_TRANSFERRED':
-        return `${event.type}:${recipientId}:${teamId}:${event.newOwnerId}:${event.timestamp ?? event.actorId}`;
+      case 'TEAM_OWNERSHIP_TRANSFERRED': {
+        const uniqueTag = event.activityLogId
+          ? `activity:${event.activityLogId}`
+          : (event.timestamp ?? event.actorId);
+        return `${event.type}:${recipientId}:${teamId}:${event.newOwnerId}:${uniqueTag}`;
+      }
 
       default: {
         const deterministicTag = event.timestamp ?? event.actorId;

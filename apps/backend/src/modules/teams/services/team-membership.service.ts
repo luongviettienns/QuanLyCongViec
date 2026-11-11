@@ -86,7 +86,7 @@ export class TeamMembershipService {
       });
 
       // 6. Ghi nhật ký hoạt động trong cùng transaction
-      await tx.teamActivityLog.create({
+      const activityLog = await tx.teamActivityLog.create({
         data: {
           teamIdSnapshot: team.id,
           teamNameSnapshot: team.name,
@@ -107,6 +107,7 @@ export class TeamMembershipService {
           teamName: team.name,
           newMemberId: targetUser.id,
           role: createdMember.role,
+          idempotencyKey: `activity:${activityLog.id}`,
         },
         tx,
       );
@@ -172,7 +173,7 @@ export class TeamMembershipService {
       });
 
       // 6. Ghi nhật ký trong transaction
-      await tx.teamActivityLog.create({
+      const activityLog = await tx.teamActivityLog.create({
         data: {
           teamIdSnapshot: team.id,
           teamNameSnapshot: team.name,
@@ -194,6 +195,7 @@ export class TeamMembershipService {
           teamName: team.name,
           targetUserId: targetMember.userId,
           newRole: dto.role,
+          idempotencyKey: `activity:${activityLog.id}`,
         },
         tx,
       );
@@ -261,7 +263,7 @@ export class TeamMembershipService {
         },
       });
 
-      await tx.teamActivityLog.create({
+      const activityLog = await tx.teamActivityLog.create({
         data: {
           teamIdSnapshot: team.id,
           teamNameSnapshot: team.name,
@@ -286,6 +288,7 @@ export class TeamMembershipService {
           teamName: team.name,
           newOwnerId: dto.newOwnerId,
           previousOwnerId: userId,
+          idempotencyKey: `activity:${activityLog.id}`,
         },
         tx,
       );
@@ -487,7 +490,7 @@ export class TeamMembershipService {
       });
 
       // 6. Ghi nhật ký hoạt động (Activity History)
-      await tx.teamActivityLog.create({
+      const activityLog = await tx.teamActivityLog.create({
         data: {
           teamIdSnapshot: team.id,
           teamNameSnapshot: team.name,
@@ -513,6 +516,7 @@ export class TeamMembershipService {
           teamName: team.name,
           removedUserId: targetMember.userId,
           isSelfLeave: isSelfLeaving,
+          idempotencyKey: `activity:${activityLog.id}`,
         },
         tx,
       );
