@@ -13,7 +13,7 @@ import { RealtimeService } from '../../realtime/realtime.service.js';
 import { TeamActivityService } from '../../team-activity/team-activity.service.js';
 import { InviteCollaboratorDto } from '../dto/invite-collaborator.dto.js';
 import { RespondCollaboratorDto } from '../dto/respond-collaborator.dto.js';
-import { CollaboratorStatus, TaskStatus, TeamActivityAction } from '@prisma/client';
+import { CollaboratorStatus, TaskStatus, TeamActivityAction, Prisma } from '@prisma/client';
 
 @Injectable()
 export class TaskCollaboratorService {
@@ -25,6 +25,39 @@ export class TaskCollaboratorService {
     private readonly realtimeService: RealtimeService,
     private readonly teamActivityService: TeamActivityService,
   ) {}
+
+  private async logAndPublishInvite(
+    tx: Prisma.TransactionClient,
+    task: { id: number; title: string; teamId: number },
+    callerId: number,
+    targetUserId: number,
+    invitedAt: Date,
+  ) {
+    await this.teamActivityService.logActivity(tx, {
+      teamId: task.teamId,
+      actorId: callerId,
+      action: TeamActivityAction.COLLABORATOR_INVITED,
+      targetUserId,
+      metadata: {
+        taskId: task.id,
+        taskTitle: task.title,
+      },
+    });
+
+    await this.notificationEventService.publish(
+      {
+        type: 'TASK_COLLABORATOR_INVITED',
+        actorId: callerId,
+        taskId: task.id,
+        taskTitle: task.title,
+        teamId: task.teamId,
+        invitedUserId: targetUserId,
+        invitedAt,
+        timestamp: invitedAt.getTime(),
+      },
+      tx,
+    );
+  }
 
   async getCollaborators(taskId: number, callerId: number) {
     // findOne ensures task exists, caller has permission to view, and task is not soft deleted
@@ -110,18 +143,12 @@ export class TaskCollaboratorService {
           },
         });
 
-        await this.notificationEventService.publish(
-          {
-            type: 'TASK_COLLABORATOR_INVITED',
-            actorId: callerId,
-            taskId,
-            taskTitle: task.title,
-            teamId: task.teamId,
-            invitedUserId: dto.userId,
-            invitedAt: updated.invitedAt,
-            timestamp: updated.invitedAt.getTime(),
-          },
+        await this.logAndPublishInvite(
           tx,
+          { id: task.id, title: task.title, teamId: task.teamId! },
+          callerId,
+          dto.userId,
+          updated.invitedAt,
         );
 
         return updated;
@@ -140,31 +167,12 @@ export class TaskCollaboratorService {
         },
       });
 
-      if (task.teamId) {
-        await this.teamActivityService.logActivity(tx, {
-          teamId: task.teamId,
-          actorId: callerId,
-          action: TeamActivityAction.COLLABORATOR_ADDED,
-          targetUserId: dto.userId,
-          metadata: {
-            taskId,
-            taskTitle: task.title,
-          },
-        });
-      }
-
-      await this.notificationEventService.publish(
-        {
-          type: 'TASK_COLLABORATOR_INVITED',
-          actorId: callerId,
-          taskId,
-          taskTitle: task.title,
-          teamId: task.teamId,
-          invitedUserId: dto.userId,
-          invitedAt: created.invitedAt,
-          timestamp: created.invitedAt.getTime(),
-        },
+      await this.logAndPublishInvite(
         tx,
+        { id: task.id, title: task.title, teamId: task.teamId! },
+        callerId,
+        dto.userId,
+        created.invitedAt,
       );
 
       return created;
@@ -236,6 +244,18 @@ export class TaskCollaboratorService {
       });
 
       if (dto.action === 'ACCEPT') {
+        if (task.teamId) {
+          await this.teamActivityService.logActivity(tx, {
+            teamId: task.teamId,
+            actorId: callerId,
+            action: TeamActivityAction.COLLABORATOR_ACCEPTED,
+            metadata: {
+              taskId,
+              taskTitle: task.title,
+            },
+          });
+        }
+
         await this.notificationEventService.publish(
           {
             type: 'TASK_COLLABORATOR_ACCEPTED',
@@ -251,6 +271,18 @@ export class TaskCollaboratorService {
           tx,
         );
       } else {
+        if (task.teamId) {
+          await this.teamActivityService.logActivity(tx, {
+            teamId: task.teamId,
+            actorId: callerId,
+            action: TeamActivityAction.COLLABORATOR_DECLINED,
+            metadata: {
+              taskId,
+              taskTitle: task.title,
+            },
+          });
+        }
+
         await this.notificationEventService.publish(
           {
             type: 'TASK_COLLABORATOR_DECLINED',

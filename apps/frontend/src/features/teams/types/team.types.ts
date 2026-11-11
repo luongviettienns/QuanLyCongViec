@@ -66,10 +66,24 @@ export type TeamActivityAction =
   | 'TASK_UNASSIGNED'
   | 'TASK_DELETED'
   | 'TASK_RESTORED'
+  | 'TASK_RETURNED'
+  | 'TASK_MOVED_OUT'
+  | 'TASK_MOVED_IN'
+  | 'TASK_DEADLINE_CHANGED'
+  | 'TASK_PRIORITY_CHANGED'
+  | 'TASK_UPDATED'
   | 'SUBTASK_COMPLETED'
   | 'SUBTASK_REOPENED'
-  | 'COLLABORATOR_ADDED'
-  | 'COLLABORATOR_REMOVED';
+  | 'COLLABORATOR_INVITED'
+  | 'COLLABORATOR_ACCEPTED'
+  | 'COLLABORATOR_DECLINED'
+  | 'COLLABORATOR_REMOVED'
+  | 'COLLABORATOR_ADDED';
+
+export interface TeamActivityActor {
+  id: number;
+  name: string;
+}
 
 export interface TeamActivityLog {
   id: number;
@@ -91,6 +105,16 @@ export interface TeamActivityLog {
     taskTitle?: string;
     oldStatus?: string;
     newStatus?: string;
+    previousAssigneeId?: number;
+    newAssigneeId?: number | null;
+    fromTeamId?: number | null;
+    toTeamId?: number | null;
+    oldDueDate?: string | null;
+    newDueDate?: string | null;
+    oldPriority?: string;
+    newPriority?: string;
+    changedFields?: string[];
+    reason?: string;
     subtaskId?: number;
     subtaskTitle?: string;
     priority?: string;
@@ -108,6 +132,7 @@ export interface PaginatedTeamActivityLogs {
   page: number;
   limit: number;
   totalPages: number;
+  actors?: TeamActivityActor[];
 }
 
 export interface GetTeamActivityLogsQuery {

@@ -356,6 +356,23 @@ export class TaskAssignmentService {
         },
       );
 
+      if (currentTask.teamId) {
+        await this.teamActivityService.logActivity(tx, {
+          teamId: currentTask.teamId,
+          actorId: userId,
+          action: TeamActivityAction.TASK_RETURNED,
+          metadata: {
+            taskId: currentTask.id,
+            taskTitle: currentTask.title,
+            previousAssigneeId: currentTask.assigneeId,
+            newAssigneeId,
+            oldStatus: currentTask.status,
+            newStatus: 'TODO',
+            reason: cleanReason,
+          },
+        });
+      }
+
       await this.notificationEventService.publish(
         {
           type: 'TASK_RETURNED',

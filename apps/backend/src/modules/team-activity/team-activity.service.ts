@@ -1,10 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../database/prisma.service.js';
 import { Prisma, TeamActivityAction, TeamRole, TeamActivityLog } from '@prisma/client';
 import { GetTeamActivityLogsDto } from './dto/get-activity-logs.dto.js';
 
 export interface LogActivityParams {
   teamId: number;
+  teamName?: string;
   actorId: number;
   action: TeamActivityAction;
   targetUserId?: number | null;
@@ -13,35 +15,54 @@ export interface LogActivityParams {
   metadata?: Record<string, unknown> | null;
 }
 
+export interface ActivityActorInfo {
+  id: number;
+  name: string;
+  email: string;
+}
+
 export interface PaginatedTeamActivityLogs {
   data: TeamActivityLog[];
   total: number;
   page: number;
   limit: number;
   totalPages: number;
+  actors: ActivityActorInfo[];
 }
 
 @Injectable()
 export class TeamActivityService {
+  private readonly logger = new Logger(TeamActivityService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async logActivity(
     tx: Prisma.TransactionClient,
     params: LogActivityParams,
   ): Promise<TeamActivityLog | null> {
-    if (!params.teamId) return null;
+    if (!params.teamId) {
+      this.logger.warn('Cannot log activity: teamId is missing');
+      return null;
+    }
 
-    const team = await tx.team.findUnique({
-      where: { id: params.teamId },
-      select: { id: true, name: true },
-    });
-    if (!team) return null;
+    let teamName = params.teamName;
+    if (!teamName) {
+      const team = await tx.team.findUnique({
+        where: { id: params.teamId },
+        select: { id: true, name: true },
+      });
+      if (!team) {
+        this.logger.warn(`Cannot log activity: Team #${params.teamId} not found`);
+        return null;
+      }
+      teamName = team.name;
+    }
 
     return tx.teamActivityLog.create({
       data: {
-        teamIdSnapshot: team.id,
-        teamNameSnapshot: team.name,
-        teamId: team.id,
+        teamIdSnapshot: params.teamId,
+        teamNameSnapshot: teamName,
+        teamId: params.teamId,
         actorId: params.actorId > 0 ? params.actorId : null,
         targetUserId: params.targetUserId ?? null,
         action: params.action,
@@ -57,16 +78,11 @@ export class TeamActivityService {
     query?: GetTeamActivityLogsDto,
   ): Promise<PaginatedTeamActivityLogs> {
     const page = query?.page && query.page > 0 ? query.page : 1;
-    const limit =
-      query?.limit && query.limit > 0
-        ? query.limit
-        : query?.page !== undefined
-          ? 4
-          : 100;
+    const limit = query?.limit && query.limit > 0 ? query.limit : 20;
     const skip = (page - 1) * limit;
 
     const where: Prisma.TeamActivityLogWhereInput = {
-      OR: [{ teamId }, { teamIdSnapshot: teamId }],
+      teamIdSnapshot: teamId,
     };
 
     if (query?.action) {
@@ -77,7 +93,7 @@ export class TeamActivityService {
       where.actorId = query.actorId;
     }
 
-    const [total, data] = await Promise.all([
+    const [total, data, actorRows] = await Promise.all([
       this.prisma.teamActivityLog.count({ where }),
       this.prisma.teamActivityLog.findMany({
         where,
@@ -93,9 +109,21 @@ export class TeamActivityService {
         skip,
         take: limit,
       }),
+      this.prisma.teamActivityLog.findMany({
+        where: { teamIdSnapshot: teamId, actorId: { not: null } },
+        select: {
+          actor: {
+            select: { id: true, name: true, email: true },
+          },
+        },
+        distinct: ['actorId'],
+      }),
     ]);
 
     const totalPages = Math.ceil(total / limit) || 1;
+    const actors: ActivityActorInfo[] = actorRows
+      .map((r) => r.actor)
+      .filter((a): a is ActivityActorInfo => Boolean(a));
 
     return {
       data,
@@ -103,6 +131,29 @@ export class TeamActivityService {
       page,
       limit,
       totalPages,
+      actors,
     };
+  }
+
+  /**
+   * Cleans up logs older than retention period (default 12 months)
+   * Scheduled nightly at 03:00 AM Asia/Ho_Chi_Minh
+   */
+  @Cron('0 3 * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
+  async scheduledCleanup(retentionMonths: number = 12): Promise<number> {
+    const cutoffDate = new Date();
+    cutoffDate.setMonth(cutoffDate.getMonth() - retentionMonths);
+    try {
+      const result = await this.prisma.teamActivityLog.deleteMany({
+        where: { createdAt: { lt: cutoffDate } },
+      });
+      if (result.count > 0) {
+        this.logger.log(`[Scheduled Cleanup] Removed ${result.count} activity logs older than ${retentionMonths} months.`);
+      }
+      return result.count;
+    } catch (error) {
+      this.logger.error('[Scheduled Cleanup] Error cleaning old activity logs:', error);
+      return 0;
+    }
   }
 }

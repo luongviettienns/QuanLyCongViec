@@ -221,7 +221,7 @@ export class TaskCrudService {
           });
         }
 
-        if (createdTask.assigneeId && createdTask.assigneeId !== userId) {
+        if (createdTask.assigneeId) {
           if (createdTask.teamId) {
             await this.teamActivityService.logActivity(tx, {
               teamId: createdTask.teamId,
@@ -235,18 +235,20 @@ export class TaskCrudService {
             });
           }
 
-          await this.notificationEventService.publish(
-            {
-              type: 'TASK_ASSIGNED',
-              actorId: userId,
-              taskId: createdTask.id,
-              taskTitle: createdTask.title,
-              assigneeId: createdTask.assigneeId,
-              teamId: createdTask.teamId,
-              timestamp: createdTask.createdAt.getTime(),
-            },
-            tx,
-          );
+          if (createdTask.assigneeId !== userId) {
+            await this.notificationEventService.publish(
+              {
+                type: 'TASK_ASSIGNED',
+                actorId: userId,
+                taskId: createdTask.id,
+                taskTitle: createdTask.title,
+                assigneeId: createdTask.assigneeId,
+                teamId: createdTask.teamId,
+                timestamp: createdTask.createdAt.getTime(),
+              },
+              tx,
+            );
+          }
         }
 
         return createdTask;
@@ -431,6 +433,20 @@ export class TaskCrudService {
         const oldDueDateStr = currentTask.dueDate ? currentTask.dueDate.toISOString().slice(0, 10) : null;
         const newDueDateStr = parsedDueDate ? parsedDueDate.toISOString().slice(0, 10) : null;
         if (hasDueDate && oldDueDateStr !== newDueDateStr) {
+          if (updatedTask.teamId) {
+            await this.teamActivityService.logActivity(tx, {
+              teamId: updatedTask.teamId,
+              actorId: userId,
+              action: TeamActivityAction.TASK_DEADLINE_CHANGED,
+              metadata: {
+                taskId: updatedTask.id,
+                taskTitle: updatedTask.title,
+                oldDueDate: oldDueDateStr,
+                newDueDate: newDueDateStr,
+              },
+            });
+          }
+
           await this.notificationEventService.publish(
             {
               type: 'TASK_DEADLINE_CHANGED',
@@ -445,6 +461,51 @@ export class TaskCrudService {
             },
             tx,
           );
+        }
+
+        if (hasPriority && currentTask.priority !== updatedTask.priority && updatedTask.teamId) {
+          await this.teamActivityService.logActivity(tx, {
+            teamId: updatedTask.teamId,
+            actorId: userId,
+            action: TeamActivityAction.TASK_PRIORITY_CHANGED,
+            metadata: {
+              taskId: updatedTask.id,
+              taskTitle: updatedTask.title,
+              oldPriority: currentTask.priority,
+              newPriority: updatedTask.priority,
+            },
+          });
+        }
+
+        const changedFields: string[] = [];
+        if (hasTitle && currentTask.title !== updatedTask.title) {
+          changedFields.push('title');
+        }
+        if (hasDescription && currentTask.description !== updatedTask.description) {
+          changedFields.push('description');
+        }
+        if (
+          hasStartDate &&
+          (currentTask.startDate ? currentTask.startDate.toISOString().slice(0, 10) : null) !==
+            (parsedStartDate ? parsedStartDate.toISOString().slice(0, 10) : null)
+        ) {
+          changedFields.push('startDate');
+        }
+        if (hasCategory && currentTask.categoryId !== updatedTask.categoryId) {
+          changedFields.push('category');
+        }
+
+        if (updatedTask.teamId && changedFields.length > 0) {
+          await this.teamActivityService.logActivity(tx, {
+            teamId: updatedTask.teamId,
+            actorId: userId,
+            action: TeamActivityAction.TASK_UPDATED,
+            metadata: {
+              taskId: updatedTask.id,
+              taskTitle: updatedTask.title,
+              changedFields,
+            },
+          });
         }
 
         return updatedTask;

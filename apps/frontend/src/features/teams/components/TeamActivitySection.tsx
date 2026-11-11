@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   List,
   Typography,
-  Tag,
   Spin,
   Empty,
   Space,
@@ -11,22 +10,9 @@ import {
   Pagination,
   Card,
   Tooltip,
+  Alert,
 } from 'antd';
 import {
-  UserAddOutlined,
-  UserDeleteOutlined,
-  SwapOutlined,
-  CrownOutlined,
-  LogoutOutlined,
-  HistoryOutlined,
-  PlusCircleOutlined,
-  SyncOutlined,
-  DeleteOutlined,
-  UndoOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  UsergroupAddOutlined,
-  UsergroupDeleteOutlined,
   ReloadOutlined,
   FilterOutlined,
 } from '@ant-design/icons';
@@ -36,7 +22,9 @@ import type {
   TeamActivityAction,
   TeamMember,
   TeamMemberUser,
+  TeamActivityActor,
 } from '../types/team.types';
+import { renderActivityItem } from './team-activity.renderers';
 
 const { Text } = Typography;
 
@@ -48,50 +36,6 @@ interface TeamActivitySectionProps {
 
 const PAGE_SIZE = 4;
 
-function formatDate(isoString: string): string {
-  try {
-    const d = new Date(isoString);
-    const hours = String(d.getHours()).padStart(2, '0');
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
-    return `${hours}:${minutes}, ${day}/${month}/${year}`;
-  } catch {
-    return isoString;
-  }
-}
-
-function renderStatusTag(status?: string | null) {
-  if (!status) return null;
-  switch (status) {
-    case 'TODO':
-      return (
-        <Tag color="default" variant="filled" style={{ margin: '0 4px', fontSize: 11 }}>
-          Cần làm
-        </Tag>
-      );
-    case 'IN_PROGRESS':
-      return (
-        <Tag color="processing" variant="filled" style={{ margin: '0 4px', fontSize: 11 }}>
-          Đang làm
-        </Tag>
-      );
-    case 'DONE':
-      return (
-        <Tag color="success" variant="filled" style={{ margin: '0 4px', fontSize: 11 }}>
-          Hoàn thành
-        </Tag>
-      );
-    default:
-      return (
-        <Tag variant="filled" style={{ margin: '0 4px', fontSize: 11 }}>
-          {status}
-        </Tag>
-      );
-  }
-}
-
 export function TeamActivitySection({ teamId, members = [], owner }: TeamActivitySectionProps) {
   const [logs, setLogs] = useState<TeamActivityLog[]>([]);
   const [total, setTotal] = useState(0);
@@ -99,8 +43,11 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
   const [selectedAction, setSelectedAction] = useState<TeamActivityAction | undefined>(undefined);
   const [selectedActorId, setSelectedActorId] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [backendActors, setBackendActors] = useState<TeamActivityActor[]>([]);
 
-  // Build unique actor list from members + owner
+  // Build unique actor list from members + owner + historical backend actors
   const actorOptions = useMemo(() => {
     const map = new Map<number, string>();
     if (owner) {
@@ -111,16 +58,22 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
         map.set(m.userId, m.user.name);
       }
     });
+    backendActors.forEach((a) => {
+      if (!map.has(a.id)) {
+        map.set(a.id, `${a.name} (Đã rời nhóm)`);
+      }
+    });
     return Array.from(map.entries()).map(([id, label]) => ({
       value: id,
       label,
     }));
-  }, [members, owner]);
+  }, [members, owner, backendActors]);
 
   const loadLogs = useCallback(
     async (currentPage: number, action?: string, actorId?: number, signal?: AbortSignal) => {
       try {
         setLoading(true);
+        setError(null);
         const res = await getTeamActivityLogs(
           teamId,
           {
@@ -133,12 +86,18 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
         );
         setLogs(res.data || []);
         setTotal(res.total || 0);
+        if (res.actors) {
+          setBackendActors(res.actors);
+        }
       } catch (err: unknown) {
-        if (err instanceof Error && err.name === 'AbortError') return;
+        if (signal?.aborted) return;
+        setError(err instanceof Error ? err.message : 'Không thể tải lịch sử hoạt động');
         setLogs([]);
         setTotal(0);
       } finally {
-        setLoading(false);
+        if (!signal?.aborted) {
+          setLoading(false);
+        }
       }
     },
     [teamId],
@@ -157,7 +116,7 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
       active = false;
       controller.abort();
     };
-  }, [loadLogs, page, selectedAction, selectedActorId]);
+  }, [loadLogs, page, selectedAction, selectedActorId, reloadKey]);
 
   const handleActionChange = (value?: TeamActivityAction) => {
     setSelectedAction(value);
@@ -202,7 +161,7 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
               placeholder="Tất cả hành động"
               value={selectedAction}
               onChange={handleActionChange}
-              style={{ width: 190 }}
+              style={{ width: 220 }}
               options={[
                 {
                   label: 'Công việc (Tasks)',
@@ -211,6 +170,12 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
                     { value: 'TASK_STATUS_CHANGED', label: 'Đổi trạng thái việc' },
                     { value: 'TASK_ASSIGNED', label: 'Phân công việc' },
                     { value: 'TASK_UNASSIGNED', label: 'Hủy phân công việc' },
+                    { value: 'TASK_RETURNED', label: 'Trả lại công việc' },
+                    { value: 'TASK_MOVED_OUT', label: 'Chuyển khỏi nhóm' },
+                    { value: 'TASK_MOVED_IN', label: 'Chuyển vào nhóm' },
+                    { value: 'TASK_DEADLINE_CHANGED', label: 'Đổi hạn chót việc' },
+                    { value: 'TASK_PRIORITY_CHANGED', label: 'Đổi mức ưu tiên việc' },
+                    { value: 'TASK_UPDATED', label: 'Cập nhật công việc' },
                     { value: 'TASK_DELETED', label: 'Xóa vào thùng rác' },
                     { value: 'TASK_RESTORED', label: 'Khôi phục việc' },
                   ],
@@ -225,7 +190,9 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
                 {
                   label: 'Phối hợp (Collaborators)',
                   options: [
-                    { value: 'COLLABORATOR_ADDED', label: 'Mời người phối hợp' },
+                    { value: 'COLLABORATOR_INVITED', label: 'Mời người phối hợp' },
+                    { value: 'COLLABORATOR_ACCEPTED', label: 'Chấp nhận phối hợp' },
+                    { value: 'COLLABORATOR_DECLINED', label: 'Từ chối phối hợp' },
                     { value: 'COLLABORATOR_REMOVED', label: 'Gỡ người phối hợp' },
                   ],
                 },
@@ -247,7 +214,7 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
               placeholder="Tất cả người thực hiện"
               value={selectedActorId}
               onChange={handleActorChange}
-              style={{ width: 190 }}
+              style={{ width: 200 }}
               options={actorOptions}
             />
 
@@ -262,12 +229,28 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
             <Button
               type="text"
               icon={<ReloadOutlined spin={loading} />}
-              onClick={() => void loadLogs(page, selectedAction, selectedActorId)}
+              onClick={() => setReloadKey((k) => k + 1)}
               size="small"
             />
           </Tooltip>
         </Space>
       </Card>
+
+      {/* Error Alert */}
+      {error && (
+        <Alert
+          type="error"
+          message="Lỗi khi tải lịch sử hoạt động"
+          description={error}
+          action={
+            <Button size="small" type="primary" onClick={() => setReloadKey((k) => k + 1)}>
+              Thử lại
+            </Button>
+          }
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+      )}
 
       {/* Main Content */}
       {loading ? (
@@ -295,237 +278,7 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
             itemLayout="horizontal"
             dataSource={logs}
             renderItem={(log) => {
-              const actorName = log.actor?.name || 'Hệ thống';
-              const targetName = log.targetUser?.name || 'Thành viên';
-              const taskTitle = log.metadata?.taskTitle || 'Công việc';
-              const subtaskTitle = log.metadata?.subtaskTitle || 'Việc con';
-
-              let icon = <HistoryOutlined style={{ color: '#1890ff', fontSize: 18 }} />;
-              let titleNode = null;
-              let detailNode = null;
-
-              const metadataParts: string[] = [];
-              if (log.metadata?.unassignedTaskCount && log.metadata.unassignedTaskCount > 0) {
-                metadataParts.push(`Hủy phân công ${log.metadata.unassignedTaskCount} Task`);
-              }
-              if (log.metadata?.affectedSubtaskCount && log.metadata.affectedSubtaskCount > 0) {
-                metadataParts.push(`${log.metadata.affectedSubtaskCount} Subtask`);
-              }
-              if (log.metadata?.revokedCollaboratorCount && log.metadata.revokedCollaboratorCount > 0) {
-                metadataParts.push(`Thu hồi ${log.metadata.revokedCollaboratorCount} lời mời`);
-              }
-              const metadataDesc = metadataParts.length > 0 ? metadataParts.join(' và ') : null;
-
-              switch (log.action) {
-                // Task Events
-                case 'TASK_CREATED':
-                  icon = <PlusCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} />;
-                  titleNode = (
-                    <span>
-                      <Text strong>{actorName}</Text> đã tạo công việc{' '}
-                      <Text strong style={{ color: '#1677ff' }}>"{taskTitle}"</Text>
-                    </span>
-                  );
-                  detailNode = <span>{formatDate(log.createdAt)}</span>;
-                  break;
-
-                case 'TASK_STATUS_CHANGED':
-                  icon = <SyncOutlined style={{ color: '#1677ff', fontSize: 18 }} />;
-                  titleNode = (
-                    <span>
-                      <Text strong>{actorName}</Text> đã chuyển trạng thái{' '}
-                      <Text strong style={{ color: '#1677ff' }}>"{taskTitle}"</Text> từ{' '}
-                      {renderStatusTag(log.metadata?.oldStatus as string)} →{' '}
-                      {renderStatusTag(log.metadata?.newStatus as string)}
-                    </span>
-                  );
-                  detailNode = <span>{formatDate(log.createdAt)}</span>;
-                  break;
-
-                case 'TASK_ASSIGNED':
-                  icon = <UserAddOutlined style={{ color: '#722ed1', fontSize: 18 }} />;
-                  titleNode = (
-                    <span>
-                      <Text strong>{actorName}</Text> đã phân công việc{' '}
-                      <Text strong style={{ color: '#1677ff' }}>"{taskTitle}"</Text> cho{' '}
-                      <Text strong>{targetName}</Text>
-                    </span>
-                  );
-                  detailNode = <span>{formatDate(log.createdAt)}</span>;
-                  break;
-
-                case 'TASK_UNASSIGNED':
-                  icon = <UserDeleteOutlined style={{ color: '#fa8c16', fontSize: 18 }} />;
-                  titleNode = (
-                    <span>
-                      <Text strong>{actorName}</Text> đã gỡ phân công việc{' '}
-                      <Text strong style={{ color: '#1677ff' }}>"{taskTitle}"</Text> khỏi{' '}
-                      <Text strong>{targetName}</Text>
-                    </span>
-                  );
-                  detailNode = <span>{formatDate(log.createdAt)}</span>;
-                  break;
-
-                case 'TASK_DELETED':
-                  icon = <DeleteOutlined style={{ color: '#ff4d4f', fontSize: 18 }} />;
-                  titleNode = (
-                    <span>
-                      <Text strong>{actorName}</Text> đã chuyển công việc{' '}
-                      <Text strong delete style={{ color: '#8c8c8c' }}>"{taskTitle}"</Text> vào thùng rác
-                    </span>
-                  );
-                  detailNode = <span>{formatDate(log.createdAt)}</span>;
-                  break;
-
-                case 'TASK_RESTORED':
-                  icon = <UndoOutlined style={{ color: '#13c2c2', fontSize: 18 }} />;
-                  titleNode = (
-                    <span>
-                      <Text strong>{actorName}</Text> đã khôi phục công việc{' '}
-                      <Text strong style={{ color: '#1677ff' }}>"{taskTitle}"</Text> từ thùng rác
-                    </span>
-                  );
-                  detailNode = <span>{formatDate(log.createdAt)}</span>;
-                  break;
-
-                // Subtask Events
-                case 'SUBTASK_COMPLETED':
-                  icon = <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} />;
-                  titleNode = (
-                    <span>
-                      <Text strong>{actorName}</Text> đã hoàn thành việc con{' '}
-                      <Text strong>"{subtaskTitle}"</Text> trong công việc{' '}
-                      <Text strong style={{ color: '#1677ff' }}>"{taskTitle}"</Text>
-                    </span>
-                  );
-                  detailNode = <span>{formatDate(log.createdAt)}</span>;
-                  break;
-
-                case 'SUBTASK_REOPENED':
-                  icon = <ClockCircleOutlined style={{ color: '#faad14', fontSize: 18 }} />;
-                  titleNode = (
-                    <span>
-                      <Text strong>{actorName}</Text> đã mở lại việc con{' '}
-                      <Text strong>"{subtaskTitle}"</Text> trong công việc{' '}
-                      <Text strong style={{ color: '#1677ff' }}>"{taskTitle}"</Text>
-                    </span>
-                  );
-                  detailNode = <span>{formatDate(log.createdAt)}</span>;
-                  break;
-
-                // Collaborator Events
-                case 'COLLABORATOR_ADDED':
-                  icon = <UsergroupAddOutlined style={{ color: '#1890ff', fontSize: 18 }} />;
-                  titleNode = (
-                    <span>
-                      <Text strong>{actorName}</Text> đã mời{' '}
-                      <Text strong>{targetName}</Text> phối hợp trong công việc{' '}
-                      <Text strong style={{ color: '#1677ff' }}>"{taskTitle}"</Text>
-                    </span>
-                  );
-                  detailNode = <span>{formatDate(log.createdAt)}</span>;
-                  break;
-
-                case 'COLLABORATOR_REMOVED':
-                  icon = <UsergroupDeleteOutlined style={{ color: '#ff4d4f', fontSize: 18 }} />;
-                  titleNode = (
-                    <span>
-                      <Text strong>{actorName}</Text> đã gỡ{' '}
-                      <Text strong>{targetName}</Text> khỏi việc phối hợp{' '}
-                      <Text strong style={{ color: '#1677ff' }}>"{taskTitle}"</Text>
-                    </span>
-                  );
-                  detailNode = <span>{formatDate(log.createdAt)}</span>;
-                  break;
-
-                // Team Member Events
-                case 'ADD_MEMBER':
-                  icon = <UserAddOutlined style={{ color: '#52c41a', fontSize: 18 }} />;
-                  titleNode = (
-                    <span>
-                      <Text strong>{actorName}</Text> đã thêm <Text strong>{targetName}</Text> vào nhóm
-                    </span>
-                  );
-                  detailNode = (
-                    <Space size="small">
-                      <span>
-                        Vai trò:{' '}
-                        <Tag
-                          color={log.newRole === 'ADMIN' ? 'blue' : 'green'}
-                          variant="filled"
-                        >
-                          {log.newRole ?? 'MEMBER'}
-                        </Tag>
-                      </span>
-                      <span>·</span>
-                      <span>{formatDate(log.createdAt)}</span>
-                    </Space>
-                  );
-                  break;
-
-                case 'CHANGE_ROLE':
-                  icon = <SwapOutlined style={{ color: '#fa8c16', fontSize: 18 }} />;
-                  titleNode = (
-                    <span>
-                      <Text strong>{actorName}</Text> đã cấp quyền{' '}
-                      <Tag color={log.newRole === 'ADMIN' ? 'blue' : 'green'} variant="filled">
-                        {log.newRole}
-                      </Tag>{' '}
-                      cho <Text strong>{targetName}</Text>
-                    </span>
-                  );
-                  detailNode = (
-                    <Space size="small">
-                      <span>
-                        {log.oldRole ?? 'MEMBER'} → {log.newRole ?? 'ADMIN'}
-                      </span>
-                      <span>·</span>
-                      <span>{formatDate(log.createdAt)}</span>
-                    </Space>
-                  );
-                  break;
-
-                case 'REMOVE_MEMBER':
-                  icon = <UserDeleteOutlined style={{ color: '#ff4d4f', fontSize: 18 }} />;
-                  titleNode = (
-                    <span>
-                      <Text strong>{actorName}</Text> đã xóa <Text strong>{targetName}</Text> khỏi nhóm
-                    </span>
-                  );
-                  detailNode = (
-                    <Space size="small">
-                      {metadataDesc && <span>{metadataDesc} ·</span>}
-                      <span>{formatDate(log.createdAt)}</span>
-                    </Space>
-                  );
-                  break;
-
-                case 'LEAVE_TEAM':
-                  icon = <LogoutOutlined style={{ color: '#8c8c8c', fontSize: 18 }} />;
-                  titleNode = (
-                    <span>
-                      <Text strong>{targetName}</Text> đã tự rời khỏi nhóm
-                    </span>
-                  );
-                  detailNode = (
-                    <Space size="small">
-                      {metadataDesc && <span>{metadataDesc} ·</span>}
-                      <span>{formatDate(log.createdAt)}</span>
-                    </Space>
-                  );
-                  break;
-
-                case 'TRANSFER_OWNER':
-                  icon = <CrownOutlined style={{ color: '#faad14', fontSize: 18 }} />;
-                  titleNode = (
-                    <span>
-                      <Text strong>{actorName}</Text> đã chuyển quyền Owner cho{' '}
-                      <Text strong>{targetName}</Text>
-                    </span>
-                  );
-                  detailNode = <span>{formatDate(log.createdAt)}</span>;
-                  break;
-              }
+              const { icon, titleNode, detailNode } = renderActivityItem(log);
 
               return (
                 <List.Item

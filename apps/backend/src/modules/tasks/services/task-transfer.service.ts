@@ -13,7 +13,8 @@ import { TaskReorderService } from './task-reorder.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
 import { RealtimeService } from '../../realtime/realtime.service.js';
 import { TaskAssignmentService } from './task-assignment.service.js';
-import { type Task, Prisma } from '@prisma/client';
+import { TeamActivityService } from '../../team-activity/team-activity.service.js';
+import { type Task, Prisma, TeamActivityAction } from '@prisma/client';
 
 @Injectable()
 export class TaskTransferService {
@@ -25,6 +26,7 @@ export class TaskTransferService {
     private readonly notificationEventService: NotificationEventService,
     private readonly realtimeService: RealtimeService,
     private readonly assignmentService: TaskAssignmentService,
+    private readonly teamActivityService: TeamActivityService,
   ) {}
 
   private executeInTransaction<T>(
@@ -178,6 +180,8 @@ export class TaskTransferService {
             : { disconnect: true };
         }
 
+        let revokedCollaboratorCount = 0;
+
         if (isTeamChanged) {
           const destScope: Prisma.TaskWhereInput = effectiveTeamId
             ? { teamId: effectiveTeamId, deletedAt: null }
@@ -192,15 +196,16 @@ export class TaskTransferService {
 
           // When moving across teams or to personal space, revoke invalid collaborators first
           if (effectiveTeamId === null) {
-            await tx.taskCollaborator.updateMany({
+            const res = await tx.taskCollaborator.updateMany({
               where: {
                 taskId: id,
                 status: { in: ['PENDING', 'ACCEPTED'] },
               },
               data: { status: 'REVOKED' },
             });
+            revokedCollaboratorCount = res.count;
           } else {
-            await tx.taskCollaborator.updateMany({
+            const res = await tx.taskCollaborator.updateMany({
               where: {
                 taskId: id,
                 status: { in: ['PENDING', 'ACCEPTED'] },
@@ -208,6 +213,7 @@ export class TaskTransferService {
               },
               data: { status: 'REVOKED' },
             });
+            revokedCollaboratorCount = res.count;
           }
         }
 
@@ -269,6 +275,36 @@ export class TaskTransferService {
               },
               tx,
             );
+          }
+
+          if (currentTask.teamId) {
+            await this.teamActivityService.logActivity(tx, {
+              teamId: currentTask.teamId,
+              actorId: userId,
+              action: TeamActivityAction.TASK_MOVED_OUT,
+              metadata: {
+                taskId: id,
+                taskTitle: currentTask.title,
+                fromTeamId: currentTask.teamId,
+                toTeamId: effectiveTeamId,
+                revokedCollaboratorCount,
+              },
+            });
+          }
+
+          if (effectiveTeamId) {
+            await this.teamActivityService.logActivity(tx, {
+              teamId: effectiveTeamId,
+              actorId: userId,
+              action: TeamActivityAction.TASK_MOVED_IN,
+              metadata: {
+                taskId: id,
+                taskTitle: currentTask.title,
+                fromTeamId: currentTask.teamId,
+                toTeamId: effectiveTeamId,
+                revokedCollaboratorCount,
+              },
+            });
           }
         }
 

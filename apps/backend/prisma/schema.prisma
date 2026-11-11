@@ -76,6 +76,15 @@ enum TeamActivityAction {
   SUBTASK_REOPENED
   COLLABORATOR_ADDED
   COLLABORATOR_REMOVED
+  COLLABORATOR_INVITED
+  COLLABORATOR_ACCEPTED
+  COLLABORATOR_DECLINED
+  TASK_RETURNED
+  TASK_MOVED_OUT
+  TASK_MOVED_IN
+  TASK_DEADLINE_CHANGED
+  TASK_PRIORITY_CHANGED
+  TASK_UPDATED
 }
 
 model User {
@@ -334,6 +343,8 @@ model TeamActivityLog {
   createdAt        DateTime           @default(now())
 
   @@index([teamIdSnapshot, createdAt])
+  @@index([teamIdSnapshot, action, createdAt(sort: Desc)])
+  @@index([teamIdSnapshot, actorId, createdAt(sort: Desc)])
   @@index([teamId, createdAt])
   @@index([actorId])
   @@index([targetUserId])
