@@ -10,6 +10,7 @@ import { PrismaService } from '../src/database/prisma.service.js';
 import { NotificationEventService } from '../src/modules/notifications/services/notification-event.service.js';
 import { RealtimeService } from '../src/modules/realtime/realtime.service.js';
 import { configureTestApp } from './test-app.helper.js';
+import { JwtService } from '@nestjs/jwt';
 
 interface NotificationRow {
   id: number;
@@ -34,6 +35,7 @@ interface SsePacket {
 interface SseSubscription {
   events: SsePacket[];
   close: () => void;
+  isClosed: () => boolean;
   waitFor: (
     predicate: (evt: SsePacket) => boolean,
     timeoutMs?: number,
@@ -58,6 +60,13 @@ function connectSse(baseUrl: string, token: string): Promise<SseSubscription> {
       }
 
       let buffer = '';
+      let ended = false;
+      res.on('end', () => {
+        ended = true;
+      });
+      res.on('close', () => {
+        ended = true;
+      });
       res.setEncoding('utf8');
       res.on('data', (chunk: string) => {
         buffer += chunk;
@@ -110,7 +119,7 @@ function connectSse(baseUrl: string, token: string): Promise<SseSubscription> {
         });
       };
 
-      resolve({ events, close, waitFor });
+      resolve({ events, close, isClosed: () => ended, waitFor });
     });
 
     req.on('error', (err) => {
@@ -906,6 +915,29 @@ describe('Phase 2 & 3: Notification & Realtime Hardening (e2e)', () => {
         (s) => s.id === remSubId,
       );
       expect(subAfter?.assigneeId).toBeNull();
+
+      // User removed from team receives TEAM_MEMBER_REMOVED
+      // and ZERO subtask unassignment notifications (no spam, no data leak)
+      const notifsR = await fetchNotifications(removed.token);
+      expect(notifsR.some((n) => n.type === 'TEAM_MEMBER_REMOVED')).toBe(true);
+      expect(notifsR.filter((n) => n.type === 'SUBTASK_UNASSIGNED')).toHaveLength(0);
+    });
+
+    it('automatically terminates SSE stream when token exp is reached', async () => {
+      const jwtService = app.get(JwtService);
+      const shortLivedToken = jwtService.sign(
+        { sub: userAId, email: `p23_CreatorA_${ts}@test.local` },
+        { expiresIn: '1s' },
+      );
+
+      const stream = await connectSse(baseUrl, shortLivedToken);
+      activeStreams.push(stream);
+
+      expect(stream.isClosed()).toBe(false);
+
+      // Wait until token expires (1s + margin)
+      await new Promise((r) => setTimeout(r, 1400));
+      expect(stream.isClosed()).toBe(true);
     });
   });
 });

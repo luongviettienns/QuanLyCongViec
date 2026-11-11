@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Subject, Observable, interval, merge, map, filter } from 'rxjs';
+import { Subject, Observable, interval, merge, map, filter, timer, takeUntil } from 'rxjs';
 import type { MessageEvent } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service.js';
 import type { RealtimeBroadcastEvent } from './realtime.types.js';
@@ -44,9 +44,12 @@ export class RealtimeService {
   }
 
   /**
-   * Subscribe a user to their relevant real-time event stream
+   * Subscribe a user to their relevant real-time event stream.
+   * If `tokenExp` (UNIX expiration in seconds) is provided, the stream
+   * automatically completes once the token expires, preventing expired
+   * credentials from keeping a server-sent events stream open indefinitely.
    */
-  subscribe(userId: number): Observable<MessageEvent> {
+  subscribe(userId: number, tokenExp?: number): Observable<MessageEvent> {
     const userEvents$ = this.eventBus$.asObservable().pipe(
       filter((event) => {
         if (event.targetUserIds && event.targetUserIds.length > 0) {
@@ -78,6 +81,14 @@ export class RealtimeService {
       })),
     );
 
-    return merge(userEvents$, heartbeat$);
+    let stream$: Observable<MessageEvent> = merge(userEvents$, heartbeat$);
+
+    if (typeof tokenExp === 'number' && Number.isFinite(tokenExp)) {
+      const expMs = tokenExp > 1e11 ? tokenExp : tokenExp * 1000;
+      const remainingMs = Math.max(0, expMs - Date.now());
+      stream$ = stream$.pipe(takeUntil(timer(remainingMs)));
+    }
+
+    return stream$;
   }
 }

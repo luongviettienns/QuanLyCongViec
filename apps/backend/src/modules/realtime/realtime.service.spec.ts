@@ -152,4 +152,23 @@ describe('RealtimeService', () => {
     expect(receivedRemoved).toBe(false);
     removedSub.unsubscribe();
   });
+
+  it('terminates the stream when tokenExp is reached', async () => {
+    const userId = 100;
+    // Set tokenExp to expire in 50ms
+    const tokenExp = (Date.now() + 50) / 1000;
+    const stream$ = service.subscribe(userId, tokenExp);
+
+    let completed = false;
+    const sub = stream$.subscribe({
+      complete: () => {
+        completed = true;
+      },
+    });
+
+    expect(completed).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(completed).toBe(true);
+    sub.unsubscribe();
+  });
 });

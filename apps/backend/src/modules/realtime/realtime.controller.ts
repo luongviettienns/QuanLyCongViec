@@ -13,6 +13,6 @@ export class RealtimeController {
   @Sse('stream')
   @UseGuards(JwtAuthGuard)
   stream(@CurrentUser() user: AuthenticatedUser): Observable<MessageEvent> {
-    return this.realtimeService.subscribe(user.id);
+    return this.realtimeService.subscribe(user.id, user.tokenExp);
   }
 }
