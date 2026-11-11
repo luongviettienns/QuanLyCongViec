@@ -1,6 +1,7 @@
 import {
   Injectable,
   NotFoundException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service.js';
 import { CreateTeamDto } from './dto/create-team.dto.js';
@@ -205,6 +206,27 @@ export class TeamsService {
     this.policy.assertCanDelete(isOwner);
 
     await this.prisma.$transaction(async (tx) => {
+      // Khóa dòng Team để ngăn ngừa xung đột dữ liệu đồng thời
+      await tx.$executeRaw`SELECT id FROM "Team" WHERE id = ${teamId} FOR UPDATE`;
+
+      const [taskCount, categoryCount] = await Promise.all([
+        tx.task.count({
+          where: { teamId }, // KHÔNG lọc deletedAt, bảo toàn toàn bộ dữ liệu kể cả task đã xóa mềm
+        }),
+        tx.category.count({
+          where: { teamId },
+        }),
+      ]);
+
+      if (taskCount > 0 || categoryCount > 0) {
+        throw new ConflictException({
+          code: 'TEAM_HAS_DEPENDENT_DATA',
+          message: 'Không thể xóa nhóm khi vẫn còn dữ liệu công việc hoặc danh mục',
+          taskCount,
+          categoryCount,
+        });
+      }
+
       await this.notificationEventService.publish(
         {
           type: 'TEAM_DELETED',
@@ -242,5 +264,46 @@ export class TeamsService {
 
   async removeMember(userId: number, teamId: number, memberId: number) {
     return this.membershipService.removeMember(userId, teamId, memberId);
+  }
+
+  async getActivityLogs(userId: number, teamId: number) {
+    const team = await this.prisma.team.findUnique({
+      where: { id: teamId },
+    });
+
+    if (!team) {
+      throw new NotFoundException('Không tìm thấy nhóm');
+    }
+
+    const caller = await this.prisma.teamMember.findUnique({
+      where: {
+        teamId_userId: { teamId, userId },
+      },
+    });
+
+    const { isOwner, callerRole } = this.policy.resolveCallerContext(
+      team.ownerId,
+      caller,
+      userId,
+    );
+
+    this.policy.assertCanViewActivityLogs(isOwner, callerRole);
+
+    return this.prisma.teamActivityLog.findMany({
+      where: {
+        teamIdSnapshot: teamId,
+      },
+      include: {
+        actor: {
+          select: { id: true, name: true, email: true },
+        },
+        targetUser: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
   }
 }

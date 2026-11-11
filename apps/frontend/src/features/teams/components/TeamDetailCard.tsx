@@ -9,6 +9,7 @@ import {
   Space,
   Typography,
   Spin,
+  Tabs,
 } from 'antd';
 import {
   UserAddOutlined,
@@ -18,9 +19,12 @@ import {
   DeleteOutlined,
   EditOutlined,
   LogoutOutlined,
+  TeamOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import type { Team, TeamMember, TeamRole } from '../types/team.types';
 import { TeamCategorySection } from './TeamCategorySection';
+import { TeamActivitySection } from './TeamActivitySection';
 
 const { Title, Text } = Typography;
 
@@ -213,7 +217,7 @@ export function TeamDetailCard({
                 </Button>
                 <Popconfirm
                   title="Giải tán nhóm?"
-                  description="Tất cả dữ liệu công việc của nhóm sẽ bị xóa vĩnh viễn!"
+                  description="Nhóm chỉ có thể giải tán khi không còn công việc hoặc danh mục phụ thuộc!"
                   onConfirm={onDeleteTeam}
                   okText="Giải tán"
                   cancelText="Hủy"
@@ -249,34 +253,83 @@ export function TeamDetailCard({
       }
       style={{ borderRadius: 8 }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Text strong style={{ fontSize: 15 }}>
-          Thành viên nhóm ({selectedTeam.members.length})
-        </Text>
-        {canManageMembers && (
-          <Button
-            type="primary"
+      {isOwner || isAdmin ? (
+        <Tabs
+          defaultActiveKey="members"
+          items={[
+            {
+              key: 'members',
+              label: (
+                <span>
+                  <TeamOutlined /> Thành viên & Danh mục
+                </span>
+              ),
+              children: (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <Text strong style={{ fontSize: 15 }}>
+                      Thành viên nhóm ({selectedTeam.members.length})
+                    </Text>
+                    {canManageMembers && (
+                      <Button
+                        type="primary"
+                        size="small"
+                        icon={<UserAddOutlined />}
+                        onClick={onOpenAddMember}
+                      >
+                        Thêm thành viên
+                      </Button>
+                    )}
+                  </div>
+
+                  <Table
+                    dataSource={selectedTeam.members}
+                    columns={memberColumns}
+                    rowKey="id"
+                    pagination={false}
+                    size="small"
+                  />
+
+                  <TeamCategorySection
+                    teamId={selectedTeam.id}
+                    canManage={canManageMembers}
+                  />
+                </>
+              ),
+            },
+            {
+              key: 'activities',
+              label: (
+                <span>
+                  <HistoryOutlined /> Lịch sử hoạt động
+                </span>
+              ),
+              children: <TeamActivitySection teamId={selectedTeam.id} />,
+            },
+          ]}
+        />
+      ) : (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <Text strong style={{ fontSize: 15 }}>
+              Thành viên nhóm ({selectedTeam.members.length})
+            </Text>
+          </div>
+
+          <Table
+            dataSource={selectedTeam.members}
+            columns={memberColumns}
+            rowKey="id"
+            pagination={false}
             size="small"
-            icon={<UserAddOutlined />}
-            onClick={onOpenAddMember}
-          >
-            Thêm thành viên
-          </Button>
-        )}
-      </div>
+          />
 
-      <Table
-        dataSource={selectedTeam.members}
-        columns={memberColumns}
-        rowKey="id"
-        pagination={false}
-        size="small"
-      />
-
-      <TeamCategorySection
-        teamId={selectedTeam.id}
-        canManage={canManageMembers}
-      />
+          <TeamCategorySection
+            teamId={selectedTeam.id}
+            canManage={false}
+          />
+        </>
+      )}
     </Card>
   );
 }

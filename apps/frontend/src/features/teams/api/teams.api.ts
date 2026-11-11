@@ -5,6 +5,7 @@ import type {
   CreateTeamPayload,
   UpdateTeamPayload,
   AddMemberPayload,
+  TeamActivityLog,
 } from '../types/team.types';
 import {
   getAuthHeaders,
@@ -129,4 +130,23 @@ export async function removeTeamMember(teamId: number, memberId: number): Promis
   });
 
   await handleVoidApiResponse(response, 'Không thể xóa thành viên khỏi nhóm');
+}
+
+export async function getTeamActivityLogs(
+  teamId: number,
+  signal?: AbortSignal,
+): Promise<TeamActivityLog[]> {
+  const response = await fetch(`/api/teams/${teamId}/activity-logs`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    signal,
+  });
+
+  return handleApiResponse<TeamActivityLog[]>(
+    response,
+    'Không thể tải lịch sử hoạt động của nhóm',
+  );
 }

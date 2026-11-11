@@ -50,6 +50,15 @@ export class TeamsController {
     return this.teamsService.findOne(user.id, id);
   }
 
+  @ApiOperation({ summary: 'Lấy lịch sử hoạt động thành viên của nhóm (chỉ OWNER và ADMIN)' })
+  @Get(':id/activity-logs')
+  getActivityLogs(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.teamsService.getActivityLogs(user.id, id);
+  }
+
   @ApiOperation({ summary: 'Cập nhật thông tin nhóm' })
   @Patch(':id')
   update(

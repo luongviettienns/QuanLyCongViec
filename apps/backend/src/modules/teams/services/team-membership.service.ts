@@ -65,17 +65,33 @@ export class TeamMembershipService {
       throw new BadRequestException('Người dùng này đã là thành viên trong nhóm');
     }
 
-    const member = await this.prisma.teamMember.create({
-      data: {
-        teamId,
-        userId: targetUser.id,
-        role: dto.role ?? TeamRole.MEMBER,
-      },
-      include: {
-        user: {
-          select: { id: true, name: true, email: true },
+    const member = await this.prisma.$transaction(async (tx) => {
+      const createdMember = await tx.teamMember.create({
+        data: {
+          teamId,
+          userId: targetUser.id,
+          role: dto.role ?? TeamRole.MEMBER,
         },
-      },
+        include: {
+          user: {
+            select: { id: true, name: true, email: true },
+          },
+        },
+      });
+
+      await tx.teamActivityLog.create({
+        data: {
+          teamIdSnapshot: team.id,
+          teamNameSnapshot: team.name,
+          teamId: team.id,
+          actorId: userId,
+          targetUserId: targetUser.id,
+          action: 'ADD_MEMBER',
+          newRole: createdMember.role,
+        },
+      });
+
+      return createdMember;
     });
 
     await this.notificationEventService.publish({
@@ -127,16 +143,33 @@ export class TeamMembershipService {
       userId,
     );
 
-    const updated = await this.prisma.teamMember.update({
-      where: { id: memberId },
-      data: {
-        role: dto.role,
-      },
-      include: {
-        user: {
-          select: { id: true, name: true, email: true },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.teamMember.update({
+        where: { id: memberId },
+        data: {
+          role: dto.role,
         },
-      },
+        include: {
+          user: {
+            select: { id: true, name: true, email: true },
+          },
+        },
+      });
+
+      await tx.teamActivityLog.create({
+        data: {
+          teamIdSnapshot: team.id,
+          teamNameSnapshot: team.name,
+          teamId: team.id,
+          actorId: userId,
+          targetUserId: targetMember.userId,
+          action: 'CHANGE_ROLE',
+          oldRole: targetMember.role,
+          newRole: dto.role,
+        },
+      });
+
+      return res;
     });
 
     await this.notificationEventService.publish({
@@ -202,6 +235,23 @@ export class TeamMembershipService {
           teamId,
           userId,
           role: TeamRole.ADMIN,
+        },
+      });
+
+      await tx.teamActivityLog.create({
+        data: {
+          teamIdSnapshot: team.id,
+          teamNameSnapshot: team.name,
+          teamId: team.id,
+          actorId: userId,
+          targetUserId: dto.newOwnerId,
+          action: 'TRANSFER_OWNER',
+          oldRole: targetMember.role,
+          newRole: TeamRole.ADMIN,
+          metadata: {
+            previousOwnerId: userId,
+            newOwnerId: dto.newOwnerId,
+          },
         },
       });
 
@@ -404,7 +454,25 @@ export class TeamMembershipService {
         where: { id: memberId },
       });
 
-      // 6. Phát thông báo thành viên đã rời / bị xóa khỏi nhóm
+      // 6. Ghi nhật ký hoạt động (Activity History)
+      await tx.teamActivityLog.create({
+        data: {
+          teamIdSnapshot: team.id,
+          teamNameSnapshot: team.name,
+          teamId: team.id,
+          actorId: userId,
+          targetUserId: targetMember.userId,
+          action: isSelfLeaving ? 'LEAVE_TEAM' : 'REMOVE_MEMBER',
+          oldRole: targetMember.role,
+          metadata: {
+            unassignedTaskCount: updatedTasks.length,
+            affectedSubtaskCount: affectedSubtasks.length,
+            revokedCollaboratorCount: revokedCollabTaskIds.length,
+          },
+        },
+      });
+
+      // 7. Phát thông báo thành viên đã rời / bị xóa khỏi nhóm
       await this.notificationEventService.publish(
         {
           type: 'TEAM_MEMBER_REMOVED',
