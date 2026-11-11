@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from 'react';
-import type { StatusFilter, PriorityFilter, TaskStatus } from '../types/task.types';
+import type { StatusFilter, PriorityFilter, TaskStatus, ScopeFilter } from '../types/task.types';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { useTaskFilters } from './useTaskFilters';
 import { useTaskQueries } from './useTaskQueries';
@@ -14,12 +14,33 @@ export function useTasks(options?: { enabled?: boolean }) {
   const filters = useTaskFilters();
   const queries = useTaskQueries(isAuthenticated);
   const mutations = useTaskMutations(isAuthenticated);
+
+  const syncCanonicalTasks = useCallback(() => {
+    void queries.fetchTasks(
+      filters.searchText,
+      filters.statusFilter,
+      filters.categoryFilter,
+      filters.priorityFilter,
+      filters.teamFilter,
+      filters.scopeFilter,
+    );
+  }, [
+    queries,
+    filters.searchText,
+    filters.statusFilter,
+    filters.categoryFilter,
+    filters.priorityFilter,
+    filters.teamFilter,
+    filters.scopeFilter,
+  ]);
+
   const board = useTaskBoard(
     isAuthenticated,
     queries.tasks,
     queries.setTasks,
     user,
     queries.teams,
+    syncCanonicalTasks,
   );
 
   const {
@@ -232,7 +253,7 @@ export function useTasks(options?: { enabled?: boolean }) {
   );
 
   const handleScopeChange = useCallback(
-    (scope: 'all' | 'created_by_me' | 'assigned_to_me') => {
+    (scope: ScopeFilter) => {
       if (!isAuthenticated) return;
       setScopeFilter(scope);
       setLoading(true);

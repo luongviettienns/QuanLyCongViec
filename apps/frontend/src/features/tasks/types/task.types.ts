@@ -29,15 +29,26 @@ export interface Subtask {
   position: number;
   assigneeId?: number | null;
   createdById: number;
+  completedById?: number | null;
+  completedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   assignee?: { id: number; name: string; email: string } | null;
   createdBy?: { id: number; name: string; email: string };
+  completedBy?: { id: number; name: string; email: string } | null;
 }
 
 export type StatusFilter = 'ALL' | TaskStatus;
 
 export type PriorityFilter = 'ALL' | TaskPriority;
+
+export type ScopeFilter =
+  | 'all'
+  | 'my_work'
+  | 'assigned_to_me'
+  | 'collaborating'
+  | 'subtasks_assigned_to_me'
+  | 'created_by_me';
 
 export const TASK_PRIORITY_CONFIG: Record<TaskPriority, { color: string; label: string }> = {
   HIGH: { color: 'red', label: 'Cao' },

@@ -16,6 +16,7 @@ import {
   CrownOutlined,
   StopOutlined,
   BellOutlined,
+  OrderedListOutlined,
 } from '@ant-design/icons';
 import type { Notification, NotificationType } from '../types/notification.types';
 
@@ -62,6 +63,16 @@ function getNotificationIcon(type: NotificationType) {
       return <CrownOutlined style={{ ...iconStyle, color: '#faad14' }} />;
     case 'TEAM_DELETED':
       return <StopOutlined style={{ ...iconStyle, color: '#ff4d4f' }} />;
+    case 'TASK_COLLABORATOR_INVITED':
+      return <UserAddOutlined style={{ ...iconStyle, color: '#722ed1' }} />;
+    case 'TASK_COLLABORATOR_ACCEPTED':
+      return <CheckCircleOutlined style={{ ...iconStyle, color: '#52c41a' }} />;
+    case 'TASK_COLLABORATOR_DECLINED':
+      return <StopOutlined style={{ ...iconStyle, color: '#ff4d4f' }} />;
+    case 'TASK_COLLABORATOR_REMOVED':
+      return <UserDeleteOutlined style={{ ...iconStyle, color: '#fa8c16' }} />;
+    case 'SUBTASK_ASSIGNED':
+      return <OrderedListOutlined style={{ ...iconStyle, color: '#13c2c2' }} />;
     default:
       return <BellOutlined style={{ ...iconStyle, color: '#1677ff' }} />;
   }

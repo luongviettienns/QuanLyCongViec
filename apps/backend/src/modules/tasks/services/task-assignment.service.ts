@@ -259,12 +259,14 @@ export class TaskAssignmentService {
       });
     }
 
-    // 2. Hand over active subtasks of the former main assignee
+    // 2. Hand over active (unfinished) subtasks of the former main assignee.
+    // Completed subtasks (DONE) remain assigned to the previous assignee to preserve historical record.
     if (previousAssigneeId && previousAssigneeId !== targetAssigneeId) {
       await tx.subtask.updateMany({
         where: {
           taskId,
           assigneeId: previousAssigneeId,
+          status: { in: [TaskStatus.TODO, TaskStatus.IN_PROGRESS] },
           deletedAt: null,
         },
         data: {
@@ -273,8 +275,9 @@ export class TaskAssignmentService {
       });
     }
 
-    // 3. Guarantee that any active subtask is assigned ONLY to either targetAssigneeId
-    // OR an ACCEPTED collaborator (who belongs to the team if team member list provided)
+    // 3. Guarantee that any active (unfinished) subtask is assigned ONLY to either targetAssigneeId
+    // OR an ACCEPTED collaborator (who belongs to the team if team member list provided).
+    // Note: Completed subtasks (DONE) preserve their historical assigneeId intact!
     const acceptedCollabs = await tx.taskCollaborator.findMany({
       where: {
         taskId,
@@ -293,6 +296,7 @@ export class TaskAssignmentService {
       where: {
         taskId,
         deletedAt: null,
+        status: { in: [TaskStatus.TODO, TaskStatus.IN_PROGRESS] },
         assigneeId: {
           not: null,
           notIn: eligibleAssigneeIds.length > 0 ? eligibleAssigneeIds : [-1],

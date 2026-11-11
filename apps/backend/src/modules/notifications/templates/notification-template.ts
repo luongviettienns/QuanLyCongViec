@@ -129,6 +129,40 @@ export function renderNotificationTemplate(
         content: `${actorName} đã giải tán nhóm "${event.teamName}".`,
       };
 
+    case 'TASK_COLLABORATOR_INVITED':
+      return {
+        title: 'Lời mời phối hợp công việc mới',
+        content: `${actorName} đã mời bạn phối hợp thực hiện công việc "${event.taskTitle}".`,
+      };
+
+    case 'TASK_COLLABORATOR_ACCEPTED':
+      return {
+        title: 'Lời mời phối hợp được chấp nhận',
+        content: `${actorName} đã đồng ý tham gia phối hợp công việc "${event.taskTitle}".`,
+      };
+
+    case 'TASK_COLLABORATOR_DECLINED':
+      return {
+        title: 'Lời mời phối hợp bị từ chối',
+        content: `${actorName} đã từ chối tham gia phối hợp công việc "${event.taskTitle}".`,
+      };
+
+    case 'TASK_COLLABORATOR_REMOVED':
+      return {
+        title: event.isSelfLeave
+          ? 'Thành viên rời khỏi vai trò phối hợp'
+          : 'Thu hồi quyền phối hợp công việc',
+        content: event.isSelfLeave
+          ? `${actorName} đã rời khỏi vai trò phối hợp trong công việc "${event.taskTitle}".`
+          : `${actorName} đã thu hồi quyền phối hợp của bạn trong công việc "${event.taskTitle}".`,
+      };
+
+    case 'SUBTASK_ASSIGNED':
+      return {
+        title: 'Bạn được phân công việc con mới',
+        content: `${actorName} đã phân công việc con "${event.subtaskTitle}" trong công việc "${event.taskTitle}" cho bạn.`,
+      };
+
     default:
       return {
         title: 'Thông báo hệ thống',

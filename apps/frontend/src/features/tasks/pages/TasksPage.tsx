@@ -2,7 +2,7 @@ import TaskToolbar from '../components/TaskToolbar';
 import KanbanBoard from '../components/kanban/KanbanBoard';
 import TaskTable from '../components/table/TaskTable';
 import CategoryManagerModal from '../../categories/components/CategoryManagerModal';
-import type { Task, TaskStatus, StatusFilter, PriorityFilter } from '../types/task.types';
+import type { Task, TaskStatus, StatusFilter, PriorityFilter, ScopeFilter } from '../types/task.types';
 import type { Category } from '../../categories/types/category.types';
 import type { Team } from '../../teams/types/team.types';
 
@@ -16,7 +16,7 @@ interface TasksPageProps {
   categoryFilter: number | 'ALL';
   priorityFilter: PriorityFilter;
   teamFilter: number | 'ALL';
-  scopeFilter: 'all' | 'created_by_me' | 'assigned_to_me';
+  scopeFilter: ScopeFilter;
   isFiltering: boolean;
   categoryModalOpen: boolean;
   onSearchChange: (value: string) => void;
@@ -25,7 +25,7 @@ interface TasksPageProps {
   onCategoryChange: (catId: number | 'ALL') => void;
   onPriorityChange: (priority: PriorityFilter) => void;
   onTeamChange: (tId: number | 'ALL') => void;
-  onScopeChange: (scope: 'all' | 'created_by_me' | 'assigned_to_me') => void;
+  onScopeChange: (scope: ScopeFilter) => void;
   onReset: () => void;
   onReorder: (taskIds: number[], status?: TaskStatus) => Promise<void>;
   onStatusMove: (taskId: number, newStatus: TaskStatus, newPosition?: number) => Promise<void>;

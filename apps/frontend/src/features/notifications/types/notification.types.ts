@@ -15,7 +15,12 @@ export type NotificationType =
   | 'TEAM_OWNERSHIP_TRANSFERRED'
   | 'TEAM_DELETED'
   | 'TEAM_INVITED'
-  | 'DEADLINE_SOON';
+  | 'DEADLINE_SOON'
+  | 'TASK_COLLABORATOR_INVITED'
+  | 'TASK_COLLABORATOR_ACCEPTED'
+  | 'TASK_COLLABORATOR_DECLINED'
+  | 'TASK_COLLABORATOR_REMOVED'
+  | 'SUBTASK_ASSIGNED';
 
 export interface NotificationActor {
   id: number;

@@ -5,6 +5,8 @@ import { App } from 'supertest/types.js';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/database/prisma.service.js';
 import { configureTestApp } from './test-app.helper.js';
+import { NotificationEventService } from '../src/modules/notifications/services/notification-event.service.js';
+import type { DomainNotificationEvent } from '../src/modules/notifications/types/notification-event.types.js';
 
 describe('Task Collaboration & Subtasks P0 (e2e)', () => {
   let app: INestApplication<App>;
@@ -481,6 +483,13 @@ describe('Task Collaboration & Subtasks P0 (e2e)', () => {
         .expect(200);
 
       for (const st of subtasks.body) {
+        if (st.status === 'TODO') {
+          await request(app.getHttpServer())
+            .patch(`/api/tasks/${teamTaskId}/subtasks/${st.id}/status`)
+            .set('Authorization', `Bearer ${tokenOwner}`)
+            .send({ status: 'IN_PROGRESS' })
+            .expect(200);
+        }
         await request(app.getHttpServer())
           .patch(`/api/tasks/${teamTaskId}/subtasks/${st.id}/status`)
           .set('Authorization', `Bearer ${tokenOwner}`)
@@ -875,6 +884,274 @@ describe('Task Collaboration & Subtasks P0 (e2e)', () => {
       expect(targetSub.assigneeId).toBe(assigneeId);
     });
 
+    it('6b. Changing main assignee only hands over active (TODO, IN_PROGRESS) subtasks and preserves completed (DONE) subtask assignments', async () => {
+      // Create an isolated team to avoid state leakage from earlier member-removal tests
+      const teamRes = await request(app.getHttpServer())
+        .post('/api/teams')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ name: `Isolation Team 6b ${Date.now()}` })
+        .expect(201);
+      const isoTeamId = teamRes.body.id;
+
+      await request(app.getHttpServer())
+        .post(`/api/teams/${isoTeamId}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p0_assignee_${ts}@test.local`, role: 'MEMBER' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/teams/${isoTeamId}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p0_collab_${ts}@test.local`, role: 'MEMBER' })
+        .expect(201);
+
+      // Create a task assigned to Owner
+      const taskRes = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `Historical DONE Subtask Test ${Date.now()}`, teamId: isoTeamId, assigneeId: ownerId })
+        .expect(201);
+      const tId = taskRes.body.id;
+
+      // Add collabId as accepted collaborator
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ userId: collabId })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/collaborators/respond`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ action: 'ACCEPT' })
+        .expect(201);
+
+      // Subtask 1: assigned to Owner, completed (DONE) via TODO -> IN_PROGRESS -> DONE
+      const sub1 = await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'Owner Done Subtask', assigneeId: ownerId })
+        .expect(201);
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/subtasks/${sub1.body.id}/status`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ status: 'IN_PROGRESS' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/subtasks/${sub1.body.id}/status`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ status: 'DONE' })
+        .expect(200);
+
+      // Subtask 2: assigned to Owner, status IN_PROGRESS
+      const sub2 = await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'Owner In Progress Subtask', assigneeId: ownerId })
+        .expect(201);
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/subtasks/${sub2.body.id}/status`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ status: 'IN_PROGRESS' })
+        .expect(200);
+
+      // Subtask 3: assigned to Owner, status TODO
+      const sub3 = await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'Owner Todo Subtask', assigneeId: ownerId })
+        .expect(201);
+
+      // Subtask 4: assigned to Collab, completed (DONE)
+      const sub4 = await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'Collab Done Subtask', assigneeId: collabId })
+        .expect(201);
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/subtasks/${sub4.body.id}/status`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ status: 'IN_PROGRESS' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/subtasks/${sub4.body.id}/status`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ status: 'DONE' })
+        .expect(200);
+
+      // Subtask 5: assigned to Collab, status TODO
+      const sub5 = await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'Collab Todo Subtask', assigneeId: collabId })
+        .expect(201);
+
+      // Now change Main Assignee from Owner to assigneeId
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/assignee`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ assigneeId })
+        .expect(200);
+
+      // Query subtasks from DB to assert exact states
+      const subs = await prisma.subtask.findMany({
+        where: { taskId: tId, deletedAt: null },
+      });
+
+      const dbSub1 = subs.find((s) => s.id === sub1.body.id);
+      const dbSub2 = subs.find((s) => s.id === sub2.body.id);
+      const dbSub3 = subs.find((s) => s.id === sub3.body.id);
+      const dbSub4 = subs.find((s) => s.id === sub4.body.id);
+      const dbSub5 = subs.find((s) => s.id === sub5.body.id);
+
+      // 1. Subtask 1 (DONE) MUST retain previous assignee (ownerId), NOT handed over to assigneeId!
+      expect(dbSub1?.status).toBe('DONE');
+      expect(dbSub1?.assigneeId).toBe(ownerId);
+
+      // 2. Subtask 2 (IN_PROGRESS) handed over to new assignee
+      expect(dbSub2?.status).toBe('IN_PROGRESS');
+      expect(dbSub2?.assigneeId).toBe(assigneeId);
+
+      // 3. Subtask 3 (TODO) handed over to new assignee
+      expect(dbSub3?.status).toBe('TODO');
+      expect(dbSub3?.assigneeId).toBe(assigneeId);
+
+      // 4. Subtask 4 (DONE) assigned to collabId remains intact
+      expect(dbSub4?.status).toBe('DONE');
+      expect(dbSub4?.assigneeId).toBe(collabId);
+
+      // 5. Subtask 5 (TODO) assigned to collabId remains intact
+      expect(dbSub5?.status).toBe('TODO');
+      expect(dbSub5?.assigneeId).toBe(collabId);
+
+      // Now revoke collabId: verify DONE subtask 4 STILL retains collabId as historical record!
+      await request(app.getHttpServer())
+        .delete(`/api/tasks/${tId}/collaborators/${collabId}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      const dbSub4AfterRevoke = await prisma.subtask.findUnique({ where: { id: sub4.body.id } });
+      const dbSub5AfterRevoke = await prisma.subtask.findUnique({ where: { id: sub5.body.id } });
+
+      // Historical completed subtask keeps assignee and completion audit record
+      expect(dbSub4AfterRevoke?.status).toBe('DONE');
+      expect(dbSub4AfterRevoke?.assigneeId).toBe(collabId);
+      expect(dbSub4AfterRevoke?.completedById).toBe(collabId);
+      expect(dbSub4AfterRevoke?.completedAt).not.toBeNull();
+
+      // Unfinished subtask is unassigned
+      expect(dbSub5AfterRevoke?.status).toBe('TODO');
+      expect(dbSub5AfterRevoke?.assigneeId).toBeNull();
+    });
+
+    it('6c. Distinguishes assigneeId (person assigned) from completedById (person who marked DONE), and resets on reopen', async () => {
+      // Create an isolated team
+      const teamRes = await request(app.getHttpServer())
+        .post('/api/teams')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ name: `Isolation Team 6c ${Date.now()}` })
+        .expect(201);
+      const isoTeamId = teamRes.body.id;
+
+      await request(app.getHttpServer())
+        .post(`/api/teams/${isoTeamId}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p0_assignee_${ts}@test.local`, role: 'MEMBER' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/teams/${isoTeamId}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p0_collab_${ts}@test.local`, role: 'MEMBER' })
+        .expect(201);
+
+      // Create task assigned to Main Assignee
+      const taskRes = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `Audit Completion Task ${Date.now()}`, teamId: isoTeamId, assigneeId })
+        .expect(201);
+      const tId = taskRes.body.id;
+
+      // Add collabId as accepted collaborator
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ userId: collabId })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/collaborators/respond`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ action: 'ACCEPT' })
+        .expect(201);
+
+      // Create subtask assigned to Collab
+      const subRes = await request(app.getHttpServer())
+        .post(`/api/tasks/${tId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ title: 'Subtask for Collab to be closed by Manager', assigneeId: collabId })
+        .expect(201);
+      const subId = subRes.body.id;
+
+      // 1. Advance to IN_PROGRESS by Main Assignee
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/subtasks/${subId}/status`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'IN_PROGRESS' })
+        .expect(200);
+
+      // 2. Main Assignee marks subtask as DONE (Manager closes on behalf of Collaborator)
+      const doneByManager = await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/subtasks/${subId}/status`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'DONE' })
+        .expect(200);
+
+      // Verify response body: assignee is Collab, but completedBy is Main Assignee!
+      expect(doneByManager.body.status).toBe('DONE');
+      expect(doneByManager.body.assigneeId).toBe(collabId);
+      expect(doneByManager.body.assignee?.id).toBe(collabId);
+      expect(doneByManager.body.completedById).toBe(assigneeId);
+      expect(doneByManager.body.completedBy?.id).toBe(assigneeId);
+      expect(doneByManager.body.completedAt).toBeDefined();
+
+      // Verify in DB directly
+      const dbSubDone = await prisma.subtask.findUnique({ where: { id: subId } });
+      expect(dbSubDone?.assigneeId).toBe(collabId);
+      expect(dbSubDone?.completedById).toBe(assigneeId);
+      expect(dbSubDone?.completedAt).not.toBeNull();
+
+      // 3. Manager reopens subtask to IN_PROGRESS -> completedById and completedAt are reset to null
+      const reopened = await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/subtasks/${subId}/status`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'IN_PROGRESS' })
+        .expect(200);
+
+      expect(reopened.body.status).toBe('IN_PROGRESS');
+      expect(reopened.body.assigneeId).toBe(collabId);
+      expect(reopened.body.completedById).toBeNull();
+      expect(reopened.body.completedBy).toBeNull();
+      expect(reopened.body.completedAt).toBeNull();
+
+      const dbSubReopened = await prisma.subtask.findUnique({ where: { id: subId } });
+      expect(dbSubReopened?.completedById).toBeNull();
+      expect(dbSubReopened?.completedAt).toBeNull();
+
+      // 4. Now Collaborator themselves marks it as DONE
+      const doneByCollab = await request(app.getHttpServer())
+        .patch(`/api/tasks/${tId}/subtasks/${subId}/status`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ status: 'DONE' })
+        .expect(200);
+
+      // Both assigneeId and completedById now reflect the Collaborator
+      expect(doneByCollab.body.status).toBe('DONE');
+      expect(doneByCollab.body.assigneeId).toBe(collabId);
+      expect(doneByCollab.body.completedById).toBe(collabId);
+      expect(doneByCollab.body.completedBy?.id).toBe(collabId);
+      expect(doneByCollab.body.completedAt).toBeDefined();
+    });
+
     it('7. Reordering subtasks fails with 400 if list is incomplete or contains duplicates', async () => {
       const taskRes = await request(app.getHttpServer())
         .post('/api/tasks')
@@ -1043,4 +1320,1016 @@ describe('Task Collaboration & Subtasks P0 (e2e)', () => {
         .expect(404);
     });
   });
+
+  describe('P0 — Kanban Drag-and-Drop & Position RBAC', () => {
+    let kanbanTaskId = 0;
+
+    beforeAll(async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `Kanban RBAC Task ${Date.now()}`,
+          teamId,
+          assigneeId,
+        })
+        .expect(201);
+      kanbanTaskId = res.body.id;
+    });
+
+    it('1. Main Assignee cannot reorder within same column (sending position) -> 403 Forbidden', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${kanbanTaskId}/status`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'TODO', position: 1 })
+        .expect(403);
+      expect(res.body.message).toContain('không có quyền sắp xếp');
+    });
+
+    it('2. Main Assignee cannot transition cross-column with position -> 403 Forbidden', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${kanbanTaskId}/status`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'IN_PROGRESS', position: 0 })
+        .expect(403);
+      expect(res.body.message).toContain('không có quyền sắp xếp');
+    });
+
+    it('3. Main Assignee CAN transition cross-column WITHOUT position -> 200 OK', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${kanbanTaskId}/status`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'IN_PROGRESS' })
+        .expect(200);
+      expect(res.body.status).toBe('IN_PROGRESS');
+    });
+
+    it('4. Owner / Admin CAN transition cross-column WITH position -> 200 OK', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${kanbanTaskId}/status`)
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .send({ status: 'DONE', position: 0 })
+        .expect(200);
+      expect(res.body.status).toBe('DONE');
+    });
+
+    it('5. Regular Member (not assignee/creator/admin) CANNOT transition or drag -> 403 Forbidden', async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/tasks/${kanbanTaskId}/status`)
+        .set('Authorization', `Bearer ${tokenMember}`)
+        .send({ status: 'TODO' })
+        .expect(403);
+    });
+  });
+
+  describe('P0 — Subtask Linear Progression for Collaborator vs Manager', () => {
+    let workflowTaskId = 0;
+    let workflowSubtaskId = 0;
+
+    beforeAll(async () => {
+      // Re-add collab to teamId if previously removed
+      await request(app.getHttpServer())
+        .post(`/api/teams/${teamId}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p0_collab_${ts}@test.local`, role: 'MEMBER' });
+
+      const taskRes = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `Subtask Workflow Task ${Date.now()}`,
+          teamId,
+          assigneeId,
+        })
+        .expect(201);
+      workflowTaskId = taskRes.body.id;
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${workflowTaskId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ userId: collabId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${workflowTaskId}/collaborators/respond`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ action: 'ACCEPT' })
+        .expect(201);
+
+      const subRes = await request(app.getHttpServer())
+        .post(`/api/tasks/${workflowTaskId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({
+          title: 'Linear Subtask',
+          assigneeId: collabId,
+        })
+        .expect(201);
+      workflowSubtaskId = subRes.body.id;
+    });
+
+    it('1. Collaborator cannot skip directly from TODO to DONE -> 400 Bad Request', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ status: 'DONE' })
+        .expect(400);
+      expect(res.body.message).toContain('TODO -> IN_PROGRESS');
+    });
+
+    it('2. Collaborator cannot edit title, description, or change assigneeId -> 403 Forbidden', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ title: 'New title by collab' })
+        .expect(403);
+      expect(res.body.message).toContain('Bạn không có quyền chỉnh sửa nội dung hoặc người thực hiện');
+    });
+
+    it('3. Collaborator can advance subtask TODO -> IN_PROGRESS -> 200 OK', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ status: 'IN_PROGRESS' })
+        .expect(200);
+      expect(res.body.status).toBe('IN_PROGRESS');
+    });
+
+    it('4. Collaborator cannot reverse subtask IN_PROGRESS -> TODO -> 400 Bad Request', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ status: 'TODO' })
+        .expect(400);
+      expect(res.body.message).toContain('IN_PROGRESS -> DONE');
+    });
+
+    it('5. Collaborator can advance subtask IN_PROGRESS -> DONE -> 200 OK', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ status: 'DONE' })
+        .expect(200);
+      expect(res.body.status).toBe('DONE');
+    });
+
+    it('6. Collaborator cannot reopen subtask from DONE -> IN_PROGRESS or DONE -> TODO -> 400 Bad Request', async () => {
+      const res1 = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ status: 'IN_PROGRESS' })
+        .expect(400);
+      expect(res1.body.message).toContain('Không thể thay đổi trạng thái công việc con đã hoàn thành');
+
+      const res2 = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ status: 'TODO' })
+        .expect(400);
+      expect(res2.body.message).toContain('Không thể thay đổi trạng thái công việc con đã hoàn thành');
+    });
+
+    it('7. Manager (Main Assignee / Owner) CAN reopen subtask DONE -> TODO -> 200 OK', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'TODO' })
+        .expect(200);
+      expect(res.body.status).toBe('TODO');
+    });
+
+    it('8. Manager (Main Assignee / Owner) CANNOT skip directly from TODO to DONE -> 400 Bad Request', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'DONE' })
+        .expect(400);
+      expect(res.body.message).toContain('Không thể chuyển công việc con trực tiếp từ Cần làm sang Hoàn thành (TODO -> DONE)');
+    });
+
+    it('9. Manager can advance subtask properly via TODO -> IN_PROGRESS -> DONE', async () => {
+      const res1 = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'IN_PROGRESS' })
+        .expect(200);
+      expect(res1.body.status).toBe('IN_PROGRESS');
+
+      const res2 = await request(app.getHttpServer())
+        .patch(`/api/tasks/${workflowTaskId}/subtasks/${workflowSubtaskId}`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({ status: 'DONE' })
+        .expect(200);
+      expect(res2.body.status).toBe('DONE');
+    });
+  });
+
+  describe('P1 — Collaboration Notifications & Recipient Delivery', () => {
+    let notifTaskId = 0;
+
+    beforeAll(async () => {
+      // Re-add collab to teamId if needed
+      await request(app.getHttpServer())
+        .post(`/api/teams/${teamId}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p0_collab_${ts}@test.local`, role: 'MEMBER' });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `Notif Test Task ${Date.now()}`,
+          teamId,
+          assigneeId,
+        })
+        .expect(201);
+      notifTaskId = res.body.id;
+    });
+
+    it('1. Inviting collaborator creates TASK_COLLABORATOR_INVITED for invitee (not inviter)', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${notifTaskId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ userId: collabId })
+        .expect(201);
+
+      const inviteeNotifs = await request(app.getHttpServer())
+        .get('/api/notifications')
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+
+      const inviteNotif = inviteeNotifs.body.items?.find(
+        (n: any) => n.type === 'TASK_COLLABORATOR_INVITED' && n.taskId === notifTaskId,
+      );
+      expect(inviteNotif).toBeDefined();
+      expect(inviteNotif.title).toContain('Lời mời phối hợp');
+
+      const inviterNotifs = await request(app.getHttpServer())
+        .get('/api/notifications')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      const selfNotif = inviterNotifs.body.items?.find(
+        (n: any) => n.type === 'TASK_COLLABORATOR_INVITED' && n.taskId === notifTaskId,
+      );
+      expect(selfNotif).toBeUndefined();
+    });
+
+    it('2. Accepting invitation creates TASK_COLLABORATOR_ACCEPTED for inviter & creator/assignee', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${notifTaskId}/collaborators/respond`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ action: 'ACCEPT' })
+        .expect(201);
+
+      const ownerNotifs = await request(app.getHttpServer())
+        .get('/api/notifications')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      const acceptNotif = ownerNotifs.body.items?.find(
+        (n: any) => n.type === 'TASK_COLLABORATOR_ACCEPTED' && n.taskId === notifTaskId,
+      );
+      expect(acceptNotif).toBeDefined();
+      expect(acceptNotif.content).toContain('đồng ý');
+    });
+
+    it('3. Declining invitation creates TASK_COLLABORATOR_DECLINED for inviter', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${notifTaskId}/collaborators`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ userId: memberId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${notifTaskId}/collaborators/respond`)
+        .set('Authorization', `Bearer ${tokenMember}`)
+        .send({ action: 'DECLINE' })
+        .expect(201);
+
+      const ownerNotifs = await request(app.getHttpServer())
+        .get('/api/notifications')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      const declineNotif = ownerNotifs.body.items?.find(
+        (n: any) => n.type === 'TASK_COLLABORATOR_DECLINED' && n.taskId === notifTaskId,
+      );
+      expect(declineNotif).toBeDefined();
+      expect(declineNotif.content).toContain('từ chối');
+    });
+
+    it('4. Removing collaborator creates TASK_COLLABORATOR_REMOVED for removed user', async () => {
+      await request(app.getHttpServer())
+        .delete(`/api/tasks/${notifTaskId}/collaborators/${collabId}`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .expect(200);
+
+      const collabNotifs = await request(app.getHttpServer())
+        .get('/api/notifications')
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+
+      const removeNotif = collabNotifs.body.items?.find(
+        (n: any) => n.type === 'TASK_COLLABORATOR_REMOVED' && n.taskId === notifTaskId,
+      );
+      expect(removeNotif).toBeDefined();
+      expect(removeNotif.title).toContain('Thu hồi quyền phối hợp');
+    });
+
+    it('5. Assigning subtask creates SUBTASK_ASSIGNED notification for assignee', async () => {
+      const subRes = await request(app.getHttpServer())
+        .post(`/api/tasks/${notifTaskId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: 'Notif Subtask',
+          assigneeId: assigneeId,
+        })
+        .expect(201);
+      expect(subRes.body.id).toBeGreaterThan(0);
+
+      const asgNotifs = await request(app.getHttpServer())
+        .get('/api/notifications')
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .expect(200);
+
+      const subNotif = asgNotifs.body.items?.find(
+        (n: any) => n.type === 'SUBTASK_ASSIGNED' && n.taskId === notifTaskId,
+      );
+      expect(subNotif).toBeDefined();
+      expect(subNotif.title).toContain('Bạn được phân công việc con mới');
+    });
+
+    it('6. Idempotency: duplicate or retried event publishing produces exactly one notification without phantom duplicates', async () => {
+      const notificationEventService = app.get(NotificationEventService);
+      const testTimestamp = Date.now();
+      const testEvent: DomainNotificationEvent = {
+        type: 'TASK_COLLABORATOR_INVITED',
+        actorId: ownerId,
+        taskId: notifTaskId,
+        taskTitle: 'Idempotency Test Task',
+        teamId,
+        invitedUserId: memberId,
+        invitedAt: new Date(testTimestamp),
+        timestamp: testTimestamp,
+      };
+
+      // 1. Publish sequentially twice with same event parameters
+      await notificationEventService.publish(testEvent);
+      await notificationEventService.publish(testEvent);
+
+      // Verify that recipient has exactly 1 notification for this specific invitation eventKey
+      const count = await prisma.notification.count({
+        where: {
+          userId: memberId,
+          type: 'TASK_COLLABORATOR_INVITED',
+          taskId: notifTaskId,
+          eventKey: { contains: new Date(testTimestamp).toISOString() },
+        },
+      });
+      expect(count).toBe(1);
+
+      // 2. Publish concurrently 3 times for SUBTASK_ASSIGNED
+      const subtaskEvent: DomainNotificationEvent = {
+        type: 'SUBTASK_ASSIGNED',
+        actorId: ownerId,
+        taskId: notifTaskId,
+        taskTitle: 'Idempotency Test Task',
+        teamId,
+        subtaskId: 8888,
+        subtaskTitle: 'Concurrent Subtask',
+        subtaskAssigneeId: memberId,
+        assignedAt: new Date(testTimestamp),
+        timestamp: testTimestamp,
+      };
+
+      await Promise.all([
+        notificationEventService.publish(subtaskEvent),
+        notificationEventService.publish(subtaskEvent),
+        notificationEventService.publish(subtaskEvent),
+      ]);
+
+      const subtaskNotifs = await prisma.notification.findMany({
+        where: {
+          userId: memberId,
+          type: 'SUBTASK_ASSIGNED',
+          taskId: notifTaskId,
+          content: { contains: 'Concurrent Subtask' },
+        },
+      });
+      expect(subtaskNotifs.length).toBe(1);
+    });
+  });
+
+  describe('P1 — Task Scope Filtering Expansion', () => {
+    let taskAssignedToCollab = 0;
+    let taskCollabAccepted = 0;
+    let taskWithSubtaskOnly = 0;
+    let otherTeamId = 0;
+    let taskOtherTeam = 0;
+
+    beforeAll(async () => {
+      // Re-add collab to teamId if needed
+      await request(app.getHttpServer())
+        .post(`/api/teams/${teamId}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p0_collab_${ts}@test.local`, role: 'MEMBER' });
+
+      const tRes = await request(app.getHttpServer())
+        .post('/api/teams')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ name: `Other Team ${Date.now()}` })
+        .expect(201);
+      otherTeamId = tRes.body.id;
+
+      await request(app.getHttpServer())
+        .post(`/api/teams/${otherTeamId}/members`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ email: `p0_collab_${ts}@test.local`, role: 'MEMBER' })
+        .expect(201);
+
+      // Task 1: Assigned to collabId in teamId, has subtask assigned to collabId
+      const t1 = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `Collab Main Task ${Date.now()}`, teamId, assigneeId: collabId })
+        .expect(201);
+      taskAssignedToCollab = t1.body.id;
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${taskAssignedToCollab}/subtasks`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ title: 'Subtask for main assignee', assigneeId: collabId })
+        .expect(201);
+
+      // Task 2: Assigned to ownerId, collabId accepted as collaborator in teamId (no subtask)
+      const t2 = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `Collab Invited Task ${Date.now()}`, teamId, assigneeId: ownerId })
+        .expect(201);
+      taskCollabAccepted = t2.body.id;
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${taskCollabAccepted}/collaborators`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ userId: collabId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${taskCollabAccepted}/collaborators/respond`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ action: 'ACCEPT' })
+        .expect(201);
+
+      // Task 3: Assigned to ownerId, collabId accepted as collaborator, AND has subtask assigned to collabId
+      const t3 = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `Subtask Parent Task ${Date.now()}`, teamId, assigneeId: ownerId })
+        .expect(201);
+      taskWithSubtaskOnly = t3.body.id;
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${taskWithSubtaskOnly}/collaborators`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ userId: collabId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${taskWithSubtaskOnly}/collaborators/respond`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({ action: 'ACCEPT' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${taskWithSubtaskOnly}/subtasks`)
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: 'Subtask for collab', assigneeId: collabId })
+        .expect(201);
+
+      // Task 4: In otherTeamId, assigned to collabId
+      const t4 = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({ title: `Other Team Task ${Date.now()}`, teamId: otherTeamId, assigneeId: collabId })
+        .expect(201);
+      taskOtherTeam = t4.body.id;
+    });
+
+    it('1. scope=collaborating returns only tasks where user is ACCEPTED collaborator', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/api/tasks?scope=collaborating&teamId=${teamId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+
+      const ids = res.body.map((t: any) => t.id);
+      expect(ids).toContain(taskCollabAccepted);
+      expect(ids).toContain(taskWithSubtaskOnly);
+      expect(ids).not.toContain(taskAssignedToCollab);
+    });
+
+    it('2. scope=subtasks_assigned_to_me returns only tasks where user has active assigned subtasks', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/api/tasks?scope=subtasks_assigned_to_me&teamId=${teamId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+
+      const ids = res.body.map((t: any) => t.id);
+      expect(ids).toContain(taskAssignedToCollab);
+      expect(ids).toContain(taskWithSubtaskOnly);
+      expect(ids).not.toContain(taskCollabAccepted);
+    });
+
+    it('3. scope=my_work returns union of Main Assignee + Collaborator + Subtask Assignee without duplicates', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/api/tasks?scope=my_work&teamId=${teamId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+
+      const ids = res.body.map((t: any) => t.id);
+      expect(ids).toContain(taskAssignedToCollab);
+      expect(ids).toContain(taskCollabAccepted);
+      expect(ids).toContain(taskWithSubtaskOnly);
+      expect(ids).not.toContain(taskOtherTeam);
+
+      const uniqueIds = Array.from(new Set(ids));
+      expect(ids.length).toBe(uniqueIds.length);
+    });
+
+    it('4. teamId combined with scope=my_work restricts to specified team', async () => {
+      const resOther = await request(app.getHttpServer())
+        .get(`/api/tasks?scope=my_work&teamId=${otherTeamId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+
+      const otherIds = resOther.body.map((t: any) => t.id);
+      expect(otherIds).toContain(taskOtherTeam);
+      expect(otherIds).not.toContain(taskAssignedToCollab);
+      expect(otherIds).not.toContain(taskCollabAccepted);
+      expect(otherIds).not.toContain(taskWithSubtaskOnly);
+    });
+
+    it('5. GET /api/tasks/stats works accurately for all new scopes', async () => {
+      const statsRes = await request(app.getHttpServer())
+        .get(`/api/tasks/stats?scope=my_work&teamId=${teamId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+
+      expect(Number(statsRes.body.total)).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  describe('P0 Audit & Invariants — Strict Collaboration Authorization & Subtask Workflow', () => {
+    let auditTaskId = 0;
+    let auditSubtaskId = 0;
+
+    beforeEach(async () => {
+      // Create a fresh task for clean state isolation
+      const taskRes = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenOwner}`)
+        .send({
+          title: `P0 Audit Task ${Date.now()}_${Math.random()}`,
+          teamId,
+          assigneeId,
+        })
+        .expect(201);
+      auditTaskId = taskRes.body.id;
+
+      // Create a subtask assigned to Main Assignee
+      const subRes = await request(app.getHttpServer())
+        .post(`/api/tasks/${auditTaskId}/subtasks`)
+        .set('Authorization', `Bearer ${tokenAssignee}`)
+        .send({
+          title: 'Initial Subtask',
+          assigneeId,
+        })
+        .expect(201);
+      auditSubtaskId = subRes.body.id;
+    });
+
+    describe('P0.1 — PENDING Collaborator Authorization Restrictions', () => {
+      beforeEach(async () => {
+        // Invite collabId -> status is PENDING
+        await request(app.getHttpServer())
+          .post(`/api/tasks/${auditTaskId}/collaborators`)
+          .set('Authorization', `Bearer ${tokenAssignee}`)
+          .send({ userId: collabId })
+          .expect(201);
+      });
+
+      it('1. PENDING collaborator CANNOT update subtask status even when assigned to it -> 403 Forbidden', async () => {
+        // Explicitly assign subtask to collabId to directly test the ACCEPTED condition (isolating from !isAssigned)
+        await prisma.subtask.update({
+          where: { id: auditSubtaskId },
+          data: { assigneeId: collabId },
+        });
+
+        const res = await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}/status`)
+          .set('Authorization', `Bearer ${tokenCollab}`)
+          .send({ status: 'IN_PROGRESS' })
+          .expect(403);
+
+        expect(res.body.message).toContain('Bạn không có quyền thay đổi trạng thái');
+
+        // Rollback check: DB state remains TODO and assigned to collabId
+        const inDb = await prisma.subtask.findUnique({ where: { id: auditSubtaskId } });
+        expect(inDb?.status).toBe('TODO');
+        expect(inDb?.assigneeId).toBe(collabId);
+      });
+
+      it('2. PENDING collaborator CANNOT edit subtask title or description -> 403 Forbidden', async () => {
+        const res = await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}`)
+          .set('Authorization', `Bearer ${tokenCollab}`)
+          .send({ title: 'Hacked Subtask Title' })
+          .expect(403);
+
+        expect(res.body.message).toContain('Bạn không có quyền chỉnh sửa nội dung hoặc người thực hiện');
+
+        // Rollback check: DB title unchanged
+        const inDb = await prisma.subtask.findUnique({ where: { id: auditSubtaskId } });
+        expect(inDb?.title).toBe('Initial Subtask');
+      });
+
+      it('3. PENDING collaborator CANNOT delete subtask -> 403 Forbidden', async () => {
+        await request(app.getHttpServer())
+          .delete(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}`)
+          .set('Authorization', `Bearer ${tokenCollab}`)
+          .expect(403);
+
+        const inDb = await prisma.subtask.findUnique({ where: { id: auditSubtaskId } });
+        expect(inDb?.deletedAt).toBeNull();
+      });
+
+      it('4. PENDING collaborator CANNOT reorder subtasks -> 403 Forbidden', async () => {
+        await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/reorder`)
+          .set('Authorization', `Bearer ${tokenCollab}`)
+          .send({ subtaskIds: [auditSubtaskId] })
+          .expect(403);
+      });
+
+      it('5. PENDING collaborator CANNOT create a new subtask -> 403 Forbidden', async () => {
+        await request(app.getHttpServer())
+          .post(`/api/tasks/${auditTaskId}/subtasks`)
+          .set('Authorization', `Bearer ${tokenCollab}`)
+          .send({ title: 'Unauthorized subtask by pending' })
+          .expect(403);
+      });
+
+      it('6. PENDING collaborator CANNOT edit parent task content -> 403 Forbidden', async () => {
+        await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}`)
+          .set('Authorization', `Bearer ${tokenCollab}`)
+          .send({ title: 'Hacked Parent Task Title' })
+          .expect(403);
+      });
+
+      it('7. PENDING collaborator CANNOT change parent task status -> 403 Forbidden', async () => {
+        await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/status`)
+          .set('Authorization', `Bearer ${tokenCollab}`)
+          .send({ status: 'IN_PROGRESS' })
+          .expect(403);
+      });
+
+      it('8. Manager CANNOT assign a subtask to a PENDING collaborator -> 400 Bad Request', async () => {
+        const res = await request(app.getHttpServer())
+          .post(`/api/tasks/${auditTaskId}/subtasks`)
+          .set('Authorization', `Bearer ${tokenAssignee}`)
+          .send({
+            title: 'Subtask for pending user',
+            assigneeId: collabId,
+          })
+          .expect(400);
+
+        expect(res.body.message).toContain('đã chấp nhận lời mời');
+      });
+    });
+
+    describe('P0.1 — Team Admin with PENDING invitation retains full Admin rights', () => {
+      beforeEach(async () => {
+        // Invite adminId as collaborator on auditTaskId -> status is PENDING
+        await request(app.getHttpServer())
+          .post(`/api/tasks/${auditTaskId}/collaborators`)
+          .set('Authorization', `Bearer ${tokenOwner}`)
+          .send({ userId: adminId })
+          .expect(201);
+      });
+
+      it('1. Admin with PENDING invite CAN create subtasks -> 201 Created', async () => {
+        const res = await request(app.getHttpServer())
+          .post(`/api/tasks/${auditTaskId}/subtasks`)
+          .set('Authorization', `Bearer ${tokenAdmin}`)
+          .send({ title: 'Admin Created Subtask' })
+          .expect(201);
+
+        expect(res.body.id).toBeDefined();
+        expect(res.body.title).toBe('Admin Created Subtask');
+      });
+
+      it('2. Admin with PENDING invite CAN edit subtask content -> 200 OK', async () => {
+        const res = await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}`)
+          .set('Authorization', `Bearer ${tokenAdmin}`)
+          .send({ title: 'Admin Updated Title' })
+          .expect(200);
+
+        expect(res.body.title).toBe('Admin Updated Title');
+      });
+
+      it('3. Admin with PENDING invite CAN advance subtask status TODO -> IN_PROGRESS -> 200 OK', async () => {
+        const res = await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}/status`)
+          .set('Authorization', `Bearer ${tokenAdmin}`)
+          .send({ status: 'IN_PROGRESS' })
+          .expect(200);
+
+        expect(res.body.status).toBe('IN_PROGRESS');
+      });
+
+      it('4. Admin with PENDING invite CAN delete subtask -> 200 OK', async () => {
+        await request(app.getHttpServer())
+          .delete(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}`)
+          .set('Authorization', `Bearer ${tokenAdmin}`)
+          .expect(200);
+
+        const inDb = await prisma.subtask.findUnique({ where: { id: auditSubtaskId } });
+        expect(inDb?.deletedAt).not.toBeNull();
+      });
+
+      it('5. Admin with PENDING invite CAN edit parent task and transition status -> 200 OK', async () => {
+        const editRes = await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}`)
+          .set('Authorization', `Bearer ${tokenAdmin}`)
+          .send({ description: 'Admin updated description' })
+          .expect(200);
+        expect(editRes.body.description).toBe('Admin updated description');
+
+        const statusRes = await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/status`)
+          .set('Authorization', `Bearer ${tokenAdmin}`)
+          .send({ status: 'IN_PROGRESS' })
+          .expect(200);
+        expect(statusRes.body.status).toBe('IN_PROGRESS');
+      });
+    });
+
+    describe('P0.1 — Immediate Revocation & DECLINED Status Enforcement', () => {
+      it('1. Revoked collaborator loses rights immediately; unfinished subtasks are unassigned', async () => {
+        // Collab accepts invite
+        await request(app.getHttpServer())
+          .post(`/api/tasks/${auditTaskId}/collaborators`)
+          .set('Authorization', `Bearer ${tokenAssignee}`)
+          .send({ userId: collabId })
+          .expect(201);
+        await request(app.getHttpServer())
+          .post(`/api/tasks/${auditTaskId}/collaborators/respond`)
+          .set('Authorization', `Bearer ${tokenCollab}`)
+          .send({ action: 'ACCEPT' })
+          .expect(201);
+
+        // Assign subtask to collabId
+        await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}`)
+          .set('Authorization', `Bearer ${tokenAssignee}`)
+          .send({ assigneeId: collabId })
+          .expect(200);
+
+        // Manager revokes collab
+        await request(app.getHttpServer())
+          .delete(`/api/tasks/${auditTaskId}/collaborators/${collabId}`)
+          .set('Authorization', `Bearer ${tokenAssignee}`)
+          .expect(200);
+
+        // In DB, subtask is unassigned and reset to TODO
+        const subInDb = await prisma.subtask.findUnique({ where: { id: auditSubtaskId } });
+        expect(subInDb?.assigneeId).toBeNull();
+        expect(subInDb?.status).toBe('TODO');
+
+        // Revoked collab tries to update status with valid JWT -> 403 Forbidden
+        const res = await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}/status`)
+          .set('Authorization', `Bearer ${tokenCollab}`)
+          .send({ status: 'IN_PROGRESS' })
+          .expect(403);
+        expect(res.body.message).toContain('Bạn không có quyền thay đổi trạng thái');
+
+        // Direct isolation: Even if inconsistent/legacy data has subtask assigned to REVOKED user,
+        // it fails with 403 specifically due to missing ACCEPTED collaborator status (!acceptedCollab)
+        await prisma.subtask.update({
+          where: { id: auditSubtaskId },
+          data: { assigneeId: collabId },
+        });
+
+        const resDirect = await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}/status`)
+          .set('Authorization', `Bearer ${tokenCollab}`)
+          .send({ status: 'IN_PROGRESS' })
+          .expect(403);
+        expect(resDirect.body.message).toContain('Bạn không có quyền thay đổi trạng thái');
+      });
+
+      it('2. DECLINED collaborator cannot update subtask status even if assigned -> 403 Forbidden', async () => {
+        // Re-invite collab
+        await request(app.getHttpServer())
+          .post(`/api/tasks/${auditTaskId}/collaborators`)
+          .set('Authorization', `Bearer ${tokenAssignee}`)
+          .send({ userId: collabId })
+          .expect(201);
+
+        // Collab declines
+        await request(app.getHttpServer())
+          .post(`/api/tasks/${auditTaskId}/collaborators/respond`)
+          .set('Authorization', `Bearer ${tokenCollab}`)
+          .send({ action: 'DECLINE' })
+          .expect(201);
+
+        // Simulate legacy/inconsistent state where subtask is assigned to this DECLINED collaborator
+        await prisma.subtask.update({
+          where: { id: auditSubtaskId },
+          data: { assigneeId: collabId },
+        });
+
+        // Declined collab tries to update subtask -> 403 Forbidden
+        const res = await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}/status`)
+          .set('Authorization', `Bearer ${tokenCollab}`)
+          .send({ status: 'IN_PROGRESS' })
+          .expect(403);
+        expect(res.body.message).toContain('Bạn không có quyền thay đổi trạng thái');
+      });
+    });
+
+    describe('P0.2 — Subtask Linear Progression & Invariants Verification', () => {
+      it('1. Neither Manager nor Collaborator can skip TODO -> DONE directly; DB rolls back', async () => {
+        // Manager attempts TODO -> DONE
+        const mgrRes = await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}/status`)
+          .set('Authorization', `Bearer ${tokenAssignee}`)
+          .send({ status: 'DONE' })
+          .expect(400);
+        expect(mgrRes.body.message).toContain('TODO -> DONE');
+
+        // Rollback check in DB
+        let inDb = await prisma.subtask.findUnique({ where: { id: auditSubtaskId } });
+        expect(inDb?.status).toBe('TODO');
+
+        // Collab accepted and assigned
+        await request(app.getHttpServer())
+          .post(`/api/tasks/${auditTaskId}/collaborators`)
+          .set('Authorization', `Bearer ${tokenAssignee}`)
+          .send({ userId: collabId })
+          .expect(201);
+        await request(app.getHttpServer())
+          .post(`/api/tasks/${auditTaskId}/collaborators/respond`)
+          .set('Authorization', `Bearer ${tokenCollab}`)
+          .send({ action: 'ACCEPT' })
+          .expect(201);
+        await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}`)
+          .set('Authorization', `Bearer ${tokenAssignee}`)
+          .send({ assigneeId: collabId })
+          .expect(200);
+
+        // Collab attempts TODO -> DONE
+        const colRes = await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}/status`)
+          .set('Authorization', `Bearer ${tokenCollab}`)
+          .send({ status: 'DONE' })
+          .expect(400);
+        expect(colRes.body.message).toContain('TODO -> IN_PROGRESS');
+
+        // Rollback check in DB
+        inDb = await prisma.subtask.findUnique({ where: { id: auditSubtaskId } });
+        expect(inDb?.status).toBe('TODO');
+      });
+
+      it('2. Parent Task cannot be marked as DONE when a Subtask is in TODO or IN_PROGRESS -> 400 Bad Request', async () => {
+        // Parent task in TODO, subtask in TODO
+        await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/status`)
+          .set('Authorization', `Bearer ${tokenOwner}`)
+          .send({ status: 'DONE' })
+          .expect(400);
+
+        // Advance subtask to IN_PROGRESS
+        await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}/status`)
+          .set('Authorization', `Bearer ${tokenAssignee}`)
+          .send({ status: 'IN_PROGRESS' })
+          .expect(200);
+
+        // Parent task still cannot be marked as DONE
+        await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/status`)
+          .set('Authorization', `Bearer ${tokenOwner}`)
+          .send({ status: 'DONE' })
+          .expect(400);
+
+        // Advance subtask to DONE
+        await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}/status`)
+          .set('Authorization', `Bearer ${tokenAssignee}`)
+          .send({ status: 'DONE' })
+          .expect(200);
+
+        // Now parent task can transition to DONE
+        const doneRes = await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/status`)
+          .set('Authorization', `Bearer ${tokenOwner}`)
+          .send({ status: 'DONE' })
+          .expect(200);
+        expect(doneRes.body.status).toBe('DONE');
+
+        // While parent task is DONE, modifying subtask back to TODO or IN_PROGRESS is rejected -> 400
+        await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}/status`)
+          .set('Authorization', `Bearer ${tokenAssignee}`)
+          .send({ status: 'IN_PROGRESS' })
+          .expect(400);
+
+        await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}/status`)
+          .set('Authorization', `Bearer ${tokenAssignee}`)
+          .send({ status: 'TODO' })
+          .expect(400);
+      });
+    });
+
+    describe('P0 Concurrency — Safe Race Condition Resolution', () => {
+      it('1. Concurrent subtask status update and collaborator revocation serializes safely', async () => {
+        // Invite & accept collab
+        await request(app.getHttpServer())
+          .post(`/api/tasks/${auditTaskId}/collaborators`)
+          .set('Authorization', `Bearer ${tokenAssignee}`)
+          .send({ userId: collabId })
+          .expect(201);
+        await request(app.getHttpServer())
+          .post(`/api/tasks/${auditTaskId}/collaborators/respond`)
+          .set('Authorization', `Bearer ${tokenCollab}`)
+          .send({ action: 'ACCEPT' })
+          .expect(201);
+        await request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}`)
+          .set('Authorization', `Bearer ${tokenAssignee}`)
+          .send({ assigneeId: collabId })
+          .expect(200);
+
+        // Fire concurrent requests:
+        // Collab attempts to advance subtask TODO -> IN_PROGRESS
+        // Manager attempts to revoke Collab
+        const reqUpdate = request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}/status`)
+          .set('Authorization', `Bearer ${tokenCollab}`)
+          .send({ status: 'IN_PROGRESS' });
+
+        const reqRevoke = request(app.getHttpServer())
+          .delete(`/api/tasks/${auditTaskId}/collaborators/${collabId}`)
+          .set('Authorization', `Bearer ${tokenAssignee}`);
+
+        const [resUpdate, resRevoke] = await Promise.all([reqUpdate, reqRevoke]);
+
+        // Revoke must always succeed with 200
+        expect(resRevoke.status).toBe(200);
+        // Update must either succeed (if scheduled before revoke) or return 403 (if revoke executed first)
+        expect([200, 403]).toContain(resUpdate.status);
+
+        // Collab status in DB must be REVOKED
+        const collabInDb = await prisma.taskCollaborator.findUnique({
+          where: { taskId_userId: { taskId: auditTaskId, userId: collabId } },
+        });
+        expect(collabInDb?.status).toBe('REVOKED');
+
+        // Subtask in DB must have been unassigned due to revocation
+        const subInDb = await prisma.subtask.findUnique({ where: { id: auditSubtaskId } });
+        expect(subInDb?.assigneeId).toBeNull();
+      });
+
+      it('2. Concurrent status updates on the same subtask by two managers serialize without error', async () => {
+        // Both Owner and Assignee attempt to update the subtask TODO -> IN_PROGRESS
+        const req1 = request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}/status`)
+          .set('Authorization', `Bearer ${tokenOwner}`)
+          .send({ status: 'IN_PROGRESS' });
+
+        const req2 = request(app.getHttpServer())
+          .patch(`/api/tasks/${auditTaskId}/subtasks/${auditSubtaskId}/status`)
+          .set('Authorization', `Bearer ${tokenAssignee}`)
+          .send({ status: 'IN_PROGRESS' });
+
+        const [res1, res2] = await Promise.all([req1, req2]);
+
+        // Both or at least one must succeed with 200 (the other may succeed as a no-op or 200)
+        expect([200]).toContain(res1.status);
+        expect([200]).toContain(res2.status);
+
+        const subInDb = await prisma.subtask.findUnique({ where: { id: auditSubtaskId } });
+        expect(subInDb?.status).toBe('IN_PROGRESS');
+      });
+    });
+  });
+
 });

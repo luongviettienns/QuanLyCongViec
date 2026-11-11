@@ -37,12 +37,6 @@ export function useNotifications() {
     }
   }, [user]);
 
-  const handleRealtimeNotification = useCallback(() => {
-    void fetchUnreadCount();
-  }, [fetchUnreadCount]);
-
-  useRealtimeEvent('NOTIFICATION_NEW', handleRealtimeNotification);
-
   const loadNotifications = useCallback(
     async (reset = true) => {
       if (!user) {
@@ -94,6 +88,13 @@ export function useNotifications() {
     },
     [user, activeTab],
   );
+
+  const handleRealtimeNotification = useCallback(() => {
+    void fetchUnreadCount();
+    void loadNotifications(true);
+  }, [fetchUnreadCount, loadNotifications]);
+
+  useRealtimeEvent('NOTIFICATION_NEW', handleRealtimeNotification);
 
   const loadMore = useCallback(async () => {
     if (loading || loadingMore || !hasMore || nextCursor === null) return;

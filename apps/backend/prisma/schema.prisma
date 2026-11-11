@@ -49,6 +49,11 @@ enum NotificationType {
   TEAM_DELETED
   TEAM_INVITED
   DEADLINE_SOON
+  TASK_COLLABORATOR_INVITED
+  TASK_COLLABORATOR_ACCEPTED
+  TASK_COLLABORATOR_DECLINED
+  TASK_COLLABORATOR_REMOVED
+  SUBTASK_ASSIGNED
 }
 
 model User {
@@ -72,6 +77,7 @@ model User {
   invitedCollaborations  TaskCollaborator[] @relation("TaskCollaboratorInvitedBy")
   assignedSubtasks       Subtask[]          @relation("SubtaskAssignee")
   createdSubtasks        Subtask[]          @relation("SubtaskCreator")
+  completedSubtasks      Subtask[]          @relation("SubtaskCompleter")
 
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
@@ -258,6 +264,10 @@ model Subtask {
   createdById Int
   createdBy   User       @relation("SubtaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
 
+  completedById Int?
+  completedBy   User?      @relation("SubtaskCompleter", fields: [completedById], references: [id], onDelete: SetNull)
+  completedAt   DateTime?
+
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
   deletedAt       DateTime?
@@ -265,5 +275,6 @@ model Subtask {
 
   @@index([taskId, deletedAt, position])
   @@index([assigneeId, status])
+  @@index([completedById])
   @@map("Subtask")
 }

@@ -7,7 +7,12 @@ export type RealtimeEventType =
   | 'TASK_ASSIGNED'
   | 'TASK_RETURNED'
   | 'NOTIFICATION_NEW'
-  | 'HEARTBEAT';
+  | 'HEARTBEAT'
+  | 'SUBTASK_CREATED'
+  | 'SUBTASK_UPDATED'
+  | 'SUBTASK_DELETED'
+  | 'SUBTASK_REORDERED'
+  | 'TASK_COLLABORATORS_CHANGED';
 
 export interface RealtimeEventData {
   type: RealtimeEventType;

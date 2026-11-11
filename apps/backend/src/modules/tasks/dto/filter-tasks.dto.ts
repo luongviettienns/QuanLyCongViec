@@ -3,6 +3,17 @@ import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskStatus, TaskPriority } from '@prisma/client';
 
+export const TASK_SCOPES = [
+  'all',
+  'my_work',
+  'assigned_to_me',
+  'collaborating',
+  'subtasks_assigned_to_me',
+  'created_by_me',
+] as const;
+
+export type TaskScope = (typeof TASK_SCOPES)[number];
+
 export class FilterTasksDto {
   @ApiPropertyOptional({
     description: 'Từ khoá tìm kiếm theo tiêu đề công việc',
@@ -64,12 +75,12 @@ export class FilterTasksDto {
   assigneeId?: number;
 
   @ApiPropertyOptional({
-    description: 'Phạm vi công việc: all (mặc định), created_by_me, assigned_to_me',
-    enum: ['all', 'created_by_me', 'assigned_to_me'],
+    description: 'Phạm vi công việc: all (mặc định), my_work, assigned_to_me, collaborating, subtasks_assigned_to_me, created_by_me',
+    enum: TASK_SCOPES,
   })
   @IsOptional()
-  @IsIn(['all', 'created_by_me', 'assigned_to_me'], {
-    message: 'Phạm vi phải là all, created_by_me hoặc assigned_to_me',
+  @IsIn([...TASK_SCOPES], {
+    message: 'Phạm vi phải là all, my_work, assigned_to_me, collaborating, subtasks_assigned_to_me hoặc created_by_me',
   })
-  scope?: 'all' | 'created_by_me' | 'assigned_to_me';
+  scope?: TaskScope;
 }

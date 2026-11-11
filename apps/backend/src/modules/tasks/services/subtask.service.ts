@@ -7,6 +7,8 @@ import {
 import { PrismaService } from '../../../database/prisma.service.js';
 import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { TaskQueryService } from './task-query.service.js';
+import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
+import { RealtimeService } from '../../realtime/realtime.service.js';
 import { CreateSubtaskDto } from '../dto/create-subtask.dto.js';
 import { UpdateSubtaskDto } from '../dto/update-subtask.dto.js';
 import { UpdateSubtaskStatusDto } from '../dto/update-subtask-status.dto.js';
@@ -19,6 +21,8 @@ export class SubtaskService {
     private readonly prisma: PrismaService,
     private readonly policy: TaskPolicyService,
     private readonly queryService: TaskQueryService,
+    private readonly notificationEventService: NotificationEventService,
+    private readonly realtimeService: RealtimeService,
   ) {}
 
   async getSubtasks(taskId: number, callerId: number) {
@@ -36,17 +40,22 @@ export class SubtaskService {
         createdBy: {
           select: { id: true, name: true, email: true },
         },
+        completedBy: {
+          select: { id: true, name: true, email: true },
+        },
       },
       orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
     });
   }
 
   async create(taskId: number, dto: CreateSubtaskDto, callerId: number) {
-    return this.prisma.$transaction(async (tx) => {
+    let parentTask: any = null;
+    const createdSubtask = await this.prisma.$transaction(async (tx) => {
       // Row lock the parent task for concurrent protection
       await tx.$executeRaw`SELECT id, status FROM "Task" WHERE id = ${taskId} FOR UPDATE;`;
 
       const task = await this.queryService.findOne(taskId, callerId, tx);
+      parentTask = task;
 
       if (!this.policy.canCreateSubtask(callerId, task)) {
         throw new ForbiddenException('Bạn không có quyền tạo công việc con cho công việc này');
@@ -68,7 +77,7 @@ export class SubtaskService {
       });
       const nextPosition = (maxPosResult._max.position ?? -1) + 1;
 
-      return tx.subtask.create({
+      const created = await tx.subtask.create({
         data: {
           taskId,
           title: dto.title.trim(),
@@ -85,9 +94,48 @@ export class SubtaskService {
           createdBy: {
             select: { id: true, name: true, email: true },
           },
+          completedBy: {
+            select: { id: true, name: true, email: true },
+          },
         },
       });
+
+      if (created.assigneeId) {
+        await this.notificationEventService.publish(
+          {
+            type: 'SUBTASK_ASSIGNED',
+            actorId: callerId,
+            taskId,
+            taskTitle: task.title,
+            teamId: task.teamId,
+            subtaskId: created.id,
+            subtaskTitle: created.title,
+            subtaskAssigneeId: created.assigneeId,
+            assignedAt: created.createdAt,
+            timestamp: created.createdAt.getTime(),
+          },
+          tx,
+        );
+      }
+
+      return created;
     });
+
+    void this.realtimeService.emit({
+      type: 'SUBTASK_CREATED',
+      actorId: callerId,
+      teamId: parentTask?.teamId,
+      targetUserIds: parentTask?.teamId
+        ? undefined
+        : [parentTask.userId, ...(parentTask.assigneeId ? [parentTask.assigneeId] : [])],
+      payload: {
+        taskId,
+        subtaskId: createdSubtask.id,
+        subtask: createdSubtask,
+      },
+    });
+
+    return createdSubtask;
   }
 
   async update(
@@ -105,10 +153,12 @@ export class SubtaskService {
       throw new BadRequestException('Vui lòng cung cấp ít nhất một thông tin cần cập nhật');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    let parentTask: any = null;
+    const updatedSubtask = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT id, status FROM "Task" WHERE id = ${taskId} FOR UPDATE;`;
 
       const task = await this.queryService.findOne(taskId, callerId, tx);
+      parentTask = task;
 
       const subtask = await tx.subtask.findFirst({
         where: { id: subtaskId, taskId, deletedAt: null },
@@ -153,6 +203,32 @@ export class SubtaskService {
           if (!isAssigned || !acceptedCollab) {
             throw new ForbiddenException('Bạn không có quyền thay đổi trạng thái công việc con này');
           }
+
+          // Enforce Collaborator status workflow: TODO -> IN_PROGRESS -> DONE only
+          if (subtask.status === TaskStatus.DONE) {
+            throw new BadRequestException(
+              'Không thể thay đổi trạng thái công việc con đã hoàn thành. Hãy nhờ người quản lý mở lại nếu cần.',
+            );
+          }
+
+          if (subtask.status === TaskStatus.TODO && dto.status !== TaskStatus.IN_PROGRESS) {
+            throw new BadRequestException(
+              'Người phối hợp chỉ có thể chuyển công việc con từ Cần làm sang Đang làm (TODO -> IN_PROGRESS)',
+            );
+          }
+
+          if (subtask.status === TaskStatus.IN_PROGRESS && dto.status !== TaskStatus.DONE) {
+            throw new BadRequestException(
+              'Người phối hợp chỉ có thể chuyển công việc con từ Đang làm sang Hoàn thành (IN_PROGRESS -> DONE)',
+            );
+          }
+        }
+
+        // Universal invariant: No one (Manager or Collaborator) can skip directly from TODO to DONE
+        if (subtask.status === TaskStatus.TODO && dto.status === TaskStatus.DONE) {
+          throw new BadRequestException(
+            'Không thể chuyển công việc con trực tiếp từ Cần làm sang Hoàn thành (TODO -> DONE). Phải chuyển sang Đang làm (TODO -> IN_PROGRESS) trước.',
+          );
         }
 
         // Invariant: Cannot change subtask to non-DONE if parent is DONE
@@ -179,10 +255,19 @@ export class SubtaskService {
         dataToUpdate.description =
           typeof dto.description === 'string' ? dto.description.trim() || null : null;
       }
-      if (dto.status !== undefined) dataToUpdate.status = dto.status;
+      if (dto.status !== undefined) {
+        dataToUpdate.status = dto.status;
+        if (dto.status === TaskStatus.DONE && subtask.status !== TaskStatus.DONE) {
+          dataToUpdate.completedById = callerId;
+          dataToUpdate.completedAt = new Date();
+        } else if (dto.status !== TaskStatus.DONE && subtask.status === TaskStatus.DONE) {
+          dataToUpdate.completedById = null;
+          dataToUpdate.completedAt = null;
+        }
+      }
       if (dto.assigneeId !== undefined) dataToUpdate.assigneeId = dto.assigneeId;
 
-      return tx.subtask.update({
+      const updated = await tx.subtask.update({
         where: { id: subtaskId },
         data: dataToUpdate,
         include: {
@@ -192,9 +277,52 @@ export class SubtaskService {
           createdBy: {
             select: { id: true, name: true, email: true },
           },
+          completedBy: {
+            select: { id: true, name: true, email: true },
+          },
         },
       });
+
+      if (
+        dto.assigneeId !== undefined &&
+        dto.assigneeId !== null &&
+        dto.assigneeId !== subtask.assigneeId
+      ) {
+        await this.notificationEventService.publish(
+          {
+            type: 'SUBTASK_ASSIGNED',
+            actorId: callerId,
+            taskId,
+            taskTitle: task.title,
+            teamId: task.teamId,
+            subtaskId: updated.id,
+            subtaskTitle: updated.title,
+            subtaskAssigneeId: dto.assigneeId,
+            assignedAt: updated.updatedAt,
+            timestamp: updated.updatedAt.getTime(),
+          },
+          tx,
+        );
+      }
+
+      return updated;
     });
+
+    void this.realtimeService.emit({
+      type: 'SUBTASK_UPDATED',
+      actorId: callerId,
+      teamId: parentTask?.teamId,
+      targetUserIds: parentTask?.teamId
+        ? undefined
+        : [parentTask.userId, ...(parentTask.assigneeId ? [parentTask.assigneeId] : [])],
+      payload: {
+        taskId,
+        subtaskId: updatedSubtask.id,
+        subtask: updatedSubtask,
+      },
+    });
+
+    return updatedSubtask;
   }
 
   async updateStatus(
@@ -207,10 +335,12 @@ export class SubtaskService {
   }
 
   async remove(taskId: number, subtaskId: number, callerId: number) {
-    return this.prisma.$transaction(async (tx) => {
+    let parentTask: any = null;
+    const deletedSubtask = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT id, status FROM "Task" WHERE id = ${taskId} FOR UPDATE;`;
 
       const task = await this.queryService.findOne(taskId, callerId, tx);
+      parentTask = task;
 
       if (task.status === TaskStatus.DONE) {
         throw new BadRequestException(
@@ -230,7 +360,7 @@ export class SubtaskService {
         throw new NotFoundException('Không tìm thấy công việc con');
       }
 
-      const deletedSubtask = await tx.subtask.update({
+      const deleted = await tx.subtask.update({
         where: { id: subtaskId },
         data: {
           deletedAt: new Date(),
@@ -253,15 +383,32 @@ export class SubtaskService {
         }
       }
 
-      return deletedSubtask;
+      return deleted;
     });
+
+    void this.realtimeService.emit({
+      type: 'SUBTASK_DELETED',
+      actorId: callerId,
+      teamId: parentTask?.teamId,
+      targetUserIds: parentTask?.teamId
+        ? undefined
+        : [parentTask.userId, ...(parentTask.assigneeId ? [parentTask.assigneeId] : [])],
+      payload: {
+        taskId,
+        subtaskId,
+      },
+    });
+
+    return deletedSubtask;
   }
 
   async reorder(taskId: number, dto: ReorderSubtasksDto, callerId: number) {
-    return this.prisma.$transaction(async (tx) => {
+    let parentTask: any = null;
+    const reorderedList = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT id, status FROM "Task" WHERE id = ${taskId} FOR UPDATE;`;
 
       const task = await this.queryService.findOne(taskId, callerId, tx);
+      parentTask = task;
 
       if (task.status === TaskStatus.DONE) {
         throw new BadRequestException(
@@ -312,10 +459,28 @@ export class SubtaskService {
           createdBy: {
             select: { id: true, name: true, email: true },
           },
+          completedBy: {
+            select: { id: true, name: true, email: true },
+          },
         },
         orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
       });
     });
+
+    void this.realtimeService.emit({
+      type: 'SUBTASK_REORDERED',
+      actorId: callerId,
+      teamId: parentTask?.teamId,
+      targetUserIds: parentTask?.teamId
+        ? undefined
+        : [parentTask.userId, ...(parentTask.assigneeId ? [parentTask.assigneeId] : [])],
+      payload: {
+        taskId,
+        subtaskIds: dto.subtaskIds,
+      },
+    });
+
+    return reorderedList;
   }
 
   private async assertValidSubtaskAssignee(

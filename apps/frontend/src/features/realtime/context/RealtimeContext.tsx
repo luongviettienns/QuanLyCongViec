@@ -91,6 +91,11 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         'TASK_ASSIGNED',
         'TASK_RETURNED',
         'NOTIFICATION_NEW',
+        'SUBTASK_CREATED',
+        'SUBTASK_UPDATED',
+        'SUBTASK_DELETED',
+        'SUBTASK_REORDERED',
+        'TASK_COLLABORATORS_CHANGED',
       ];
 
       for (const name of eventNames) {

@@ -68,14 +68,56 @@ export class NotificationEventService {
       }
       const teamId = 'teamId' in event ? event.teamId : null;
 
-      // 5. Prepare notification records for all recipients
+      // 5. Prepare notification records for all recipients with deterministic, idempotent eventKey
       const notificationsData = recipientIds.map((recipientId) => {
         let eventKey: string;
-        if (event.type === 'TASK_DEADLINE_SOON' || event.type === 'TASK_OVERDUE') {
-          eventKey = `${event.type}:${recipientId}:${validTaskId}:${event.dueDate}`;
-        } else {
-          const eventTimestamp = event.timestamp || Date.now();
-          eventKey = `${event.type}:${recipientId}:${validTaskId ?? teamId ?? 'global'}:${eventTimestamp}`;
+        switch (event.type) {
+          case 'TASK_DEADLINE_SOON':
+          case 'TASK_OVERDUE':
+            eventKey = `${event.type}:${recipientId}:${validTaskId}:${event.dueDate}`;
+            break;
+          case 'TASK_COLLABORATOR_INVITED': {
+            const timeTag = event.invitedAt
+              ? new Date(event.invitedAt).toISOString()
+              : event.timestamp
+                ? Math.floor(event.timestamp / 10000)
+                : '';
+            eventKey = `${event.type}:${recipientId}:${validTaskId}:${event.invitedUserId}:${timeTag}`;
+            break;
+          }
+          case 'TASK_COLLABORATOR_ACCEPTED':
+          case 'TASK_COLLABORATOR_DECLINED': {
+            const timeTag = event.respondedAt
+              ? new Date(event.respondedAt).toISOString()
+              : event.timestamp
+                ? Math.floor(event.timestamp / 10000)
+                : '';
+            eventKey = `${event.type}:${recipientId}:${validTaskId}:${event.actorId}:${timeTag}`;
+            break;
+          }
+          case 'TASK_COLLABORATOR_REMOVED': {
+            const timeTag = event.removedAt
+              ? new Date(event.removedAt).toISOString()
+              : event.timestamp
+                ? Math.floor(event.timestamp / 10000)
+                : '';
+            eventKey = `${event.type}:${recipientId}:${validTaskId}:${event.removedUserId}:${timeTag}`;
+            break;
+          }
+          case 'SUBTASK_ASSIGNED': {
+            const timeTag = event.assignedAt
+              ? new Date(event.assignedAt).toISOString()
+              : event.timestamp
+                ? Math.floor(event.timestamp / 10000)
+                : '';
+            eventKey = `${event.type}:${recipientId}:${validTaskId}:${event.subtaskId}:${event.subtaskAssigneeId}:${timeTag}`;
+            break;
+          }
+          default: {
+            const eventTimestamp = event.timestamp || Date.now();
+            eventKey = `${event.type}:${recipientId}:${validTaskId ?? teamId ?? 'global'}:${eventTimestamp}`;
+            break;
+          }
         }
 
         return {
