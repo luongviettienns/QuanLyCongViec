@@ -1,24 +1,36 @@
 import {
   useEffect,
   useRef,
+  useState,
   useCallback,
   type ReactNode,
 } from 'react';
 import { useAuth } from '../../auth/hooks/useAuth';
-import { getAuthToken } from '../../../shared/api/auth-session';
+import {
+  getAuthToken,
+  getTokenRemainingTime,
+  notifyUnauthorized,
+} from '../../../shared/api/auth-session';
 import {
   RealtimeContext,
   type EventHandler,
+  type ReconnectHandler,
 } from './realtime-context.base';
-import type { RealtimeEventData, RealtimeEventType } from '../types/realtime.types';
+import {
+  createRealtimeConnectionManager,
+  type RealtimeConnectionStatus,
+} from '../utils/realtime-connection.utils';
+import type { RealtimeEventType } from '../types/realtime.types';
 
 const RECONNECT_DELAY_MS = 3000;
 
 export function RealtimeProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const userId = user?.id ?? null;
+
   const listenersRef = useRef<Map<RealtimeEventType, Set<EventHandler>>>(new Map());
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectListenersRef = useRef<Set<ReconnectHandler>>(new Set());
+  const [connectionStatus, setConnectionStatus] = useState<RealtimeConnectionStatus>('idle');
 
   const subscribe = useCallback((eventType: RealtimeEventType, handler: EventHandler) => {
     if (!listenersRef.current.has(eventType)) {
@@ -31,110 +43,106 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const subscribeReconnect = useCallback((handler: ReconnectHandler) => {
+    reconnectListenersRef.current.add(handler);
+    return () => {
+      reconnectListenersRef.current.delete(handler);
+    };
+  }, []);
+
   useEffect(() => {
-    if (!user) {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
+    if (!userId) {
+      Promise.resolve().then(() => setConnectionStatus('idle'));
       return;
     }
 
     const token = getAuthToken();
-    if (!token) return;
-
-    let isUnmounted = false;
-
-    function connect() {
-      if (isUnmounted) return;
-
-      const currentToken = getAuthToken();
-      if (!currentToken) return;
-
-      const url = `/api/realtime/stream?token=${encodeURIComponent(currentToken)}`;
-      const es = new EventSource(url);
-      eventSourceRef.current = es;
-
-      const handleEvent = (data: RealtimeEventData) => {
-        if (!data || !data.type) return;
-        const handlers = listenersRef.current.get(data.type);
-        if (handlers) {
-          for (const handler of handlers) {
-            try {
-              handler(data);
-            } catch (err) {
-              console.error('[Realtime] Handler error:', err);
-            }
-          }
-        }
-      };
-
-      es.onmessage = (e) => {
-        try {
-          const parsed = JSON.parse(e.data) as RealtimeEventData;
-          handleEvent(parsed);
-        } catch {
-          // Ignore non-json or heartbeat messages
-        }
-      };
-
-      const eventNames: RealtimeEventType[] = [
-        'TASK_STATUS_CHANGED',
-        'TASK_CREATED',
-        'TASK_UPDATED',
-        'TASK_DELETED',
-        'TASK_REORDERED',
-        'TASK_ASSIGNED',
-        'TASK_RETURNED',
-        'NOTIFICATION_NEW',
-        'SUBTASK_CREATED',
-        'SUBTASK_UPDATED',
-        'SUBTASK_DELETED',
-        'SUBTASK_REORDERED',
-        'TASK_COLLABORATORS_CHANGED',
-      ];
-
-      for (const name of eventNames) {
-        es.addEventListener(name, (e: MessageEvent) => {
-          try {
-            const parsed = JSON.parse(e.data) as RealtimeEventData;
-            handleEvent(parsed);
-          } catch {
-            // Ignore parse errors
-          }
-        });
-      }
-
-      es.onerror = () => {
-        es.close();
-        eventSourceRef.current = null;
-        if (!isUnmounted) {
-          reconnectTimeoutRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
-        }
-      };
+    if (!token) {
+      Promise.resolve().then(() => setConnectionStatus('idle'));
+      return;
     }
 
-    connect();
+    const manager = createRealtimeConnectionManager({
+      reconnectDelayMs: RECONNECT_DELAY_MS,
+      getToken: getAuthToken,
+      isTokenExpired: () => {
+        const remaining = getTokenRemainingTime();
+        return remaining !== null && remaining <= 0;
+      },
+      createEventSource: (url) => {
+        const es = new EventSource(url);
+        let currentOpen: (() => void) | null = null;
+        let currentMessage: ((event: { data: string }) => void) | null = null;
+        let currentError: (() => void) | null = null;
+        return {
+          get onopen() {
+            return currentOpen;
+          },
+          set onopen(handler: (() => void) | null) {
+            currentOpen = handler;
+            es.onopen = handler ? () => handler() : null;
+          },
+          get onmessage() {
+            return currentMessage;
+          },
+          set onmessage(handler: ((event: { data: string }) => void) | null) {
+            currentMessage = handler;
+            es.onmessage = handler ? (ev) => handler({ data: String(ev.data) }) : null;
+          },
+          get onerror() {
+            return currentError;
+          },
+          set onerror(handler: (() => void) | null) {
+            currentError = handler;
+            es.onerror = handler ? () => handler() : null;
+          },
+          addEventListener: (type, listener) => {
+            es.addEventListener(type, (ev) => {
+              if (ev instanceof MessageEvent) {
+                listener({ data: String(ev.data) });
+              }
+            });
+          },
+          close: () => es.close(),
+        };
+      },
+      onEvent: (data) => {
+        const handlers = listenersRef.current.get(data.type);
+        if (!handlers) return;
+        for (const handler of handlers) {
+          try {
+            handler(data);
+          } catch (err) {
+            console.error('[Realtime] Handler error:', err);
+          }
+        }
+      },
+      onReconnect: () => {
+        for (const handler of reconnectListenersRef.current) {
+          try {
+            handler();
+          } catch (err) {
+            console.error('[Realtime] Reconnect handler error:', err);
+          }
+        }
+      },
+      onStatusChange: (nextStatus) => {
+        setConnectionStatus(nextStatus);
+      },
+      onAuthExpired: () => {
+        notifyUnauthorized();
+      },
+    });
+
+    manager.start();
 
     return () => {
-      isUnmounted = true;
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
+      manager.stop();
     };
-  }, [user]);
+  }, [userId]);
 
   return (
-    <RealtimeContext.Provider value={{ subscribe }}>
+    <RealtimeContext.Provider value={{ subscribe, subscribeReconnect, connectionStatus }}>
       {children}
     </RealtimeContext.Provider>
   );

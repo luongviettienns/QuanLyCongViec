@@ -12,6 +12,7 @@ import {
 } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { getTaskStats } from '../../tasks/api/tasks.api';
+import { useRealtimeReconnect } from '../../realtime';
 import type {
   TaskStats,
   TaskStatus,
@@ -157,6 +158,12 @@ export default function DashboardPage({
     setLoading(true);
     void fetchStats();
   }, [fetchStats]);
+
+  useRealtimeReconnect(() => {
+    if (active) {
+      void fetchStats();
+    }
+  });
 
   const prevTriggerRef = useRef(refreshTrigger);
   useEffect(() => {

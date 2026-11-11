@@ -24,7 +24,7 @@ import {
   TeamOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../features/auth/hooks/useAuth';
-import { NotificationBell } from '../../features/notifications';
+import { NotificationBell, type NotificationDestination } from '../../features/notifications';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -38,7 +38,7 @@ interface AppLayoutProps {
   loading?: boolean;
   currentNav?: 'dashboard' | 'tasks' | 'teams' | 'categories';
   onNavChange?: (key: 'dashboard' | 'tasks' | 'teams' | 'categories') => void;
-  onNavigateNotification?: (dest: { type: 'task' | 'team'; id: number }) => void;
+  onNavigateNotification?: (dest: NotificationDestination) => void;
 }
 
 export default function AppLayout({

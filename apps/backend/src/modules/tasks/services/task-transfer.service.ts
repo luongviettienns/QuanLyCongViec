@@ -51,7 +51,7 @@ export class TaskTransferService {
     }
 
     try {
-      const updatedTask = await this.executeInTransaction(externalTx, async (tx) => {
+      const result = await this.executeInTransaction(externalTx, async (tx) => {
         const initialTask = await this.queryService.findOne(id, userId, tx);
         const targetTeamId = hasTeamId ? (dto.teamId ?? null) : initialTask.teamId;
 
@@ -211,18 +211,6 @@ export class TaskTransferService {
           }
         }
 
-        // Unified business logic: handle Main Assignee transition & subtask handover/invalidation.
-        // Runs whenever assignee is explicitly set, changed, or when team is transferred.
-        if (hasAssigneeId || isTeamChanged || currentTask.assigneeId !== effectiveAssigneeId) {
-          await this.assignmentService.handleMainAssigneeChange(
-            tx,
-            id,
-            currentTask.assigneeId,
-            effectiveAssigneeId,
-            effectiveTeamId !== null ? targetTeamMemberIds : [currentTask.userId],
-          );
-        }
-
         const updatedTask = await tx.task.update({
           where: { id },
           data: updateData,
@@ -236,6 +224,25 @@ export class TaskTransferService {
             },
           },
         });
+
+        let transferHandover = { affectedSubtaskIds: [] as number[], revokedCollaboratorUserId: null as number | null };
+        // Unified business logic: handle Main Assignee transition & subtask handover/invalidation.
+        // Runs whenever assignee is explicitly set, changed, or when team is transferred.
+        if (hasAssigneeId || isTeamChanged || currentTask.assigneeId !== effectiveAssigneeId) {
+          transferHandover = await this.assignmentService.handleMainAssigneeChange(
+            tx,
+            id,
+            currentTask.assigneeId,
+            effectiveAssigneeId,
+            effectiveTeamId !== null ? targetTeamMemberIds : [currentTask.userId],
+            {
+              actorId: userId,
+              taskTitle: updatedTask.title,
+              teamId: updatedTask.teamId,
+              mutationTime: updatedTask.updatedAt,
+            },
+          );
+        }
 
         if (isTeamChanged) {
           const sourceScope: Prisma.TaskWhereInput = currentTask.teamId
@@ -258,6 +265,7 @@ export class TaskTransferService {
                 targetTeamId: effectiveTeamId,
                 targetTeamName: targetTeam?.name || 'Nhóm',
                 assigneeId: effectiveAssigneeId,
+                timestamp: updatedTask.updatedAt.getTime(),
               },
               tx,
             );
@@ -274,6 +282,7 @@ export class TaskTransferService {
                 taskTitle: currentTask.title,
                 previousAssigneeId: currentTask.assigneeId,
                 teamId: currentTask.teamId,
+                timestamp: updatedTask.updatedAt.getTime(),
               },
               tx,
             );
@@ -287,32 +296,66 @@ export class TaskTransferService {
                 taskTitle: currentTask.title,
                 assigneeId: effectiveAssigneeId,
                 teamId: effectiveTeamId,
+                timestamp: updatedTask.updatedAt.getTime(),
               },
               tx,
             );
           }
         }
 
-        return updatedTask;
+        return {
+          updatedTask,
+          sourceTeamId: currentTask.teamId,
+          sourceOwnerId: currentTask.userId,
+          affectedSubtaskIds: transferHandover.affectedSubtaskIds,
+        };
       });
 
       if (!externalTx) {
         void this.realtimeService.emit({
           type: 'TASK_UPDATED',
           actorId: userId,
-          teamId: updatedTask.teamId,
-          targetUserIds: updatedTask.teamId
+          teamId: result.updatedTask.teamId,
+          targetUserIds: result.updatedTask.teamId
             ? undefined
-            : [updatedTask.userId, ...(updatedTask.assigneeId ? [updatedTask.assigneeId] : [])],
+            : [result.updatedTask.userId, ...(result.updatedTask.assigneeId ? [result.updatedTask.assigneeId] : [])],
           payload: {
-            taskId: updatedTask.id,
-            teamId: updatedTask.teamId,
-            status: updatedTask.status,
+            taskId: result.updatedTask.id,
+            teamId: result.updatedTask.teamId,
+            status: result.updatedTask.status,
           },
         });
+
+        // Notify source team with minimal signal (NO new team/task details leaked) so their board drops the moved card
+        if (result.sourceTeamId && result.sourceTeamId !== result.updatedTask.teamId) {
+          void this.realtimeService.emit({
+            type: 'TASK_UPDATED',
+            actorId: userId,
+            teamId: result.sourceTeamId,
+            payload: {
+              taskId: result.updatedTask.id,
+              movedOut: true,
+            },
+          });
+        }
+
+        for (const subId of result.affectedSubtaskIds) {
+          void this.realtimeService.emit({
+            type: 'SUBTASK_UPDATED',
+            actorId: userId,
+            teamId: result.updatedTask.teamId,
+            targetUserIds: result.updatedTask.teamId
+              ? undefined
+              : [result.updatedTask.userId, ...(result.updatedTask.assigneeId ? [result.updatedTask.assigneeId] : [])],
+            payload: {
+              taskId: result.updatedTask.id,
+              subtaskId: subId,
+            },
+          });
+        }
       }
 
-      return updatedTask;
+      return result.updatedTask;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {

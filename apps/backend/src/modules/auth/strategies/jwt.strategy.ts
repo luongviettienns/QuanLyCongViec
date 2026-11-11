@@ -7,6 +7,8 @@ import type { AuthenticatedUser } from '../decorators/current-user.decorator.js'
 interface JwtPayload {
   sub: number;
   email: string;
+  exp?: number;
+  iat?: number;
 }
 
 @Injectable()
@@ -49,6 +51,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Phiên đăng nhập không hợp lệ hoặc người dùng không tồn tại');
     }
 
-    return user;
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      tokenExp: typeof payload.exp === 'number' ? payload.exp : undefined,
+    };
   }
 }

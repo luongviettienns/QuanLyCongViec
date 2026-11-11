@@ -220,6 +220,26 @@ export class NotificationRecipientService {
           candidateIds.push(event.subtaskAssigneeId);
         }
         break;
+
+      case 'SUBTASK_UNASSIGNED':
+        if (event.previousAssigneeId) {
+          candidateIds.push(event.previousAssigneeId);
+        }
+        break;
+
+      case 'SUBTASK_STATUS_CHANGED':
+      case 'SUBTASK_COMPLETED':
+      case 'SUBTASK_REOPENED':
+        if (event.creatorId) {
+          candidateIds.push(event.creatorId);
+        }
+        if (event.assigneeId) {
+          candidateIds.push(event.assigneeId);
+        }
+        if (event.subtaskAssigneeId) {
+          candidateIds.push(event.subtaskAssigneeId);
+        }
+        break;
     }
 
     // Filter out actor and deduplicate

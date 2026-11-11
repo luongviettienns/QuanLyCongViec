@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   List,
   Button,
@@ -27,8 +27,13 @@ import {
 } from '@ant-design/icons';
 import type { Task, Subtask, TaskStatus } from '../types/task.types';
 import type { User } from '../../auth/types/auth.types';
-import { useRealtimeEvent } from '../../realtime';
+import { useRealtimeEvent, useRealtimeReconnect } from '../../realtime';
 import type { RealtimeEventData } from '../../realtime/types/realtime.types';
+import {
+  mergeServerSubtask,
+  shouldAcceptRemoteSubtaskFetch,
+  detectSubtaskEditConflict,
+} from '../utils/subtask-sync.utils';
 import {
   getSubtasks,
   createSubtask,
@@ -44,6 +49,7 @@ interface TaskSubtasksSectionProps {
   task: Task;
   currentUser?: User | null;
   canManage: boolean;
+  highlightSubtaskId?: number | null;
   onChanged?: () => void;
 }
 
@@ -51,6 +57,7 @@ export function TaskSubtasksSection({
   task,
   currentUser,
   canManage,
+  highlightSubtaskId,
   onChanged,
 }: TaskSubtasksSectionProps) {
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
@@ -65,12 +72,81 @@ export function TaskSubtasksSection({
   const [editDescription, setEditDescription] = useState('');
   const [editAssigneeId, setEditAssigneeId] = useState<number | undefined>(undefined);
   const [updating, setUpdating] = useState(false);
+  const [editConflictWarning, setEditConflictWarning] = useState(false);
+  const [remoteLatestSubtask, setRemoteLatestSubtask] = useState<Subtask | null>(null);
+  const mutationSeqRef = useRef(0);
+  const highlightedRowRef = useRef<HTMLDivElement | null>(null);
+  const editDraftRef = useRef<{
+    editingSubtask: Subtask | null;
+    title: string;
+    description: string;
+    assigneeId: number | undefined;
+  }>({
+    editingSubtask: null,
+    title: '',
+    description: '',
+    assigneeId: undefined,
+  });
+
+  useEffect(() => {
+    editDraftRef.current = {
+      editingSubtask,
+      title: editTitle,
+      description: editDescription,
+      assigneeId: editAssigneeId,
+    };
+  }, [editingSubtask, editTitle, editDescription, editAssigneeId]);
+
+  useEffect(() => {
+    if (!highlightSubtaskId || loading) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      highlightedRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [highlightSubtaskId, loading, subtasks.length]);
 
   const fetchSubtasks = useCallback(async () => {
+    const fetchStartedSeq = mutationSeqRef.current;
     try {
       setLoading(true);
       const data = await getSubtasks(task.id);
+      if (!shouldAcceptRemoteSubtaskFetch(fetchStartedSeq, mutationSeqRef.current)) {
+        return;
+      }
       setSubtasks(data);
+
+      const draft = editDraftRef.current;
+      if (draft.editingSubtask) {
+        const conflictState = detectSubtaskEditConflict({
+          editingSubtask: draft.editingSubtask,
+          latestSubtasks: data,
+          draftTitle: draft.title,
+          draftDescription: draft.description,
+          draftAssigneeId: draft.assigneeId,
+        });
+        if (conflictState === 'deleted') {
+          setEditingSubtask(null);
+          setEditConflictWarning(false);
+          setRemoteLatestSubtask(null);
+          message.warning('Việc con đang chỉnh sửa đã bị xóa.');
+        } else if (conflictState === 'conflict') {
+          const remote = data.find((s) => s.id === draft.editingSubtask?.id) ?? null;
+          setRemoteLatestSubtask(remote);
+          setEditConflictWarning(true);
+        } else if (conflictState === 'safe_sync') {
+          const remote = data.find((s) => s.id === draft.editingSubtask?.id);
+          if (remote) {
+            setEditingSubtask(remote);
+            setEditTitle(remote.title);
+            setEditDescription(remote.description || '');
+            setEditAssigneeId(remote.assigneeId ?? undefined);
+            setEditConflictWarning(false);
+            setRemoteLatestSubtask(null);
+          }
+        }
+      }
     } catch (err: unknown) {
       message.error(err instanceof Error ? err.message : 'Không thể tải danh sách công việc con');
     } finally {
@@ -115,6 +191,10 @@ export function TaskSubtasksSection({
   useRealtimeEvent('SUBTASK_REORDERED', handleRealtimeSubtask);
   useRealtimeEvent('TASK_COLLABORATORS_CHANGED', handleRealtimeSubtask);
 
+  useRealtimeReconnect(() => {
+    void fetchSubtasks();
+  });
+
   const isParentDone = task.status === 'DONE';
 
   const subtaskStats = useMemo(() => {
@@ -153,6 +233,7 @@ export function TaskSubtasksSection({
       message.warning('Vui lòng nhập tiêu đề việc con');
       return;
     }
+    mutationSeqRef.current += 1;
     try {
       setAdding(true);
       await createSubtask(task.id, {
@@ -192,8 +273,10 @@ export function TaskSubtasksSection({
       prev.map((s) => (s.id === subtaskId ? { ...s, status: newStatus } : s)),
     );
 
+    mutationSeqRef.current += 1;
     try {
-      await updateSubtaskStatus(task.id, subtaskId, newStatus);
+      const updated = await updateSubtaskStatus(task.id, subtaskId, newStatus);
+      setSubtasks((prev) => mergeServerSubtask(prev, updated));
       message.success('Đã cập nhật trạng thái việc con');
       onChanged?.();
     } catch (err: unknown) {
@@ -204,6 +287,7 @@ export function TaskSubtasksSection({
   };
 
   const handleDeleteSubtask = async (subtaskId: number) => {
+    mutationSeqRef.current += 1;
     try {
       await deleteSubtask(task.id, subtaskId);
       message.success('Đã xoá công việc con');
@@ -215,6 +299,8 @@ export function TaskSubtasksSection({
   };
 
   const handleOpenEdit = (subtask: Subtask) => {
+    setEditConflictWarning(false);
+    setRemoteLatestSubtask(null);
     setEditingSubtask(subtask);
     setEditTitle(subtask.title);
     setEditDescription(subtask.description || '');
@@ -227,6 +313,7 @@ export function TaskSubtasksSection({
       message.warning('Vui lòng nhập tiêu đề việc con');
       return;
     }
+    mutationSeqRef.current += 1;
     try {
       setUpdating(true);
       await updateSubtask(task.id, editingSubtask.id, {
@@ -236,6 +323,8 @@ export function TaskSubtasksSection({
       });
       message.success('Đã cập nhật công việc con');
       setEditingSubtask(null);
+      setEditConflictWarning(false);
+      setRemoteLatestSubtask(null);
       await fetchSubtasks();
       onChanged?.();
     } catch (err: unknown) {
@@ -394,8 +483,17 @@ export function TaskSubtasksSection({
                       { value: 'DONE', label: 'DONE' },
                     ]
                   : [{ value: 'DONE', label: 'DONE' }];
+            const isHighlighted = item.id === highlightSubtaskId;
             return (
               <List.Item
+                style={
+                  isHighlighted
+                    ? {
+                        backgroundColor: '#e6f4ff',
+                        boxShadow: 'inset 3px 0 0 #1677ff',
+                      }
+                    : undefined
+                }
                 actions={[
                   canManage && !isParentDone && subtasks.length > 1 && (
                     <Tooltip key="up" title="Di chuyển lên">
@@ -442,7 +540,10 @@ export function TaskSubtasksSection({
                   ),
                 ].filter(Boolean)}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
+                <div
+                  ref={isHighlighted ? highlightedRowRef : undefined}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}
+                >
                   <Select
                     size="small"
                     value={item.status}
@@ -509,13 +610,41 @@ export function TaskSubtasksSection({
         title="Chỉnh sửa công việc con"
         open={Boolean(editingSubtask)}
         onOk={handleSaveEdit}
-        onCancel={() => setEditingSubtask(null)}
+        onCancel={() => {
+          setEditingSubtask(null);
+          setEditConflictWarning(false);
+          setRemoteLatestSubtask(null);
+        }}
         confirmLoading={updating}
         okText="Lưu"
         cancelText="Hủy"
         destroyOnHidden
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+          {editConflictWarning && remoteLatestSubtask && (
+            <Alert
+              type="warning"
+              showIcon
+              message="Việc con vừa được cập nhật từ người khác"
+              description="Bạn đang có chỉnh sửa chưa lưu. Hãy tải lại dữ liệu mới nhất để tránh ghi đè."
+              action={
+                <Button
+                  size="small"
+                  type="primary"
+                  onClick={() => {
+                    setEditingSubtask(remoteLatestSubtask);
+                    setEditTitle(remoteLatestSubtask.title);
+                    setEditDescription(remoteLatestSubtask.description || '');
+                    setEditAssigneeId(remoteLatestSubtask.assigneeId ?? undefined);
+                    setEditConflictWarning(false);
+                    setRemoteLatestSubtask(null);
+                  }}
+                >
+                  Tải lại
+                </Button>
+              }
+            />
+          )}
           <div>
             <label style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>
               Tiêu đề <span style={{ color: '#ff4d4f' }}>*</span>

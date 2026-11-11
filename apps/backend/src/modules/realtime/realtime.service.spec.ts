@@ -118,4 +118,57 @@ describe('RealtimeService', () => {
     expect(received).toBe(false);
     sub.unsubscribe();
   });
+
+  it('stops delivering teamId SSE events to a removed member immediately after membership deletion', async () => {
+    const remainingUser = 100;
+    const removedUser = 200;
+
+    // Member 200 has already been removed from Team 5 in DB
+    mockPrisma.team.findUnique.mockResolvedValue({
+      ownerId: 50,
+      members: [{ userId: remainingUser }],
+    });
+
+    const streamRemaining$ = service.subscribe(remainingUser);
+    const streamRemoved$ = service.subscribe(removedUser);
+
+    const remainingPromise = firstValueFrom(streamRemaining$);
+    let receivedRemoved = false;
+    const removedSub = streamRemoved$.subscribe(() => {
+      receivedRemoved = true;
+    });
+
+    await service.emit({
+      type: 'TASK_UPDATED',
+      actorId: 50,
+      teamId: 5,
+      payload: { taskId: 42 },
+    });
+
+    const receivedRemaining = await remainingPromise;
+    expect((receivedRemaining.data as { payload: { taskId: number } }).payload.taskId).toBe(42);
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(receivedRemoved).toBe(false);
+    removedSub.unsubscribe();
+  });
+
+  it('terminates the stream when tokenExp is reached', async () => {
+    const userId = 100;
+    // Set tokenExp to expire in 50ms
+    const tokenExp = (Date.now() + 50) / 1000;
+    const stream$ = service.subscribe(userId, tokenExp);
+
+    let completed = false;
+    const sub = stream$.subscribe({
+      complete: () => {
+        completed = true;
+      },
+    });
+
+    expect(completed).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(completed).toBe(true);
+    sub.unsubscribe();
+  });
 });

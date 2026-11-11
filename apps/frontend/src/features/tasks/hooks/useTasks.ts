@@ -1,6 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import type { StatusFilter, PriorityFilter, TaskStatus, ScopeFilter } from '../types/task.types';
 import { useAuth } from '../../auth/hooks/useAuth';
+import { useRealtimeReconnect } from '../../realtime';
 import { useTaskFilters } from './useTaskFilters';
 import { useTaskQueries } from './useTaskQueries';
 import { useTaskMutations } from './useTaskMutations';
@@ -318,6 +319,12 @@ export function useTasks(options?: { enabled?: boolean }) {
     fetchCategories,
     fetchTeams,
   ]);
+
+  useRealtimeReconnect(() => {
+    if (enabled && isAuthenticated) {
+      void refetch();
+    }
+  });
 
   const handleDelete = useCallback(
     async (id: number) => {

@@ -285,24 +285,111 @@ export class SubtaskService {
 
       if (
         dto.assigneeId !== undefined &&
-        dto.assigneeId !== null &&
         dto.assigneeId !== subtask.assigneeId
       ) {
-        await this.notificationEventService.publish(
-          {
-            type: 'SUBTASK_ASSIGNED',
-            actorId: callerId,
-            taskId,
-            taskTitle: task.title,
-            teamId: task.teamId,
-            subtaskId: updated.id,
-            subtaskTitle: updated.title,
-            subtaskAssigneeId: dto.assigneeId,
-            assignedAt: updated.updatedAt,
-            timestamp: updated.updatedAt.getTime(),
-          },
-          tx,
-        );
+        const isReassignment = subtask.assigneeId !== null && dto.assigneeId !== null;
+
+        if (subtask.assigneeId !== null) {
+          await this.notificationEventService.publish(
+            {
+              type: 'SUBTASK_UNASSIGNED',
+              actorId: callerId,
+              taskId,
+              taskTitle: task.title,
+              teamId: task.teamId,
+              subtaskId: updated.id,
+              subtaskTitle: updated.title,
+              previousAssigneeId: subtask.assigneeId,
+              reassignedToUserId: dto.assigneeId ?? null,
+              unassignedAt: updated.updatedAt,
+              timestamp: updated.updatedAt.getTime(),
+            },
+            tx,
+          );
+        }
+
+        if (dto.assigneeId !== null) {
+          await this.notificationEventService.publish(
+            {
+              type: 'SUBTASK_ASSIGNED',
+              actorId: callerId,
+              taskId,
+              taskTitle: task.title,
+              teamId: task.teamId,
+              subtaskId: updated.id,
+              subtaskTitle: updated.title,
+              subtaskAssigneeId: dto.assigneeId,
+              isReassigned: isReassignment,
+              previousAssigneeId: subtask.assigneeId,
+              assignedAt: updated.updatedAt,
+              timestamp: updated.updatedAt.getTime(),
+            },
+            tx,
+          );
+        }
+      }
+
+      if (dto.status !== undefined && dto.status !== subtask.status) {
+        if (subtask.status === TaskStatus.DONE && updated.status !== TaskStatus.DONE) {
+          await this.notificationEventService.publish(
+            {
+              type: 'SUBTASK_REOPENED',
+              actorId: callerId,
+              taskId,
+              taskTitle: task.title,
+              teamId: task.teamId,
+              subtaskId: updated.id,
+              subtaskTitle: updated.title,
+              newStatus: updated.status,
+              creatorId: task.userId,
+              assigneeId: task.assigneeId,
+              subtaskAssigneeId: updated.assigneeId,
+              reopenedAt: updated.updatedAt,
+              timestamp: updated.updatedAt.getTime(),
+            },
+            tx,
+          );
+        } else if (updated.status === TaskStatus.DONE) {
+          const completedStamp = updated.completedAt ?? updated.updatedAt;
+          await this.notificationEventService.publish(
+            {
+              type: 'SUBTASK_COMPLETED',
+              actorId: callerId,
+              taskId,
+              taskTitle: task.title,
+              teamId: task.teamId,
+              subtaskId: updated.id,
+              subtaskTitle: updated.title,
+              creatorId: task.userId,
+              assigneeId: task.assigneeId,
+              subtaskAssigneeId: updated.assigneeId,
+              completedById: callerId,
+              completedAt: completedStamp,
+              timestamp: completedStamp.getTime(),
+            },
+            tx,
+          );
+        } else {
+          await this.notificationEventService.publish(
+            {
+              type: 'SUBTASK_STATUS_CHANGED',
+              actorId: callerId,
+              taskId,
+              taskTitle: task.title,
+              teamId: task.teamId,
+              subtaskId: updated.id,
+              subtaskTitle: updated.title,
+              oldStatus: subtask.status,
+              newStatus: updated.status,
+              creatorId: task.userId,
+              assigneeId: task.assigneeId,
+              subtaskAssigneeId: updated.assigneeId,
+              changedAt: updated.updatedAt,
+              timestamp: updated.updatedAt.getTime(),
+            },
+            tx,
+          );
+        }
       }
 
       return updated;

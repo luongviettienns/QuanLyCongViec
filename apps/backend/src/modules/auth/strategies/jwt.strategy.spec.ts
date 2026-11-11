@@ -89,7 +89,19 @@ describe('JwtStrategy', () => {
         where: { id: 42 },
         select: { id: true, email: true, name: true },
       });
-      expect(result).toEqual(mockUser);
+      expect(result).toEqual({ ...mockUser, tokenExp: undefined });
+    });
+
+    it('attaches tokenExp when exp claim is present in JWT payload', async () => {
+      const mockUser = {
+        id: 42,
+        email: 'user@example.com',
+        name: 'Test User',
+      };
+      mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+
+      const result = await strategy.validate({ sub: 42, email: 'user@example.com', exp: 1770000000 });
+      expect(result).toEqual({ ...mockUser, tokenExp: 1770000000 });
     });
 
     it('throws UnauthorizedException when user does not exist in database', async () => {

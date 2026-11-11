@@ -54,6 +54,18 @@ enum NotificationType {
   TASK_COLLABORATOR_DECLINED
   TASK_COLLABORATOR_REMOVED
   SUBTASK_ASSIGNED
+  SUBTASK_UNASSIGNED
+  SUBTASK_STATUS_CHANGED
+  SUBTASK_COMPLETED
+  SUBTASK_REOPENED
+}
+
+enum TeamActivityAction {
+  ADD_MEMBER
+  REMOVE_MEMBER
+  LEAVE_TEAM
+  CHANGE_ROLE
+  TRANSFER_OWNER
 }
 
 model User {
@@ -78,6 +90,8 @@ model User {
   assignedSubtasks       Subtask[]          @relation("SubtaskAssignee")
   createdSubtasks        Subtask[]          @relation("SubtaskCreator")
   completedSubtasks      Subtask[]          @relation("SubtaskCompleter")
+  teamActivityActorLogs  TeamActivityLog[]  @relation("TeamActivityActor")
+  teamActivityTargetLogs TeamActivityLog[]  @relation("TeamActivityTarget")
 
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
@@ -97,6 +111,7 @@ model Team {
   tasks         Task[]
   categories    Category[]
   notifications Notification[]
+  activityLogs  TeamActivityLog[]
 
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -128,7 +143,7 @@ model Category {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   teamId    Int?
-  team      Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  team      Team?    @relation(fields: [teamId], references: [id], onDelete: Restrict)
 
   tasks     Task[]
 
@@ -150,7 +165,7 @@ model Task {
   assignee      User?          @relation("AssignedTasks", fields: [assigneeId], references: [id], onDelete: SetNull)
 
   teamId        Int?
-  team          Team?          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  team          Team?          @relation(fields: [teamId], references: [id], onDelete: Restrict)
 
   title         String
   description   String?
@@ -201,6 +216,9 @@ model Notification {
   taskId        Int?
   task          Task?            @relation(fields: [taskId], references: [id], onDelete: SetNull)
 
+  subtaskId     Int?
+  subtask       Subtask?         @relation(fields: [subtaskId], references: [id], onDelete: SetNull)
+
   teamId        Int?
   team          Team?            @relation(fields: [teamId], references: [id], onDelete: SetNull)
 
@@ -210,6 +228,7 @@ model Notification {
 
   @@index([userId, isRead, createdAt])
   @@index([userId, createdAt])
+  @@index([subtaskId])
   @@map("Notification")
 }
 
@@ -268,6 +287,8 @@ model Subtask {
   completedBy   User?      @relation("SubtaskCompleter", fields: [completedById], references: [id], onDelete: SetNull)
   completedAt   DateTime?
 
+  notifications   Notification[]
+
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
   deletedAt       DateTime?
@@ -277,4 +298,34 @@ model Subtask {
   @@index([assigneeId, status])
   @@index([completedById])
   @@map("Subtask")
+}
+
+model TeamActivityLog {
+  id               Int                @id @default(autoincrement())
+
+  teamIdSnapshot   Int
+  teamNameSnapshot String
+
+  teamId           Int?
+  team             Team?              @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  actorId          Int?
+  actor            User?              @relation("TeamActivityActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  targetUserId     Int?
+  targetUser       User?              @relation("TeamActivityTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  action           TeamActivityAction
+  oldRole          TeamRole?
+  newRole          TeamRole?
+
+  metadata         Json?
+
+  createdAt        DateTime           @default(now())
+
+  @@index([teamIdSnapshot, createdAt])
+  @@index([teamId, createdAt])
+  @@index([actorId])
+  @@index([targetUserId])
+  @@map("TeamActivityLog")
 }

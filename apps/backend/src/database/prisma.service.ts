@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   OnModuleInit,
   OnModuleDestroy,
 } from '@nestjs/common';
@@ -12,6 +13,8 @@ export class PrismaService
   extends PrismaClient
   implements OnModuleInit, OnModuleDestroy
 {
+  private readonly logger = new Logger(PrismaService.name);
+
   async onModuleInit() {
     await this.$connect();
   }
@@ -24,7 +27,7 @@ export class PrismaService
    * Overrides `$transaction` to attach a post-commit hook collector to interactive transactions.
    * Hooks registered on `tx[POST_COMMIT_HOOKS]` will execute sequentially ONLY AFTER
    * the database transaction has successfully committed.
-   * If the transaction rolls back or throws, hooks will NEVER be executed.
+   * If the transaction rolls back or throws, hooks are cleared and will NEVER be executed.
    */
   override $transaction<P extends Prisma.PrismaPromise<any>[]>(
     arg: [...P],
@@ -37,10 +40,16 @@ export class PrismaService
   override async $transaction(arg: any, options?: any): Promise<any> {
     if (typeof arg === 'function') {
       const hooks: Array<() => void | Promise<void>> = [];
-      const result = await super.$transaction(async (tx: any) => {
-        tx[POST_COMMIT_HOOKS] = hooks;
-        return arg(tx);
-      }, options);
+      let result: any;
+      try {
+        result = await super.$transaction(async (tx: any) => {
+          tx[POST_COMMIT_HOOKS] = hooks;
+          return arg(tx);
+        }, options);
+      } catch (txError) {
+        hooks.length = 0;
+        throw txError;
+      }
 
       for (const hook of hooks) {
         try {
@@ -49,7 +58,7 @@ export class PrismaService
             await hookResult;
           }
         } catch (err) {
-          console.error('Error executing transaction post-commit hook:', err);
+          this.logger.error('Error executing transaction post-commit hook:', err);
         }
       }
 

@@ -1,21 +1,27 @@
 import React from 'react';
-import { Button, Segmented, Empty, Spin } from 'antd';
+import { Button, Segmented, Empty, Spin, Alert } from 'antd';
 import { CheckOutlined } from '@ant-design/icons';
 import { NotificationItemView } from './NotificationItemView';
 import type { Notification } from '../types/notification.types';
+import {
+  buildNotificationDestination,
+  type NotificationDestination,
+} from '../utils/notification-state.utils';
 
 interface NotificationPopoverProps {
   notifications: Notification[];
   unreadCount: number;
   loading: boolean;
   loadingMore: boolean;
+  error?: string | null;
   hasMore: boolean;
   activeTab: 'all' | 'unread';
   onTabChange: (tab: 'all' | 'unread') => void;
   onMarkRead: (id: number) => void;
   onMarkAllRead: () => void;
   onLoadMore: () => void;
-  onNavigate?: (dest: { type: 'task' | 'team'; id: number }) => void;
+  onRetry?: () => void;
+  onNavigate?: (dest: NotificationDestination) => void;
   onClose: () => void;
 }
 
@@ -24,12 +30,14 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   unreadCount,
   loading,
   loadingMore,
+  error,
   hasMore,
   activeTab,
   onTabChange,
   onMarkRead,
   onMarkAllRead,
   onLoadMore,
+  onRetry,
   onNavigate,
   onClose,
 }) => {
@@ -39,10 +47,9 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
     }
     onClose();
 
-    if (notification.taskId) {
-      onNavigate?.({ type: 'task', id: notification.taskId });
-    } else if (notification.teamId) {
-      onNavigate?.({ type: 'team', id: notification.teamId });
+    const dest = buildNotificationDestination(notification);
+    if (dest) {
+      onNavigate?.(dest);
     }
   };
 
@@ -118,6 +125,22 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
             }}
           >
             <Spin tip="Đang tải..." />
+          </div>
+        ) : error && notifications.length === 0 ? (
+          <div style={{ padding: 16 }}>
+            <Alert
+              type="error"
+              showIcon
+              message="Không thể tải thông báo"
+              description={error}
+              action={
+                onRetry && (
+                  <Button size="small" danger onClick={onRetry}>
+                    Thử lại
+                  </Button>
+                )
+              }
+            />
           </div>
         ) : notifications.length === 0 ? (
           <div style={{ padding: '40px 16px' }}>

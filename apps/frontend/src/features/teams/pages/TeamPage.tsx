@@ -22,6 +22,7 @@ import {
   removeTeamMember,
   transferOwnership,
 } from '../api/teams.api';
+import { ApiError } from '../../../shared/api';
 import { useAuth } from '../../auth/hooks/useAuth';
 import type {
   Team,
@@ -157,6 +158,24 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       await loadTeams();
       onTeamChanged?.();
     } catch (err: unknown) {
+      if (err instanceof ApiError && err.status === 409) {
+        const errData = err.data as
+          | { code?: string; taskCount?: number; categoryCount?: number }
+          | undefined;
+        if (
+          errData?.code === 'TEAM_HAS_DEPENDENT_DATA' ||
+          errData?.taskCount !== undefined ||
+          errData?.categoryCount !== undefined
+        ) {
+          const taskCount = errData?.taskCount ?? 0;
+          const categoryCount = errData?.categoryCount ?? 0;
+          message.error(
+            `Không thể giải tán nhóm vì nhóm đang có ${taskCount} công việc và ${categoryCount} danh mục. Dữ liệu công việc cần được bảo toàn. Vui lòng xử lý dữ liệu liên quan trước khi xóa nhóm.`,
+            8,
+          );
+          return;
+        }
+      }
       message.error(err instanceof Error ? err.message : 'Không thể xóa nhóm');
     } finally {
       setActionSubmitting(false);
