@@ -125,4 +125,63 @@ describe('Task Modal Controller & Realtime Sync Logic', () => {
       assert.equal(isDelete, true);
     });
   });
+
+  describe('View Mode Transition Semantics', () => {
+    function computeViewModeTransitionActions(
+      prevMode: string,
+      nextMode: string,
+    ): { fetchActive: boolean; fetchTrash: boolean; saveMode: boolean } {
+      if (prevMode === nextMode) {
+        return { fetchActive: false, fetchTrash: false, saveMode: false };
+      }
+      if (nextMode !== 'trash') {
+        return {
+          fetchActive: prevMode === 'trash',
+          fetchTrash: false,
+          saveMode: true,
+        };
+      }
+      return {
+        fetchActive: false,
+        fetchTrash: true,
+        saveMode: false,
+      };
+    }
+
+    it('triggers active tasks fetch when exiting trash mode to kanban/table/both', () => {
+      const fromTrashToKanban = computeViewModeTransitionActions('trash', 'kanban');
+      assert.equal(fromTrashToKanban.fetchActive, true);
+      assert.equal(fromTrashToKanban.fetchTrash, false);
+      assert.equal(fromTrashToKanban.saveMode, true);
+
+      const fromTrashToTable = computeViewModeTransitionActions('trash', 'table');
+      assert.equal(fromTrashToTable.fetchActive, true);
+      assert.equal(fromTrashToTable.fetchTrash, false);
+
+      const fromTrashToBoth = computeViewModeTransitionActions('trash', 'both');
+      assert.equal(fromTrashToBoth.fetchActive, true);
+      assert.equal(fromTrashToBoth.fetchTrash, false);
+    });
+
+    it('triggers trash tasks fetch when entering trash mode and does not persist trash to localStorage', () => {
+      const toTrash = computeViewModeTransitionActions('kanban', 'trash');
+      assert.equal(toTrash.fetchActive, false);
+      assert.equal(toTrash.fetchTrash, true);
+      assert.equal(toTrash.saveMode, false);
+    });
+
+    it('does not trigger fetch when switching between non-trash modes', () => {
+      const kanbanToTable = computeViewModeTransitionActions('kanban', 'table');
+      assert.equal(kanbanToTable.fetchActive, false);
+      assert.equal(kanbanToTable.fetchTrash, false);
+      assert.equal(kanbanToTable.saveMode, true);
+    });
+
+    it('does nothing when mode does not change', () => {
+      const sameMode = computeViewModeTransitionActions('kanban', 'kanban');
+      assert.equal(sameMode.fetchActive, false);
+      assert.equal(sameMode.fetchTrash, false);
+      assert.equal(sameMode.saveMode, false);
+    });
+  });
 });

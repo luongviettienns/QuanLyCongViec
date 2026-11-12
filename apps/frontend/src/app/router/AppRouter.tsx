@@ -125,6 +125,10 @@ function TaskAppShell() {
 
   const activeModalTaskId = modalState.open && modalState.task ? modalState.task.id : null;
 
+  const handleDashboardReload = useCallback(() => {
+    setDashboardReloadCounter((c) => c + 1);
+  }, []);
+
   useAppRealtimeSync({
     userId: user?.id,
     currentNav,
@@ -135,16 +139,16 @@ function TaskAppShell() {
     onRefetchTeams: fetchTeams,
     onRefreshModalTask: refreshActiveModalTask,
     onCloseModalIfDeleted: closeModal,
-    onDashboardReload: () => setDashboardReloadCounter((c) => c + 1),
+    onDashboardReload: handleDashboardReload,
   });
 
   const handleGlobalReload = useCallback(() => {
     if (currentNav === 'dashboard') {
-      setDashboardReloadCounter((c) => c + 1);
+      handleDashboardReload();
     } else {
       void refetch();
     }
-  }, [currentNav, refetch]);
+  }, [currentNav, handleDashboardReload, refetch]);
 
   const handleNavigateFromDashboard = useCallback(
     (patchOrStatus?: TaskFilterPatch | TaskStatus) => {

@@ -19,18 +19,12 @@ export interface UseAppRealtimeSyncOptions {
   onDashboardReload?: () => void;
 }
 
-export function useAppRealtimeSync({
-  userId,
-  currentNav = 'tasks',
-  activeModalTaskId,
-  onRefetchTasks,
-  onRefetchCategories,
-  onRefetchTeams,
-  onRefreshModalTask,
-  onNotificationNew,
-  onCloseModalIfDeleted,
-  onDashboardReload,
-}: UseAppRealtimeSyncOptions) {
+export function useAppRealtimeSync(options: UseAppRealtimeSyncOptions) {
+  const optionsRef = useRef<UseAppRealtimeSyncOptions>(options);
+  useEffect(() => {
+    optionsRef.current = options;
+  });
+
   const refetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scheduleRefetch = useCallback(() => {
@@ -39,13 +33,14 @@ export function useAppRealtimeSync({
     }
     refetchTimerRef.current = setTimeout(() => {
       refetchTimerRef.current = null;
+      const { currentNav, onRefetchTasks, onDashboardReload } = optionsRef.current;
       if (currentNav === 'tasks') {
         void onRefetchTasks();
       } else if (currentNav === 'dashboard') {
         onDashboardReload?.();
       }
     }, 400);
-  }, [currentNav, onRefetchTasks, onDashboardReload]);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -58,13 +53,14 @@ export function useAppRealtimeSync({
 
   const handleRealtimeTaskEvent = useCallback(
     (event: RealtimeEventData) => {
+      const { userId } = optionsRef.current;
       // Bỏ qua sự kiện do chính mình thực hiện vì UI đã cập nhật lạc quan
       if (event.actorId && event.actorId === userId) {
         return;
       }
       scheduleRefetch();
     },
-    [userId, scheduleRefetch],
+    [scheduleRefetch],
   );
 
   useRealtimeEvent('TASK_STATUS_CHANGED', handleRealtimeTaskEvent);
@@ -81,16 +77,18 @@ export function useAppRealtimeSync({
   useRealtimeEvent('TASK_COLLABORATORS_CHANGED', handleRealtimeTaskEvent);
 
   const handleRealtimeNotification = useCallback(() => {
+    const { onNotificationNew } = optionsRef.current;
     if (onNotificationNew) {
       onNotificationNew();
     }
     scheduleRefetch();
-  }, [onNotificationNew, scheduleRefetch]);
+  }, [scheduleRefetch]);
 
   useRealtimeEvent('NOTIFICATION_NEW', handleRealtimeNotification);
 
   const handleRealtimeTeamMeta = useCallback(
     (event: RealtimeEventData) => {
+      const { userId, currentNav, onRefetchTeams } = optionsRef.current;
       if (event.actorId && event.actorId === userId) {
         return;
       }
@@ -99,11 +97,12 @@ export function useAppRealtimeSync({
         scheduleRefetch();
       }
     },
-    [currentNav, onRefetchTeams, scheduleRefetch, userId],
+    [scheduleRefetch],
   );
 
   const handleRealtimeTeamCategory = useCallback(
     (event: RealtimeEventData) => {
+      const { userId, currentNav, onRefetchCategories } = optionsRef.current;
       if (event.actorId && event.actorId === userId) {
         return;
       }
@@ -112,7 +111,7 @@ export function useAppRealtimeSync({
         scheduleRefetch();
       }
     },
-    [currentNav, onRefetchCategories, scheduleRefetch, userId],
+    [scheduleRefetch],
   );
 
   useRealtimeEvent('TEAM_UPDATED', handleRealtimeTeamMeta);
@@ -121,6 +120,8 @@ export function useAppRealtimeSync({
 
   const handleRealtimeModalEvent = useCallback(
     (event: RealtimeEventData) => {
+      const { userId, activeModalTaskId, onRefreshModalTask, onCloseModalIfDeleted } =
+        optionsRef.current;
       if (event.actorId && event.actorId === userId && event.type !== 'TASK_DELETED') {
         return;
       }
@@ -137,7 +138,7 @@ export function useAppRealtimeSync({
         onCloseModalIfDeleted?.();
       }
     },
-    [userId, activeModalTaskId, onRefreshModalTask, onCloseModalIfDeleted],
+    [],
   );
 
   useRealtimeEvent('TASK_UPDATED', handleRealtimeModalEvent);

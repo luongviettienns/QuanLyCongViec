@@ -36,6 +36,10 @@ export function useTasks(options?: { enabled?: boolean }) {
   }, [filters]);
 
   const [viewMode, setViewModeState] = useState<TaskViewMode>(loadSavedViewMode);
+  const viewModeRef = useRef<TaskViewMode>(viewMode);
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+  }, [viewMode]);
 
   const queries = useTaskQueries(isAuthenticated);
   const mutations = useTaskMutations(isAuthenticated);
@@ -78,15 +82,24 @@ export function useTasks(options?: { enabled?: boolean }) {
 
   const setViewMode = useCallback(
     (nextMode: TaskViewMode) => {
+      const prevMode = viewModeRef.current;
+      if (prevMode === nextMode) {
+        return;
+      }
+      viewModeRef.current = nextMode;
       setViewModeState(nextMode);
       if (nextMode !== 'trash') {
         saveViewMode(nextMode);
+        if (prevMode === 'trash') {
+          setLoading(true);
+          void fetchTasks(filtersRef.current);
+        }
       } else {
         setTrashLoading(true);
         void fetchTrashTasks(filtersRef.current);
       }
     },
-    [fetchTrashTasks, setTrashLoading],
+    [fetchTasks, fetchTrashTasks, setLoading, setTrashLoading],
   );
 
   const applyFilters = useCallback(
@@ -95,7 +108,7 @@ export function useTasks(options?: { enabled?: boolean }) {
       filtersRef.current = next;
       updateFilters(patch);
       if (!isAuthenticated) return;
-      if (viewMode === 'trash') {
+      if (viewModeRef.current === 'trash') {
         setTrashLoading(true);
         void fetchTrashTasks(next);
       } else {
@@ -106,7 +119,6 @@ export function useTasks(options?: { enabled?: boolean }) {
     [
       isAuthenticated,
       updateFilters,
-      viewMode,
       fetchTrashTasks,
       fetchTasks,
       setLoading,
@@ -119,7 +131,7 @@ export function useTasks(options?: { enabled?: boolean }) {
     const next = createDefaultTaskFilters();
     filtersRef.current = next;
     resetFilters();
-    if (viewMode === 'trash') {
+    if (viewModeRef.current === 'trash') {
       setTrashLoading(true);
       void fetchTrashTasks(next);
     } else {
@@ -129,7 +141,6 @@ export function useTasks(options?: { enabled?: boolean }) {
   }, [
     isAuthenticated,
     resetFilters,
-    viewMode,
     fetchTrashTasks,
     fetchTasks,
     setLoading,
@@ -141,7 +152,7 @@ export function useTasks(options?: { enabled?: boolean }) {
       resetAll();
       return;
     }
-    if (viewMode === 'trash') {
+    if (viewModeRef.current === 'trash') {
       setTrashLoading(true);
       await Promise.all([
         fetchTrashTasks(filtersRef.current),
@@ -159,7 +170,6 @@ export function useTasks(options?: { enabled?: boolean }) {
   }, [
     isAuthenticated,
     resetAll,
-    viewMode,
     fetchTrashTasks,
     fetchTasks,
     fetchCategories,
@@ -217,7 +227,7 @@ export function useTasks(options?: { enabled?: boolean }) {
   const handleDelete = useCallback(
     async (id: number) => {
       await mutations.handleDeleteTask(id, async () => {
-        if (viewMode === 'trash') {
+        if (viewModeRef.current === 'trash') {
           setTrashLoading(true);
           await fetchTrashTasks(filtersRef.current);
         } else {
@@ -226,7 +236,7 @@ export function useTasks(options?: { enabled?: boolean }) {
         }
       });
     },
-    [mutations, viewMode, fetchTrashTasks, fetchTasks, setLoading, setTrashLoading],
+    [mutations, fetchTrashTasks, fetchTasks, setLoading, setTrashLoading],
   );
 
   const handleRestore = useCallback(
