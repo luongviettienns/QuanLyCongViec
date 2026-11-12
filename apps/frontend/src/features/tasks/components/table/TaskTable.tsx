@@ -1,11 +1,38 @@
-import { Table, Tag, Button, Popconfirm, Space, List, Card, Tooltip } from 'antd';
-import { EditOutlined, DeleteOutlined, UserOutlined, EyeOutlined } from '@ant-design/icons';
+import { useMemo, useState } from 'react';
+import {
+  Table,
+  Tag,
+  Button,
+  Popconfirm,
+  Space,
+  List,
+  Card,
+  Tooltip,
+  Checkbox,
+  Dropdown,
+  type MenuProps,
+} from 'antd';
+import {
+  EditOutlined,
+  DeleteOutlined,
+  UserOutlined,
+  EyeOutlined,
+  SwapOutlined,
+  CloseOutlined,
+} from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { TASK_PRIORITY_CONFIG, TASK_STATUS_CONFIG, type Task } from '../../types/task.types';
+import {
+  TASK_PRIORITY_CONFIG,
+  TASK_STATUS_CONFIG,
+  type BulkTaskResult,
+  type Task,
+  type TaskStatus,
+} from '../../types/task.types';
 import type { Category } from '../../../categories/types/category.types';
 import type { Team } from '../../../teams/types/team.types';
 import { useAuth } from '../../../auth/hooks/useAuth';
 import { getTaskPermissions } from '../../utils/task-permission.utils';
+import { summarizeBulkSelection } from '../../utils/task-bulk.utils';
 import { formatDate, getDeadlineDisplayState } from '../../../../shared/utils/date.utils';
 import { useResponsive } from '../../../../shared/hooks';
 
@@ -15,7 +42,11 @@ interface TaskTableProps {
   loading: boolean;
   onEdit: (task: Task) => void;
   onDelete: (id: number) => void;
+  onBulkDelete?: (ids: number[]) => Promise<BulkTaskResult | null | void>;
+  onBulkStatusMove?: (ids: number[], status: TaskStatus) => Promise<BulkTaskResult | null | void>;
 }
+
+const BULK_STATUS_ORDER: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'DONE'];
 
 export default function TaskTable({
   tasks,
@@ -23,14 +54,161 @@ export default function TaskTable({
   loading,
   onEdit,
   onDelete,
+  onBulkDelete,
+  onBulkStatusMove,
 }: TaskTableProps) {
   const { user } = useAuth();
   const screens = useResponsive();
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
+
+  const hasBulkActions = Boolean(onBulkDelete || onBulkStatusMove);
+
+  const effectiveSelectedIds = useMemo(() => {
+    const validIds = new Set(tasks.map((t) => t.id));
+    return selectedIds.filter((id) => validIds.has(id));
+  }, [selectedIds, tasks]);
+
+  const selectedTasks = useMemo(() => {
+    const selectedSet = new Set(effectiveSelectedIds);
+    return tasks.filter((t) => selectedSet.has(t.id));
+  }, [tasks, effectiveSelectedIds]);
+
+  const selectionSummary = useMemo(
+    () => summarizeBulkSelection(selectedTasks, user, teams),
+    [selectedTasks, user, teams],
+  );
 
   function getPerms(task: Task) {
     const team = task.teamId ? teams.find((t) => t.id === task.teamId) : null;
     return getTaskPermissions(user, task, team);
   }
+
+  function applyBulkResult(res: BulkTaskResult | null | void, attemptedIds: number[]) {
+    if (res && Array.isArray(res.succeededIds)) {
+      const succeeded = new Set(res.succeededIds);
+      setSelectedIds((prev) => prev.filter((id) => !succeeded.has(id)));
+      return;
+    }
+    if (res === undefined) {
+      const attempted = new Set(attemptedIds);
+      setSelectedIds((prev) => prev.filter((id) => !attempted.has(id)));
+    }
+  }
+
+  async function handleBulkStatusChange(targetStatus: TaskStatus) {
+    if (!onBulkStatusMove) return;
+    const ids = selectionSummary.statusTargets[targetStatus];
+    if (ids.length === 0) return;
+
+    try {
+      setBulkLoading(true);
+      const res = await onBulkStatusMove(ids, targetStatus);
+      applyBulkResult(res, ids);
+    } finally {
+      setBulkLoading(false);
+    }
+  }
+
+  async function handleBulkDeleteConfirm() {
+    if (!onBulkDelete) return;
+    const ids = selectionSummary.deletableIds;
+    if (ids.length === 0) return;
+
+    try {
+      setBulkLoading(true);
+      const res = await onBulkDelete(ids);
+      applyBulkResult(res, ids);
+    } finally {
+      setBulkLoading(false);
+    }
+  }
+
+  function toggleTaskSelection(taskId: number, checked: boolean) {
+    setSelectedIds((prev) => {
+      if (checked) {
+        return prev.includes(taskId) ? prev : [...prev, taskId];
+      }
+      return prev.filter((id) => id !== taskId);
+    });
+  }
+
+  const statusMenuItems: MenuProps['items'] = BULK_STATUS_ORDER.map((status) => {
+    const config = TASK_STATUS_CONFIG[status];
+    const eligibleCount = selectionSummary.statusTargets[status].length;
+    return {
+      key: status,
+      disabled: eligibleCount === 0 || bulkLoading,
+      label: `${config.label} (${eligibleCount})`,
+      onClick: () => void handleBulkStatusChange(status),
+    };
+  });
+
+  const totalEligibleStatusMoves = BULK_STATUS_ORDER.reduce(
+    (sum, status) => sum + selectionSummary.statusTargets[status].length,
+    0,
+  );
+
+  const bulkActionBar =
+    hasBulkActions && effectiveSelectedIds.length > 0 ? (
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          padding: '8px 12px',
+          marginBottom: 12,
+          borderRadius: 8,
+          background: '#f0f5ff',
+          border: '1px solid #adc6ff',
+        }}
+      >
+        <span style={{ fontWeight: 500, fontSize: 13, color: '#1d39c4' }}>
+          Đã chọn {selectionSummary.total} công việc
+        </span>
+        <Space size={8} wrap>
+          {onBulkStatusMove && (
+            <Dropdown menu={{ items: statusMenuItems }} trigger={['click']} disabled={totalEligibleStatusMoves === 0 || bulkLoading}>
+              <Button size="small" icon={<SwapOutlined />} loading={bulkLoading}>
+                Đổi trạng thái
+              </Button>
+            </Dropdown>
+          )}
+          {onBulkDelete && (
+            <Popconfirm
+              title="Xác nhận xoá hàng loạt"
+              description={`Xoá ${selectionSummary.deletableIds.length}/${selectionSummary.total} công việc đủ quyền xoá vào thùng rác?`}
+              onConfirm={() => void handleBulkDeleteConfirm()}
+              okText="Xoá"
+              cancelText="Huỷ"
+              okButtonProps={{ danger: true, loading: bulkLoading }}
+              disabled={selectionSummary.deletableIds.length === 0 || bulkLoading}
+            >
+              <Button
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                disabled={selectionSummary.deletableIds.length === 0}
+                loading={bulkLoading}
+              >
+                Xoá ({selectionSummary.deletableIds.length})
+              </Button>
+            </Popconfirm>
+          )}
+          <Button
+            size="small"
+            type="text"
+            icon={<CloseOutlined />}
+            onClick={() => setSelectedIds([])}
+            disabled={bulkLoading}
+          >
+            Bỏ chọn
+          </Button>
+        </Space>
+      </div>
+    ) : null;
 
   const columns: TableProps<Task>['columns'] = [
     {
@@ -163,34 +341,46 @@ export default function TaskTable({
 
   if (screens.xs) {
     return (
-      <List
-        loading={loading}
-        dataSource={tasks}
-        pagination={{ pageSize: 6, align: 'center', size: 'small' }}
-        locale={{ emptyText: 'Không có công việc nào' }}
-        renderItem={(task) => {
-          const statusConfig = TASK_STATUS_CONFIG[task.status] || { color: 'default', label: task.status };
-          const priority = task.priority || 'MEDIUM';
-          const pConfig = TASK_PRIORITY_CONFIG[priority] || { color: 'default', label: priority };
-          const deadline = getDeadlineDisplayState(task.dueDate, task.status);
-          const perms = getPerms(task);
-          const editLabel = perms.canEditContent ? 'Sửa' : perms.canChangeStatus ? 'Cập nhật' : 'Xem';
+      <>
+        {bulkActionBar}
+        <List
+          loading={loading}
+          dataSource={tasks}
+          pagination={{ pageSize: 6, align: 'center', size: 'small' }}
+          locale={{ emptyText: 'Không có công việc nào' }}
+          renderItem={(task) => {
+            const statusConfig = TASK_STATUS_CONFIG[task.status] || { color: 'default', label: task.status };
+            const priority = task.priority || 'MEDIUM';
+            const pConfig = TASK_PRIORITY_CONFIG[priority] || { color: 'default', label: priority };
+            const deadline = getDeadlineDisplayState(task.dueDate, task.status);
+            const perms = getPerms(task);
+            const editLabel = perms.canEditContent ? 'Sửa' : perms.canChangeStatus ? 'Cập nhật' : 'Xem';
+            const checked = effectiveSelectedIds.includes(task.id);
 
-          return (
-            <Card
-              size="small"
-              style={{
-                marginBottom: 12,
-                borderRadius: 8,
-                borderLeft: `4px solid ${
-                  task.status === 'DONE' ? '#52c41a' : task.status === 'IN_PROGRESS' ? '#1890ff' : '#fa8c16'
-                }`,
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-                <span style={{ fontWeight: 600, fontSize: 15 }}>{task.title}</span>
-                <Tag color={statusConfig.color}>{statusConfig.label}</Tag>
-              </div>
+            return (
+              <Card
+                size="small"
+                style={{
+                  marginBottom: 12,
+                  borderRadius: 8,
+                  borderLeft: `4px solid ${
+                    task.status === 'DONE' ? '#52c41a' : task.status === 'IN_PROGRESS' ? '#1890ff' : '#fa8c16'
+                  }`,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    {hasBulkActions && (
+                      <Checkbox
+                        checked={checked}
+                        onChange={(e) => toggleTaskSelection(task.id, e.target.checked)}
+                        aria-label={`Chọn ${task.title}`}
+                      />
+                    )}
+                    <span style={{ fontWeight: 600, fontSize: 15 }}>{task.title}</span>
+                  </div>
+                  <Tag color={statusConfig.color}>{statusConfig.label}</Tag>
+                </div>
 
               {task.description && (
                 <div style={{ color: '#666', fontSize: 13, marginBottom: 8 }}>
@@ -263,18 +453,30 @@ export default function TaskTable({
             </Card>
           );
         }}
-      />
+        />
+      </>
     );
   }
 
   return (
-    <Table
-      columns={columns}
-      dataSource={tasks}
-      rowKey="id"
-      loading={loading}
-      pagination={{ pageSize: 10, showSizeChanger: true }}
-      scroll={{ x: 1000 }}
-    />
+    <>
+      {bulkActionBar}
+      <Table
+        columns={columns}
+        dataSource={tasks}
+        rowKey="id"
+        loading={loading}
+        rowSelection={
+          hasBulkActions
+            ? {
+                selectedRowKeys: effectiveSelectedIds,
+                onChange: (keys) => setSelectedIds(keys.map(Number)),
+              }
+            : undefined
+        }
+        pagination={{ pageSize: 10, showSizeChanger: true }}
+        scroll={{ x: 1000 }}
+      />
+    </>
   );
 }

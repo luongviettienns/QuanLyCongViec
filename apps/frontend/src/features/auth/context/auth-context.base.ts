@@ -6,6 +6,7 @@ export interface AuthContextType {
   loading: boolean;
   login: (payload: LoginPayload) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<void>;
+  updateProfile: (name: string) => Promise<User>;
   logout: () => void;
 }
 

@@ -1,4 +1,9 @@
-import type { TaskFilterPatch, TaskFilterState, TaskViewMode } from '../types/task.types.ts';
+import type {
+  ScopeFilter,
+  TaskFilterPatch,
+  TaskFilterState,
+  TaskViewMode,
+} from '../types/task.types.ts';
 import type { Team } from '../../teams/types/team.types.ts';
 
 const VIEW_MODE_STORAGE_KEY = 'taskflow.tasksViewMode';
@@ -52,6 +57,59 @@ export function countActiveFilters(filters: TaskFilterState): number {
   if (filters.deadlineFilter !== 'ALL') count += 1;
   if (filters.sortBy !== 'default') count += 1;
   return count;
+}
+
+/**
+ * Counts active secondary dropdown filters for the current TaskToolbar view mode.
+ */
+export function countActiveToolbarFilters(
+  filters: TaskFilterState,
+  isTrash: boolean,
+): number {
+  if (isTrash) {
+    let count = 0;
+    if (filters.categoryFilter !== 'ALL') count += 1;
+    if (filters.priorityFilter !== 'ALL') count += 1;
+    if (filters.assigneeFilter !== 'ALL') count += 1;
+    return count;
+  }
+  return countActiveFilters(filters);
+}
+
+/**
+ * Checks whether any search, scope, team, or secondary filter is currently applied.
+ */
+export function hasAnyToolbarFilter(
+  filters: TaskFilterState,
+  isTrash: boolean,
+): boolean {
+  return (
+    filters.searchText.trim().length > 0 ||
+    filters.teamFilter !== 'ALL' ||
+    (!isTrash && filters.scopeFilter !== 'all') ||
+    countActiveToolbarFilters(filters, isTrash) > 0
+  );
+}
+
+/**
+ * Appends a positive item count in parentheses (e.g. "Thùng rác (3)").
+ */
+export function formatCountLabel(baseLabel: string, count?: number): string {
+  if (!count || count <= 0) {
+    return baseLabel;
+  }
+  return `${baseLabel} (${count})`;
+}
+
+/**
+ * Determines whether the quick pending-invites pill should appear on the toolbar.
+ */
+export function shouldShowPendingInvitesShortcut(
+  isTrash: boolean,
+  scopeFilter: ScopeFilter,
+  pendingInvitesCount?: number,
+): boolean {
+  return !isTrash && scopeFilter !== 'pending_invites' && (pendingInvitesCount ?? 0) > 0;
 }
 
 export function loadSavedViewMode(): Exclude<TaskViewMode, 'trash'> {

@@ -54,10 +54,13 @@ export function useTasks(options?: { enabled?: boolean }) {
     teams,
     loading,
     setLoading,
+    pendingInvitesCount,
+    trashCount,
     fetchTasks,
     fetchTrashTasks,
     fetchCategories,
     fetchTeams,
+    fetchTaskBadges,
     resetState: resetQueriesState,
   } = queries;
 
@@ -158,6 +161,7 @@ export function useTasks(options?: { enabled?: boolean }) {
         fetchTrashTasks(filtersRef.current),
         fetchCategories(),
         fetchTeams(),
+        fetchTaskBadges(),
       ]);
     } else {
       setLoading(true);
@@ -165,6 +169,7 @@ export function useTasks(options?: { enabled?: boolean }) {
         fetchTasks(filtersRef.current),
         fetchCategories(),
         fetchTeams(),
+        fetchTaskBadges(),
       ]);
     }
   }, [
@@ -174,6 +179,7 @@ export function useTasks(options?: { enabled?: boolean }) {
     fetchTasks,
     fetchCategories,
     fetchTeams,
+    fetchTaskBadges,
     setLoading,
     setTrashLoading,
   ]);
@@ -199,6 +205,7 @@ export function useTasks(options?: { enabled?: boolean }) {
         fetchCategories(),
         fetchTeams(),
         fetchTasks(filtersRef.current),
+        fetchTaskBadges(),
       ]);
     }
 
@@ -215,6 +222,7 @@ export function useTasks(options?: { enabled?: boolean }) {
     fetchCategories,
     fetchTeams,
     fetchTasks,
+    fetchTaskBadges,
     setLoading,
   ]);
 
@@ -225,18 +233,24 @@ export function useTasks(options?: { enabled?: boolean }) {
   });
 
   const handleDelete = useCallback(
-    async (id: number) => {
-      await mutations.handleDeleteTask(id, async () => {
+    (id: number): Promise<boolean> => {
+      return mutations.handleDeleteTask(id, async () => {
         if (viewModeRef.current === 'trash') {
           setTrashLoading(true);
-          await fetchTrashTasks(filtersRef.current);
+          await Promise.all([
+            fetchTrashTasks(filtersRef.current),
+            fetchTaskBadges(),
+          ]);
         } else {
           setLoading(true);
-          await fetchTasks(filtersRef.current);
+          await Promise.all([
+            fetchTasks(filtersRef.current),
+            fetchTaskBadges(),
+          ]);
         }
       });
     },
-    [mutations, fetchTrashTasks, fetchTasks, setLoading, setTrashLoading],
+    [mutations, fetchTrashTasks, fetchTasks, fetchTaskBadges, setLoading, setTrashLoading],
   );
 
   const handleRestore = useCallback(
@@ -247,20 +261,88 @@ export function useTasks(options?: { enabled?: boolean }) {
         await Promise.all([
           fetchTrashTasks(filtersRef.current),
           fetchTasks(filtersRef.current),
+          fetchTaskBadges(),
         ]);
       });
     },
-    [mutations, fetchTrashTasks, fetchTasks, setLoading, setTrashLoading],
+    [mutations, fetchTrashTasks, fetchTasks, fetchTaskBadges, setLoading, setTrashLoading],
   );
 
   const handlePermanentDelete = useCallback(
     async (id: number) => {
       await mutations.handlePermanentDeleteTask(id, async () => {
         setTrashLoading(true);
-        await fetchTrashTasks(filtersRef.current);
+        await Promise.all([
+          fetchTrashTasks(filtersRef.current),
+          fetchTaskBadges(),
+        ]);
       });
     },
-    [mutations, fetchTrashTasks, setTrashLoading],
+    [mutations, fetchTrashTasks, fetchTaskBadges, setTrashLoading],
+  );
+
+  const handleBulkDelete = useCallback(
+    async (ids: number[]) => {
+      return mutations.handleBulkDeleteTasks(ids, async () => {
+        setLoading(true);
+        await Promise.all([
+          fetchTasks(filtersRef.current),
+          fetchTaskBadges(),
+        ]);
+      });
+    },
+    [mutations, fetchTasks, fetchTaskBadges, setLoading],
+  );
+
+  const handleBulkStatusMove = useCallback(
+    async (ids: number[], status: TaskStatus) => {
+      return mutations.handleBulkUpdateTaskStatus(ids, status, async () => {
+        setLoading(true);
+        await fetchTasks(filtersRef.current);
+      });
+    },
+    [mutations, fetchTasks, setLoading],
+  );
+
+  const handleBulkRestore = useCallback(
+    async (ids: number[]) => {
+      return mutations.handleBulkRestoreTasks(ids, async () => {
+        setTrashLoading(true);
+        setLoading(true);
+        await Promise.all([
+          fetchTrashTasks(filtersRef.current),
+          fetchTasks(filtersRef.current),
+          fetchTaskBadges(),
+        ]);
+      });
+    },
+    [mutations, fetchTrashTasks, fetchTasks, fetchTaskBadges, setLoading, setTrashLoading],
+  );
+
+  const handleBulkPermanentDelete = useCallback(
+    async (ids: number[]) => {
+      return mutations.handleBulkPermanentDeleteTasks(ids, async () => {
+        setTrashLoading(true);
+        await Promise.all([
+          fetchTrashTasks(filtersRef.current),
+          fetchTaskBadges(),
+        ]);
+      });
+    },
+    [mutations, fetchTrashTasks, fetchTaskBadges, setTrashLoading],
+  );
+
+  const handleEmptyTrash = useCallback(
+    async (teamId?: number) => {
+      return mutations.handleEmptyTrash(teamId, async () => {
+        setTrashLoading(true);
+        await Promise.all([
+          fetchTrashTasks(filtersRef.current),
+          fetchTaskBadges(),
+        ]);
+      });
+    },
+    [mutations, fetchTrashTasks, fetchTaskBadges, setTrashLoading],
   );
 
   const handleReorder = useCallback(
@@ -274,6 +356,8 @@ export function useTasks(options?: { enabled?: boolean }) {
     tasks,
     trashTasks,
     trashLoading,
+    pendingInvitesCount,
+    trashCount,
     categories,
     teams,
     loading,
@@ -287,6 +371,11 @@ export function useTasks(options?: { enabled?: boolean }) {
     handleDelete,
     handleRestore,
     handlePermanentDelete,
+    handleBulkDelete,
+    handleBulkStatusMove,
+    handleBulkRestore,
+    handleBulkPermanentDelete,
+    handleEmptyTrash,
     handleReorder,
     handleStatusMove: board.handleStatusMove,
     resetState: resetAll,

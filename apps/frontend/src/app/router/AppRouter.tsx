@@ -85,6 +85,8 @@ function TaskAppShell() {
     tasks,
     trashTasks,
     trashLoading,
+    pendingInvitesCount,
+    trashCount,
     categories,
     teams,
     loading,
@@ -98,6 +100,11 @@ function TaskAppShell() {
     handleDelete,
     handleRestore,
     handlePermanentDelete,
+    handleBulkDelete,
+    handleBulkStatusMove,
+    handleBulkRestore,
+    handleBulkPermanentDelete,
+    handleEmptyTrash,
     handleReorder,
     handleStatusMove,
     fetchCategories,
@@ -195,7 +202,6 @@ function TaskAppShell() {
   return (
     <AppLayout
       onReload={handleGlobalReload}
-      onCreateTask={() => openCreateModal(filters.teamFilter !== 'ALL' ? filters.teamFilter : null)}
       onOpenCategories={() => setCategoryModalOpen(true)}
       loading={currentNav === 'dashboard' ? dashboardLoading : loading}
       currentNav={currentNav}
@@ -224,6 +230,8 @@ function TaskAppShell() {
               tasks={tasks}
               trashTasks={trashTasks}
               trashLoading={trashLoading}
+              pendingInvitesCount={pendingInvitesCount}
+              trashCount={trashCount}
               categories={categories}
               teams={teams}
               loading={loading}
@@ -238,6 +246,15 @@ function TaskAppShell() {
               onDelete={(id) => void handleDelete(id)}
               onRestore={handleRestore}
               onPermanentDelete={handlePermanentDelete}
+              onBulkDelete={handleBulkDelete}
+              onBulkStatusMove={handleBulkStatusMove}
+              onBulkRestore={handleBulkRestore}
+              onBulkPermanentDelete={handleBulkPermanentDelete}
+              onEmptyTrash={() =>
+                handleEmptyTrash(
+                  typeof filters.teamFilter === 'number' ? filters.teamFilter : undefined,
+                )
+              }
               onReorder={handleReorder}
               onStatusMove={handleStatusMove}
               categoryModalOpen={categoryModalOpen}
@@ -270,6 +287,7 @@ function TaskAppShell() {
           teams={teams}
           onClose={closeModal}
           onSuccess={refetch}
+          onDelete={handleDelete}
         />
       )}
     </AppLayout>

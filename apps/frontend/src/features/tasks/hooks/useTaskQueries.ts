@@ -15,9 +15,12 @@ export function useTaskQueries(isAuthenticated: boolean) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(false);
   const [trashLoading, setTrashLoading] = useState(false);
+  const [pendingInvitesCount, setPendingInvitesCount] = useState(0);
+  const [trashCount, setTrashCount] = useState(0);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const trashAbortControllerRef = useRef<AbortController | null>(null);
+  const badgesAbortControllerRef = useRef<AbortController | null>(null);
 
   const resetState = useCallback(() => {
     if (abortControllerRef.current) {
@@ -28,12 +31,18 @@ export function useTaskQueries(isAuthenticated: boolean) {
       trashAbortControllerRef.current.abort();
       trashAbortControllerRef.current = null;
     }
+    if (badgesAbortControllerRef.current) {
+      badgesAbortControllerRef.current.abort();
+      badgesAbortControllerRef.current = null;
+    }
     setTasks([]);
     setTrashTasks([]);
     setCategories([]);
     setTeams([]);
     setLoading(false);
     setTrashLoading(false);
+    setPendingInvitesCount(0);
+    setTrashCount(0);
   }, []);
 
   const fetchTasks = useCallback(
@@ -186,6 +195,34 @@ export function useTaskQueries(isAuthenticated: boolean) {
     }
   }, [isAuthenticated]);
 
+  const fetchTaskBadges = useCallback(async () => {
+    if (!isAuthenticated) {
+      setPendingInvitesCount(0);
+      setTrashCount(0);
+      return;
+    }
+
+    if (badgesAbortControllerRef.current) {
+      badgesAbortControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    badgesAbortControllerRef.current = controller;
+
+    try {
+      const [pendingInvites, trashed] = await Promise.all([
+        getTasks({ scope: 'pending_invites' }, controller.signal),
+        getTrashTasks(undefined, controller.signal),
+      ]);
+      if (badgesAbortControllerRef.current === controller) {
+        setPendingInvitesCount(pendingInvites.length);
+        setTrashCount(trashed.length);
+      }
+    } catch {
+      return;
+    }
+  }, [isAuthenticated]);
+
   return useMemo(
     () => ({
       tasks,
@@ -198,10 +235,13 @@ export function useTaskQueries(isAuthenticated: boolean) {
       setLoading,
       trashLoading,
       setTrashLoading,
+      pendingInvitesCount,
+      trashCount,
       fetchTasks,
       fetchTrashTasks,
       fetchCategories,
       fetchTeams,
+      fetchTaskBadges,
       resetState,
     }),
     [
@@ -211,10 +251,13 @@ export function useTaskQueries(isAuthenticated: boolean) {
       teams,
       loading,
       trashLoading,
+      pendingInvitesCount,
+      trashCount,
       fetchTasks,
       fetchTrashTasks,
       fetchCategories,
       fetchTeams,
+      fetchTaskBadges,
       resetState,
     ],
   );

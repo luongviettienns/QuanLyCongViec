@@ -111,6 +111,11 @@ export interface TrashTask extends Task {
   deletedBy?: TeamMemberUser | null;
 }
 
+export interface BulkTaskResult {
+  succeededIds: number[];
+  failed: Array<{ id: number; reason: string }>;
+}
+
 export interface TaskFormValues {
   title: string;
   description?: string;

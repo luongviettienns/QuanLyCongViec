@@ -8,6 +8,7 @@ import type {
   UpdateTaskContentPayload,
   TaskStatus,
   TaskStats,
+  BulkTaskResult,
 } from '../types/task.types';
 import {
   getAuthHeaders,
@@ -247,6 +248,60 @@ export async function permanentDeleteTask(id: number): Promise<void> {
   });
 
   await handleVoidApiResponse(response, 'Không thể xoá vĩnh viễn công việc');
+}
+
+async function runBulkTaskRequest(
+  url: string,
+  method: 'POST' | 'PATCH' | 'DELETE',
+  body: unknown,
+  fallbackMessage: string,
+): Promise<BulkTaskResult> {
+  const response = await fetch(url, {
+    method,
+    headers: {
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...getAuthHeaders(),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+
+  return handleApiResponse<BulkTaskResult>(response, fallbackMessage);
+}
+
+export function bulkDeleteTasks(taskIds: number[]): Promise<BulkTaskResult> {
+  return runBulkTaskRequest('/api/tasks/bulk-delete', 'POST', { taskIds }, 'Không thể xoá hàng loạt công việc');
+}
+
+export function bulkUpdateTaskStatus(taskIds: number[], status: TaskStatus): Promise<BulkTaskResult> {
+  return runBulkTaskRequest(
+    '/api/tasks/bulk-status',
+    'PATCH',
+    { taskIds, status },
+    'Không thể cập nhật trạng thái hàng loạt',
+  );
+}
+
+export function bulkRestoreTasks(taskIds: number[]): Promise<BulkTaskResult> {
+  return runBulkTaskRequest(
+    '/api/tasks/trash/bulk-restore',
+    'POST',
+    { taskIds },
+    'Không thể khôi phục hàng loạt công việc',
+  );
+}
+
+export function bulkPermanentDeleteTasks(taskIds: number[]): Promise<BulkTaskResult> {
+  return runBulkTaskRequest(
+    '/api/tasks/trash/bulk-permanent-delete',
+    'POST',
+    { taskIds },
+    'Không thể xoá vĩnh viễn hàng loạt công việc',
+  );
+}
+
+export function emptyTaskTrash(teamId?: number): Promise<BulkTaskResult> {
+  const url = teamId !== undefined ? `/api/tasks/trash/empty?teamId=${teamId}` : '/api/tasks/trash/empty';
+  return runBulkTaskRequest(url, 'DELETE', undefined, 'Không thể dọn sạch thùng rác');
 }
 
 export async function reorderTasks(taskIds: number[], status?: TaskStatus, teamId?: number): Promise<void> {

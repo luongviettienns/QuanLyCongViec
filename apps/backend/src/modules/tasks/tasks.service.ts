@@ -26,6 +26,8 @@ import { UpdateSubtaskStatusDto } from './dto/update-subtask-status.dto.js';
 import { ReorderSubtasksDto } from './dto/reorder-subtasks.dto.js';
 import type { TaskWithTeamAndMembers } from './policies/task-policy.service.js';
 import type { Task } from '@prisma/client';
+import { BulkUpdateTaskStatusDto } from './dto/bulk-update-task-status.dto.js';
+import { runSequentialTaskBatch, type BulkTaskResult } from './services/task-batch.utils.js';
 
 @Injectable()
 export class TasksService {
@@ -178,6 +180,28 @@ export class TasksService {
 
   permanentDelete(id: number, userId: number): Promise<{ success: boolean; message: string }> {
     return this.taskTrashService.permanentDelete(id, userId);
+  }
+
+  bulkRemove(taskIds: number[], userId: number): Promise<BulkTaskResult> {
+    return this.taskTrashService.bulkRemove(taskIds, userId);
+  }
+
+  bulkRestore(taskIds: number[], userId: number): Promise<BulkTaskResult> {
+    return this.taskTrashService.bulkRestore(taskIds, userId);
+  }
+
+  bulkPermanentDelete(taskIds: number[], userId: number): Promise<BulkTaskResult> {
+    return this.taskTrashService.bulkPermanentDelete(taskIds, userId);
+  }
+
+  emptyTrash(userId: number, teamId?: number): Promise<BulkTaskResult> {
+    return this.taskTrashService.emptyTrash(userId, teamId);
+  }
+
+  bulkUpdateStatus(dto: BulkUpdateTaskStatusDto, userId: number): Promise<BulkTaskResult> {
+    return runSequentialTaskBatch(dto.taskIds, (id) =>
+      this.updateStatus(id, { status: dto.status }, userId),
+    );
   }
 
   updateStatus(id: number, data: UpdateTaskStatusDto, userId: number): Promise<Task> {

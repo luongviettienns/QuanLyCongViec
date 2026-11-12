@@ -5,6 +5,7 @@ import {
   getProfile,
   login as apiLogin,
   register as apiRegister,
+  updateProfile as apiUpdateProfile,
   removeAuthToken,
   getAuthToken,
   subscribeUnauthorized,
@@ -96,6 +97,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
   }
 
+  async function updateProfile(name: string): Promise<User> {
+    const updatedUser = await apiUpdateProfile({ name });
+    setUser(updatedUser);
+    return updatedUser;
+  }
+
   function logout() {
     markManualLogout();
     removeAuthToken();
@@ -105,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, updateProfile, logout }}>
       {children}
     </AuthContext.Provider>
   );

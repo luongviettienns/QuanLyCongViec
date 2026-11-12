@@ -18,14 +18,18 @@ import type {
   TaskFilterState,
   TaskFilterPatch,
   TaskViewMode,
+  BulkTaskResult,
 } from '../types/task.types.ts';
 import type { Category } from '../../categories/types/category.types.ts';
 import type { Team } from '../../teams/types/team.types.ts';
+import { formatCountLabel } from '../utils/task-filter.utils.ts';
 
 export interface TasksPageProps {
   tasks: Task[];
   trashTasks: TrashTask[];
   trashLoading: boolean;
+  pendingInvitesCount?: number;
+  trashCount?: number;
   categories: Category[];
   teams: Team[];
   loading: boolean;
@@ -40,6 +44,11 @@ export interface TasksPageProps {
   onDelete: (id: number) => void;
   onRestore: (id: number) => Promise<void>;
   onPermanentDelete: (id: number) => Promise<void>;
+  onBulkDelete?: (ids: number[]) => Promise<BulkTaskResult | null | void>;
+  onBulkStatusMove?: (ids: number[], status: TaskStatus) => Promise<BulkTaskResult | null | void>;
+  onBulkRestore?: (ids: number[]) => Promise<BulkTaskResult | null | void>;
+  onBulkPermanentDelete?: (ids: number[]) => Promise<BulkTaskResult | null | void>;
+  onEmptyTrash?: () => Promise<BulkTaskResult | null | void>;
   onReorder: (taskIds: number[], status?: TaskStatus) => Promise<void>;
   onStatusMove: (taskId: number, newStatus: TaskStatus, newPosition?: number) => Promise<void>;
   categoryModalOpen?: boolean;
@@ -52,6 +61,8 @@ export default function TasksPage({
   tasks,
   trashTasks,
   trashLoading,
+  pendingInvitesCount = 0,
+  trashCount = 0,
   categories,
   teams,
   loading,
@@ -66,6 +77,11 @@ export default function TasksPage({
   onDelete,
   onRestore,
   onPermanentDelete,
+  onBulkDelete,
+  onBulkStatusMove,
+  onBulkRestore,
+  onBulkPermanentDelete,
+  onEmptyTrash,
   onReorder,
   onStatusMove,
   categoryModalOpen = false,
@@ -92,7 +108,11 @@ export default function TasksPage({
             { value: 'both', label: 'Cả hai', icon: <AppstoreOutlined /> },
             { value: 'kanban', label: 'Kanban', icon: <ProjectOutlined /> },
             { value: 'table', label: 'Bảng', icon: <TableOutlined /> },
-            { value: 'trash', label: 'Thùng rác', icon: <DeleteOutlined /> },
+            {
+              value: 'trash',
+              label: formatCountLabel('Thùng rác', trashCount),
+              icon: <DeleteOutlined />,
+            },
           ]}
         />
 
@@ -115,6 +135,7 @@ export default function TasksPage({
         categories={categories}
         teams={teams}
         currentUserId={currentUserId}
+        pendingInvitesCount={pendingInvitesCount}
         onFiltersChange={onFiltersChange}
         onReset={onReset}
       />
@@ -126,6 +147,9 @@ export default function TasksPage({
           loading={trashLoading}
           onRestore={onRestore}
           onPermanentDelete={onPermanentDelete}
+          onBulkRestore={onBulkRestore}
+          onBulkPermanentDelete={onBulkPermanentDelete}
+          onEmptyTrash={onEmptyTrash}
         />
       ) : (
         <>
@@ -149,6 +173,8 @@ export default function TasksPage({
               loading={loading}
               onEdit={onEdit}
               onDelete={onDelete}
+              onBulkDelete={onBulkDelete}
+              onBulkStatusMove={onBulkStatusMove}
             />
           )}
         </>

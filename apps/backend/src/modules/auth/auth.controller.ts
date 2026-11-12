@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Patch,
   Body,
   UseGuards,
   HttpCode,
@@ -17,6 +18,8 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
+import { UpdateProfileDto } from './dto/update-profile.dto.js';
+import { ChangePasswordDto } from './dto/change-password.dto.js';
 import { AuthResponseDto, UserResponseDto } from './dto/auth-response.dto.js';
 import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 import { Public } from './decorators/public.decorator.js';
@@ -65,5 +68,37 @@ export class AuthController {
   })
   async getProfile(@CurrentUser('id') userId: number): Promise<UserResponseDto> {
     return this.authService.getProfile(userId);
+  }
+
+  @Patch('profile')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Cập nhật tên hiển thị tài khoản đang đăng nhập' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Cập nhật hồ sơ thành công',
+    type: UserResponseDto,
+  })
+  async updateProfile(
+    @CurrentUser('id') userId: number,
+    @Body() dto: UpdateProfileDto,
+  ): Promise<UserResponseDto> {
+    return this.authService.updateProfile(userId, dto);
+  }
+
+  @Patch('password')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Đổi mật khẩu tài khoản đang đăng nhập' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Đổi mật khẩu thành công',
+  })
+  async changePassword(
+    @CurrentUser('id') userId: number,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<{ message: string }> {
+    return this.authService.changePassword(userId, dto);
   }
 }

@@ -10,6 +10,8 @@ import {
   Query,
   ParseIntPipe,
   UseGuards,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { TasksService } from './tasks.service.js';
@@ -21,6 +23,9 @@ import { ReturnTaskDto } from './dto/return-task.dto.js';
 import { MoveTaskTeamDto } from './dto/move-task-team.dto.js';
 import { ReorderTasksDto } from './dto/reorder-tasks.dto.js';
 import { FilterTasksDto } from './dto/filter-tasks.dto.js';
+import { BulkTaskIdsDto } from './dto/bulk-task-ids.dto.js';
+import { BulkUpdateTaskStatusDto } from './dto/bulk-update-task-status.dto.js';
+import { EmptyTrashDto } from './dto/empty-trash.dto.js';
 import { InviteCollaboratorDto } from './dto/invite-collaborator.dto.js';
 import { RespondCollaboratorDto } from './dto/respond-collaborator.dto.js';
 import { CreateSubtaskDto } from './dto/create-subtask.dto.js';
@@ -71,6 +76,54 @@ export class TasksController {
     @Query() query?: FilterTasksDto,
   ) {
     return this.tasksService.findTrash(query, user.id);
+  }
+
+  @ApiOperation({ summary: 'Cập nhật trạng thái hàng loạt cho nhiều công việc' })
+  @Patch('bulk-status')
+  bulkUpdateStatus(
+    @Body() body: BulkUpdateTaskStatusDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasksService.bulkUpdateStatus(body, user.id);
+  }
+
+  @ApiOperation({ summary: 'Xoá mềm hàng loạt nhiều công việc vào thùng rác' })
+  @Post('bulk-delete')
+  @HttpCode(HttpStatus.OK)
+  bulkDelete(
+    @Body() body: BulkTaskIdsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasksService.bulkRemove(body.taskIds, user.id);
+  }
+
+  @ApiOperation({ summary: 'Khôi phục hàng loạt công việc từ thùng rác' })
+  @Post('trash/bulk-restore')
+  @HttpCode(HttpStatus.OK)
+  bulkRestore(
+    @Body() body: BulkTaskIdsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasksService.bulkRestore(body.taskIds, user.id);
+  }
+
+  @ApiOperation({ summary: 'Xoá vĩnh viễn hàng loạt công việc trong thùng rác' })
+  @Post('trash/bulk-permanent-delete')
+  @HttpCode(HttpStatus.OK)
+  bulkPermanentDelete(
+    @Body() body: BulkTaskIdsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasksService.bulkPermanentDelete(body.taskIds, user.id);
+  }
+
+  @ApiOperation({ summary: 'Dọn sạch các công việc có quyền quản lý trong thùng rác' })
+  @Delete('trash/empty')
+  emptyTrash(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query?: EmptyTrashDto,
+  ) {
+    return this.tasksService.emptyTrash(user.id, query?.teamId);
   }
 
   @ApiOperation({ summary: 'Lấy chi tiết công việc theo ID' })

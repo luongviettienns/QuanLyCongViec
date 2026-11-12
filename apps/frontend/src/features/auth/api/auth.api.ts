@@ -90,3 +90,32 @@ export async function getProfile(signal?: AbortSignal): Promise<User> {
 
   return response.json();
 }
+
+export async function updateProfile(payload: { name: string }): Promise<User> {
+  const response = await fetch('/api/auth/profile', {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return handleApiResponse<User>(response, 'Không thể cập nhật thông tin cá nhân');
+}
+
+export async function changePassword(payload: {
+  currentPassword: string;
+  newPassword: string;
+}): Promise<{ message: string }> {
+  const response = await fetch('/api/auth/password', {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return handleApiResponse<{ message: string }>(response, 'Không thể đổi mật khẩu');
+}

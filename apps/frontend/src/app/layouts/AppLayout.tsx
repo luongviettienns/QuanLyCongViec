@@ -15,15 +15,16 @@ import {
   CheckSquareOutlined,
   DashboardOutlined,
   ReloadOutlined,
-  PlusOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   LogoutOutlined,
   LoginOutlined,
   TagsOutlined,
   TeamOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../features/auth/hooks/useAuth';
+import AccountSettingsModal from '../../features/auth/components/AccountSettingsModal';
 import { NotificationBell, type NotificationDestination } from '../../features/notifications';
 
 const { Header, Sider, Content } = Layout;
@@ -32,7 +33,6 @@ const { Text } = Typography;
 interface AppLayoutProps {
   children: ReactNode;
   onReload: () => void;
-  onCreateTask: () => void;
   onOpenCategories?: () => void;
   onOpenAuth?: () => void;
   loading?: boolean;
@@ -44,7 +44,6 @@ interface AppLayoutProps {
 export default function AppLayout({
   children,
   onReload,
-  onCreateTask,
   onOpenAuth,
   loading = false,
   currentNav = 'tasks',
@@ -53,6 +52,7 @@ export default function AppLayout({
 }: AppLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [accountModalOpen, setAccountModalOpen] = useState(false);
   const screens = useResponsive();
   const isMobile = !screens.md;
   const { user, logout } = useAuth();
@@ -93,6 +93,14 @@ export default function AppLayout({
     },
     {
       type: 'divider',
+    },
+    {
+      key: 'account-settings',
+      icon: <SettingOutlined />,
+      label: 'Tài khoản & Mật khẩu',
+      onClick: () => {
+        setAccountModalOpen(true);
+      },
     },
     {
       key: 'logout',
@@ -265,17 +273,6 @@ export default function AppLayout({
               {screens.sm ? 'Tải lại' : undefined}
             </Button>
 
-            {currentNav === 'tasks' && (
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={onCreateTask}
-                aria-label="Thêm công việc"
-              >
-                {screens.sm ? 'Thêm công việc' : undefined}
-              </Button>
-            )}
-
             {user ? (
               <>
                 <NotificationBell
@@ -330,25 +327,10 @@ export default function AppLayout({
         </Content>
       </Layout>
 
-      {isMobile && currentNav === 'tasks' && (
-        <Button
-          type="primary"
-          shape="circle"
-          icon={<PlusOutlined style={{ fontSize: 20 }} />}
-          onClick={onCreateTask}
-          style={{
-            position: 'fixed',
-            bottom: 24,
-            right: 20,
-            width: 52,
-            height: 52,
-            boxShadow: '0 4px 16px rgba(22, 119, 255, 0.45)',
-            zIndex: 999,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          aria-label="Thêm công việc"
+      {user && (
+        <AccountSettingsModal
+          open={accountModalOpen}
+          onClose={() => setAccountModalOpen(false)}
         />
       )}
     </Layout>

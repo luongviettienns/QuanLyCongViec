@@ -5,6 +5,7 @@ import {
   Form,
   Alert,
   Button,
+  Popconfirm,
   message,
   Tabs,
 } from 'antd';
@@ -12,6 +13,7 @@ import {
   InfoCircleOutlined,
   TeamOutlined,
   UnorderedListOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
 import { useResponsive } from '../../../shared/hooks';
 import type { Task, TaskFormValues } from '../types/task.types';
@@ -40,6 +42,7 @@ export interface TaskFormModalProps {
   teams?: Team[];
   onClose: () => void;
   onSuccess: () => Promise<void> | void;
+  onDelete?: (id: number) => Promise<boolean | void> | void;
 }
 
 function getTaskVersion(task: Task | null): string {
@@ -69,10 +72,12 @@ export default function TaskFormModal({
   teams = [],
   onClose,
   onSuccess,
+  onDelete,
 }: TaskFormModalProps) {
   const { user } = useAuth();
   const [form] = Form.useForm<TaskFormValues>();
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState<'info' | 'collaborators' | 'subtasks'>(
     () => initialTab,
   );
@@ -187,6 +192,25 @@ export default function TaskFormModal({
     onClose();
     await onSuccess();
   }, [onClose, onSuccess]);
+
+  const handleDeleteFromModal = useCallback(async () => {
+    if (!task || !onDelete) {
+      return;
+    }
+    try {
+      setDeleting(true);
+      const deleted = await onDelete(task.id);
+      if (deleted !== false) {
+        setIsFormDirty(false);
+        onClose();
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }, [task, onDelete, onClose]);
+
+  const canDeleteTask = Boolean(task && permissions?.canDelete && onDelete);
+  const showSaveButton = !isReadOnly && (!task || activeTab === 'info');
 
   // Consolidated single alert for task info form according to role and status
   let alertConfig: { type: 'warning' | 'info'; message: string; description?: string } | null = null;
@@ -359,8 +383,9 @@ export default function TaskFormModal({
             : 'Thêm công việc mới'
       }
       open={open}
-      onOk={() => form.submit()}
       onCancel={onClose}
+      closable={!deleting}
+      maskClosable={!deleting}
       afterOpenChange={(visible) => {
         if (visible) {
           setActiveTab(initialTab ?? 'info');
@@ -387,14 +412,52 @@ export default function TaskFormModal({
           }
         }
       }}
-      confirmLoading={saving}
-      okButtonProps={
-        isReadOnly || (task && activeTab !== 'info')
-          ? { style: { display: 'none' } }
-          : { disabled: isSaveDisabled }
+      footer={
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: canDeleteTask ? 'space-between' : 'flex-end',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          {canDeleteTask && task ? (
+            <Popconfirm
+              title="Xác nhận xoá"
+              description={`Bạn có chắc chắn muốn xoá công việc "${task.title}"?`}
+              onConfirm={() => void handleDeleteFromModal()}
+              okText="Xoá"
+              cancelText="Huỷ"
+              okButtonProps={{ danger: true, loading: deleting }}
+            >
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                loading={deleting}
+                disabled={saving}
+              >
+                Xoá
+              </Button>
+            </Popconfirm>
+          ) : null}
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button onClick={onClose} disabled={saving || deleting}>
+              {showSaveButton ? 'Huỷ' : 'Đóng'}
+            </Button>
+            {showSaveButton && (
+              <Button
+                type="primary"
+                loading={saving}
+                disabled={isSaveDisabled || deleting}
+                onClick={() => form.submit()}
+              >
+                {task ? 'Lưu thay đổi' : 'Tạo mới'}
+              </Button>
+            )}
+          </div>
+        </div>
       }
-      okText={task ? 'Lưu thay đổi' : 'Tạo mới'}
-      cancelText={isReadOnly || (task && activeTab !== 'info') ? 'Đóng' : 'Huỷ'}
       destroyOnHidden
       width={screens.sm ? 640 : '95%'}
       style={{ maxWidth: 640 }}

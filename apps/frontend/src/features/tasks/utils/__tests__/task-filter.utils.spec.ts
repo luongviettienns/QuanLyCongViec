@@ -5,6 +5,10 @@ import {
   applyFilterPatch,
   computeIsFiltering,
   countActiveFilters,
+  countActiveToolbarFilters,
+  hasAnyToolbarFilter,
+  formatCountLabel,
+  shouldShowPendingInvitesShortcut,
   loadSavedViewMode,
   saveViewMode,
   buildAssigneeOptions,
@@ -134,5 +138,47 @@ describe('task-filter.utils', () => {
       { value: 30, label: 'Charlie' },
       { value: 99, label: 'Tôi' },
     ]);
+  });
+
+  it('countActiveToolbarFilters and hasAnyToolbarFilter handle active vs trash modes cleanly', () => {
+    const base = createDefaultTaskFilters();
+    assert.equal(countActiveToolbarFilters(base, false), 0);
+    assert.equal(hasAnyToolbarFilter(base, false), false);
+
+    // Status, deadlineFilter, sortBy, and scopeFilter are ignored in trash mode
+    const withActiveOnly = applyFilterPatch(base, {
+      statusFilter: 'DONE',
+      deadlineFilter: 'overdue',
+      sortBy: 'due_date_asc',
+      scopeFilter: 'pending_invites',
+      priorityFilter: 'HIGH',
+    });
+    assert.equal(countActiveToolbarFilters(withActiveOnly, false), 4);
+    assert.equal(hasAnyToolbarFilter(withActiveOnly, false), true);
+
+    // In trash mode only categoryFilter, priorityFilter, assigneeFilter count as secondary filters
+    assert.equal(countActiveToolbarFilters(withActiveOnly, true), 1);
+    assert.equal(hasAnyToolbarFilter(withActiveOnly, true), true);
+
+    const onlyHiddenTrashFilters = applyFilterPatch(base, {
+      statusFilter: 'TODO',
+      scopeFilter: 'my_work',
+    });
+    assert.equal(countActiveToolbarFilters(onlyHiddenTrashFilters, true), 0);
+    assert.equal(hasAnyToolbarFilter(onlyHiddenTrashFilters, true), false);
+    assert.equal(hasAnyToolbarFilter(applyFilterPatch(base, { teamFilter: 3 }), true), true);
+  });
+
+  it('formatCountLabel and shouldShowPendingInvitesShortcut format badges and visibility accurately', () => {
+    assert.equal(formatCountLabel('Thùng rác'), 'Thùng rác');
+    assert.equal(formatCountLabel('Thùng rác', 0), 'Thùng rác');
+    assert.equal(formatCountLabel('Thùng rác', -2), 'Thùng rác');
+    assert.equal(formatCountLabel('Thùng rác', 4), 'Thùng rác (4)');
+    assert.equal(formatCountLabel('Lời mời chờ', 2), 'Lời mời chờ (2)');
+
+    assert.equal(shouldShowPendingInvitesShortcut(false, 'all', 2), true);
+    assert.equal(shouldShowPendingInvitesShortcut(false, 'pending_invites', 2), false);
+    assert.equal(shouldShowPendingInvitesShortcut(false, 'all', 0), false);
+    assert.equal(shouldShowPendingInvitesShortcut(true, 'all', 5), false);
   });
 });
