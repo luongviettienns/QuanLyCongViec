@@ -15,6 +15,11 @@ import { NotificationEventService } from '../../notifications/services/notificat
 import { RealtimeService } from '../../realtime/realtime.service.js';
 import { TeamActivityService } from '../../team-activity/team-activity.service.js';
 import { type Task, Prisma, TaskStatus, TaskPriority, TeamActivityAction } from '@prisma/client';
+import {
+  parseDateOnly,
+  assertDateRangeValid,
+  validateScopedCategory,
+} from './task-validation.utils.js';
 
 @Injectable()
 export class TaskCrudService {
@@ -38,25 +43,6 @@ export class TaskCrudService {
     return this.prisma.$transaction(fn);
   }
 
-  private parseDateOnly(dateStr: string): Date {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
-    if (!match) {
-      throw new BadRequestException('Định dạng ngày phải là YYYY-MM-DD');
-    }
-    const year = parseInt(match[1], 10);
-    const month = parseInt(match[2], 10);
-    const day = parseInt(match[3], 10);
-    const date = new Date(Date.UTC(year, month - 1, day));
-    if (
-      date.getUTCFullYear() !== year ||
-      date.getUTCMonth() !== month - 1 ||
-      date.getUTCDate() !== day 
-    ) {
-      throw new BadRequestException('Ngày không hợp lệ trong lịch');
-    }
-    return date;
-  }
-
   async create(data: CreateTaskDto, userId: number): Promise<Task> {
     const cleanTitle = data.title.trim();
 
@@ -74,17 +60,15 @@ export class TaskCrudService {
 
     let parsedStartDate: Date | null = null;
     if (data.startDate) {
-      parsedStartDate = this.parseDateOnly(data.startDate);
+      parsedStartDate = parseDateOnly(data.startDate);
     }
 
     let parsedDueDate: Date | null = null;
     if (data.dueDate) {
-      parsedDueDate = this.parseDateOnly(data.dueDate);
+      parsedDueDate = parseDateOnly(data.dueDate);
     }
 
-    if (parsedStartDate && parsedDueDate && parsedStartDate > parsedDueDate) {
-      throw new BadRequestException('Ngày bắt đầu không được lớn hơn hạn chót (deadline)');
-    }
+    assertDateRangeValid(parsedStartDate, parsedDueDate);
 
     const initialStatus: TaskStatus = data.status ? data.status : TaskStatus.TODO;
     const initialPriority: TaskPriority = data.priority ? data.priority : TaskPriority.MEDIUM;
@@ -140,28 +124,12 @@ export class TaskCrudService {
         }
 
         if (data.categoryId) {
-          if (data.teamId) {
-            const category = await tx.category.findFirst({
-              where: {
-                id: data.categoryId,
-                teamId: data.teamId,
-              },
-            });
-            if (!category) {
-              throw new BadRequestException(`Danh mục #${data.categoryId} không thuộc nhóm này`);
-            }
-          } else {
-            const category = await tx.category.findFirst({
-              where: {
-                id: data.categoryId,
-                userId,
-                teamId: null,
-              },
-            });
-            if (!category) {
-              throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
-            }
-          }
+          await validateScopedCategory(
+            tx,
+            data.categoryId,
+            data.teamId ?? null,
+            [userId],
+          );
         }
 
         if (data.teamId) {
@@ -320,7 +288,7 @@ export class TaskCrudService {
           if (data.startDate === null || data.startDate === '') {
             updateData.startDate = null;
           } else if (data.startDate) {
-            parsedStartDate = this.parseDateOnly(data.startDate);
+            parsedStartDate = parseDateOnly(data.startDate);
             updateData.startDate = parsedStartDate;
           }
         }
@@ -330,7 +298,7 @@ export class TaskCrudService {
           if (data.dueDate === null || data.dueDate === '') {
             updateData.dueDate = null;
           } else if (data.dueDate) {
-            parsedDueDate = this.parseDateOnly(data.dueDate);
+            parsedDueDate = parseDateOnly(data.dueDate);
             updateData.dueDate = parsedDueDate;
           }
         }
@@ -338,9 +306,7 @@ export class TaskCrudService {
         const effectiveStartDate = hasStartDate ? parsedStartDate : currentTask.startDate;
         const effectiveDueDate = hasDueDate ? parsedDueDate : currentTask.dueDate;
 
-        if (effectiveStartDate && effectiveDueDate && effectiveStartDate > effectiveDueDate) {
-          throw new BadRequestException('Ngày bắt đầu không được lớn hơn hạn chót (deadline)');
-        }
+        assertDateRangeValid(effectiveStartDate, effectiveDueDate);
 
         if (hasTitle && data.title !== undefined) {
           const cleanTitle = data.title.trim();
@@ -384,32 +350,13 @@ export class TaskCrudService {
         if (hasCategory) {
           if (data.categoryId) {
             const effectiveTeamId = currentTask.teamId;
-            if (effectiveTeamId) {
-              const category = await tx.category.findFirst({
-                where: {
-                  id: data.categoryId,
-                  teamId: effectiveTeamId,
-                },
-              });
-              if (!category) {
-                if (currentTask.categoryId !== data.categoryId) {
-                  throw new BadRequestException(`Danh mục #${data.categoryId} không thuộc nhóm này`);
-                }
-              }
-            } else {
-              const category = await tx.category.findFirst({
-                where: {
-                  id: data.categoryId,
-                  userId: { in: [userId, currentTask.userId] },
-                  teamId: null,
-                },
-              });
-              if (!category) {
-                if (currentTask.categoryId !== data.categoryId) {
-                  throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
-                }
-              }
-            }
+            await validateScopedCategory(
+              tx,
+              data.categoryId,
+              effectiveTeamId,
+              [userId, currentTask.userId],
+              currentTask.categoryId,
+            );
             updateData.category = { connect: { id: data.categoryId } };
           } else {
             updateData.category = { disconnect: true };

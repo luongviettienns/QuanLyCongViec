@@ -3,6 +3,7 @@ import { PrismaService } from '../../../database/prisma.service.js';
 import { FilterTasksDto } from '../dto/filter-tasks.dto.js';
 import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { Prisma } from '@prisma/client';
+import { getVietnamTodayDate } from './task-validation.utils.js';
 
 @Injectable()
 export class TaskStatsService {
@@ -12,18 +13,7 @@ export class TaskStatsService {
   ) {}
 
   async getStats(userId: number, query?: FilterTasksDto) {
-    const vnDateFormatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Ho_Chi_Minh',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
-    const [vnYear, vnMonth, vnDay] = vnDateFormatter
-      .format(new Date())
-      .split('-')
-      .map((part) => parseInt(part, 10));
-
-    const todayDate = new Date(Date.UTC(vnYear, vnMonth - 1, vnDay));
+    const todayDate = getVietnamTodayDate();
     const next7Days = new Date(todayDate);
     next7Days.setUTCDate(next7Days.getUTCDate() + 7);
 
