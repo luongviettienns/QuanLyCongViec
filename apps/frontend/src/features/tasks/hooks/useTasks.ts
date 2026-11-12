@@ -1,82 +1,172 @@
-import { useEffect, useCallback } from 'react';
-import type { StatusFilter, PriorityFilter, TaskStatus, ScopeFilter } from '../types/task.types';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import type {
+  TaskStatus,
+  TaskViewMode,
+  TaskFilterState,
+  TaskFilterPatch,
+} from '../types/task.types';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { useRealtimeReconnect } from '../../realtime';
 import { useTaskFilters } from './useTaskFilters';
 import { useTaskQueries } from './useTaskQueries';
 import { useTaskMutations } from './useTaskMutations';
 import { useTaskBoard } from './useTaskBoard';
+import {
+  createDefaultTaskFilters,
+  applyFilterPatch,
+  loadSavedViewMode,
+  saveViewMode,
+} from '../utils/task-filter.utils';
 
 export function useTasks(options?: { enabled?: boolean }) {
   const enabled = options?.enabled ?? true;
   const { user, loading: authLoading } = useAuth();
   const isAuthenticated = Boolean(user);
 
-  const filters = useTaskFilters();
+  const {
+    filters,
+    isFiltering,
+    updateFilters,
+    resetFilters,
+  } = useTaskFilters();
+
+  const filtersRef = useRef<TaskFilterState>(filters);
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
+
+  const [viewMode, setViewModeState] = useState<TaskViewMode>(loadSavedViewMode);
+
   const queries = useTaskQueries(isAuthenticated);
   const mutations = useTaskMutations(isAuthenticated);
 
-  const syncCanonicalTasks = useCallback(() => {
-    void queries.fetchTasks(
-      filters.searchText,
-      filters.statusFilter,
-      filters.categoryFilter,
-      filters.priorityFilter,
-      filters.teamFilter,
-      filters.scopeFilter,
-    );
-  }, [
-    queries,
-    filters.searchText,
-    filters.statusFilter,
-    filters.categoryFilter,
-    filters.priorityFilter,
-    filters.teamFilter,
-    filters.scopeFilter,
-  ]);
-
-  const board = useTaskBoard(
-    isAuthenticated,
-    queries.tasks,
-    queries.setTasks,
-    user,
-    queries.teams,
-    syncCanonicalTasks,
-  );
-
   const {
     tasks,
+    setTasks,
+    trashTasks,
+    trashLoading,
+    setTrashLoading,
     categories,
     teams,
     loading,
     setLoading,
     fetchTasks,
+    fetchTrashTasks,
     fetchCategories,
     fetchTeams,
-    resetState,
+    resetState: resetQueriesState,
   } = queries;
 
-  const {
-    searchText,
-    statusFilter,
-    categoryFilter,
-    priorityFilter,
-    teamFilter,
-    scopeFilter,
-    isFiltering,
-    setSearchText,
-    setStatusFilter,
-    setCategoryFilter,
-    setPriorityFilter,
-    setTeamFilter,
-    setScopeFilter,
-    resetFilters,
-  } = filters;
+  const syncCanonicalTasks = useCallback(() => {
+    void fetchTasks(filtersRef.current);
+  }, [fetchTasks]);
+
+  const board = useTaskBoard(
+    isAuthenticated,
+    tasks,
+    setTasks,
+    user,
+    teams,
+    syncCanonicalTasks,
+  );
 
   const resetAll = useCallback(() => {
-    resetState();
+    resetQueriesState();
     resetFilters();
-  }, [resetState, resetFilters]);
+    filtersRef.current = createDefaultTaskFilters();
+  }, [resetQueriesState, resetFilters]);
+
+  const setViewMode = useCallback(
+    (nextMode: TaskViewMode) => {
+      setViewModeState(nextMode);
+      if (nextMode !== 'trash') {
+        saveViewMode(nextMode);
+      } else {
+        setTrashLoading(true);
+        void fetchTrashTasks(filtersRef.current);
+      }
+    },
+    [fetchTrashTasks, setTrashLoading],
+  );
+
+  const applyFilters = useCallback(
+    (patch: TaskFilterPatch) => {
+      const next = applyFilterPatch(filtersRef.current, patch);
+      filtersRef.current = next;
+      updateFilters(patch);
+      if (!isAuthenticated) return;
+      if (viewMode === 'trash') {
+        setTrashLoading(true);
+        void fetchTrashTasks(next);
+      } else {
+        setLoading(true);
+        void fetchTasks(next);
+      }
+    },
+    [
+      isAuthenticated,
+      updateFilters,
+      viewMode,
+      fetchTrashTasks,
+      fetchTasks,
+      setLoading,
+      setTrashLoading,
+    ],
+  );
+
+  const handleReset = useCallback(() => {
+    if (!isAuthenticated) return;
+    const next = createDefaultTaskFilters();
+    filtersRef.current = next;
+    resetFilters();
+    if (viewMode === 'trash') {
+      setTrashLoading(true);
+      void fetchTrashTasks(next);
+    } else {
+      setLoading(true);
+      void fetchTasks(next);
+    }
+  }, [
+    isAuthenticated,
+    resetFilters,
+    viewMode,
+    fetchTrashTasks,
+    fetchTasks,
+    setLoading,
+    setTrashLoading,
+  ]);
+
+  const refetch = useCallback(async () => {
+    if (!isAuthenticated) {
+      resetAll();
+      return;
+    }
+    if (viewMode === 'trash') {
+      setTrashLoading(true);
+      await Promise.all([
+        fetchTrashTasks(filtersRef.current),
+        fetchCategories(),
+        fetchTeams(),
+      ]);
+    } else {
+      setLoading(true);
+      await Promise.all([
+        fetchTasks(filtersRef.current),
+        fetchCategories(),
+        fetchTeams(),
+      ]);
+    }
+  }, [
+    isAuthenticated,
+    resetAll,
+    viewMode,
+    fetchTrashTasks,
+    fetchTasks,
+    fetchCategories,
+    fetchTeams,
+    setLoading,
+    setTrashLoading,
+  ]);
 
   useEffect(() => {
     if (!enabled || authLoading) {
@@ -98,7 +188,7 @@ export function useTasks(options?: { enabled?: boolean }) {
       await Promise.all([
         fetchCategories(),
         fetchTeams(),
-        fetchTasks('', 'ALL', 'ALL', 'ALL', 'ALL', 'all'),
+        fetchTasks(filtersRef.current),
       ]);
     }
 
@@ -118,208 +208,6 @@ export function useTasks(options?: { enabled?: boolean }) {
     setLoading,
   ]);
 
-  const handleSearch = useCallback(
-    (value: string) => {
-      if (!isAuthenticated) return;
-      setSearchText(value);
-      setLoading(true);
-      void fetchTasks(
-        value,
-        statusFilter,
-        categoryFilter,
-        priorityFilter,
-        teamFilter,
-        scopeFilter,
-      );
-    },
-    [
-      isAuthenticated,
-      setSearchText,
-      setLoading,
-      fetchTasks,
-      statusFilter,
-      categoryFilter,
-      priorityFilter,
-      teamFilter,
-      scopeFilter,
-    ],
-  );
-
-  const handleStatusChange = useCallback(
-    (status: StatusFilter) => {
-      if (!isAuthenticated) return;
-      setStatusFilter(status);
-      setLoading(true);
-      void fetchTasks(
-        searchText,
-        status,
-        categoryFilter,
-        priorityFilter,
-        teamFilter,
-        scopeFilter,
-      );
-    },
-    [
-      isAuthenticated,
-      setStatusFilter,
-      setLoading,
-      fetchTasks,
-      searchText,
-      categoryFilter,
-      priorityFilter,
-      teamFilter,
-      scopeFilter,
-    ],
-  );
-
-  const handleCategoryChange = useCallback(
-    (catId: number | 'ALL') => {
-      if (!isAuthenticated) return;
-      setCategoryFilter(catId);
-      setLoading(true);
-      void fetchTasks(
-        searchText,
-        statusFilter,
-        catId,
-        priorityFilter,
-        teamFilter,
-        scopeFilter,
-      );
-    },
-    [
-      isAuthenticated,
-      setCategoryFilter,
-      setLoading,
-      fetchTasks,
-      searchText,
-      statusFilter,
-      priorityFilter,
-      teamFilter,
-      scopeFilter,
-    ],
-  );
-
-  const handlePriorityChange = useCallback(
-    (priority: PriorityFilter) => {
-      if (!isAuthenticated) return;
-      setPriorityFilter(priority);
-      setLoading(true);
-      void fetchTasks(
-        searchText,
-        statusFilter,
-        categoryFilter,
-        priority,
-        teamFilter,
-        scopeFilter,
-      );
-    },
-    [
-      isAuthenticated,
-      setPriorityFilter,
-      setLoading,
-      fetchTasks,
-      searchText,
-      statusFilter,
-      categoryFilter,
-      teamFilter,
-      scopeFilter,
-    ],
-  );
-
-  const handleTeamChange = useCallback(
-    (tId: number | 'ALL') => {
-      if (!isAuthenticated) return;
-      setTeamFilter(tId);
-      setLoading(true);
-      void fetchTasks(
-        searchText,
-        statusFilter,
-        categoryFilter,
-        priorityFilter,
-        tId,
-        scopeFilter,
-      );
-    },
-    [
-      isAuthenticated,
-      setTeamFilter,
-      setLoading,
-      fetchTasks,
-      searchText,
-      statusFilter,
-      categoryFilter,
-      priorityFilter,
-      scopeFilter,
-    ],
-  );
-
-  const handleScopeChange = useCallback(
-    (scope: ScopeFilter) => {
-      if (!isAuthenticated) return;
-      setScopeFilter(scope);
-      setLoading(true);
-      void fetchTasks(
-        searchText,
-        statusFilter,
-        categoryFilter,
-        priorityFilter,
-        teamFilter,
-        scope,
-      );
-    },
-    [
-      isAuthenticated,
-      setScopeFilter,
-      setLoading,
-      fetchTasks,
-      searchText,
-      statusFilter,
-      categoryFilter,
-      priorityFilter,
-      teamFilter,
-    ],
-  );
-
-  const handleReset = useCallback(() => {
-    if (!isAuthenticated) return;
-    resetFilters();
-    setLoading(true);
-    void fetchTasks('', 'ALL', 'ALL', 'ALL', 'ALL', 'all');
-  }, [isAuthenticated, resetFilters, setLoading, fetchTasks]);
-
-  const refetch = useCallback(async () => {
-    if (!isAuthenticated) {
-      resetAll();
-      return;
-    }
-    setLoading(true);
-    await Promise.all([
-      fetchTasks(
-        searchText,
-        statusFilter,
-        categoryFilter,
-        priorityFilter,
-        teamFilter,
-        scopeFilter,
-      ),
-      fetchCategories(),
-      fetchTeams(),
-    ]);
-  }, [
-    isAuthenticated,
-    resetAll,
-    setLoading,
-    fetchTasks,
-    searchText,
-    statusFilter,
-    categoryFilter,
-    priorityFilter,
-    teamFilter,
-    scopeFilter,
-    fetchCategories,
-    fetchTeams,
-  ]);
-
   useRealtimeReconnect(() => {
     if (enabled && isAuthenticated) {
       void refetch();
@@ -329,59 +217,66 @@ export function useTasks(options?: { enabled?: boolean }) {
   const handleDelete = useCallback(
     async (id: number) => {
       await mutations.handleDeleteTask(id, async () => {
-        setLoading(true);
-        await fetchTasks(
-          searchText,
-          statusFilter,
-          categoryFilter,
-          priorityFilter,
-          teamFilter,
-          scopeFilter,
-        );
+        if (viewMode === 'trash') {
+          setTrashLoading(true);
+          await fetchTrashTasks(filtersRef.current);
+        } else {
+          setLoading(true);
+          await fetchTasks(filtersRef.current);
+        }
       });
     },
-    [
-      mutations,
-      setLoading,
-      fetchTasks,
-      searchText,
-      statusFilter,
-      categoryFilter,
-      priorityFilter,
-      teamFilter,
-      scopeFilter,
-    ],
+    [mutations, viewMode, fetchTrashTasks, fetchTasks, setLoading, setTrashLoading],
+  );
+
+  const handleRestore = useCallback(
+    async (id: number) => {
+      await mutations.handleRestoreTask(id, async () => {
+        setTrashLoading(true);
+        setLoading(true);
+        await Promise.all([
+          fetchTrashTasks(filtersRef.current),
+          fetchTasks(filtersRef.current),
+        ]);
+      });
+    },
+    [mutations, fetchTrashTasks, fetchTasks, setLoading, setTrashLoading],
+  );
+
+  const handlePermanentDelete = useCallback(
+    async (id: number) => {
+      await mutations.handlePermanentDeleteTask(id, async () => {
+        setTrashLoading(true);
+        await fetchTrashTasks(filtersRef.current);
+      });
+    },
+    [mutations, fetchTrashTasks, setTrashLoading],
   );
 
   const handleReorder = useCallback(
     (taskIds: number[], status?: TaskStatus) => {
-      return board.handleReorder(taskIds, status, teamFilter);
+      return board.handleReorder(taskIds, status, filtersRef.current.teamFilter);
     },
-    [board, teamFilter],
+    [board],
   );
 
   return {
     tasks,
+    trashTasks,
+    trashLoading,
     categories,
     teams,
     loading,
-    searchText,
-    statusFilter,
-    categoryFilter,
-    priorityFilter,
-    teamFilter,
-    scopeFilter,
+    filters,
     isFiltering,
-    setSearchText,
-    handleSearch,
-    handleStatusChange,
-    handleCategoryChange,
-    handlePriorityChange,
-    handleTeamChange,
-    handleScopeChange,
+    viewMode,
+    setViewMode,
+    applyFilters,
     handleReset,
     refetch,
     handleDelete,
+    handleRestore,
+    handlePermanentDelete,
     handleReorder,
     handleStatusMove: board.handleStatusMove,
     resetState: resetAll,
