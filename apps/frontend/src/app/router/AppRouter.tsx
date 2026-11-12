@@ -1,4 +1,4 @@
-import { useState, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Spin } from 'antd';
 import AppLayout from '../layouts/AppLayout';
@@ -113,6 +113,12 @@ function TaskAppShell() {
     }
   }, [categories.length, teams.length, fetchCategories, fetchTeams]);
 
+  useEffect(() => {
+    if (currentNav === 'dashboard') {
+      ensureMetadataLoaded();
+    }
+  }, [currentNav, ensureMetadataLoaded]);
+
   const {
     modalState,
     activeModalTask,
@@ -202,11 +208,12 @@ function TaskAppShell() {
           path="dashboard"
           element={
             <DashboardPage
+              teams={teams}
               active={currentNav === 'dashboard'}
               refreshTrigger={dashboardReloadCounter}
               onLoadingChange={setDashboardLoading}
               onNavigateToTasks={handleNavigateFromDashboard}
-              onOpenCreateTask={() => openCreateModal()}
+              onOpenCreateTask={openCreateModal}
             />
           }
         />

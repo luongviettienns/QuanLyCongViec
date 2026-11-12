@@ -9,16 +9,28 @@ import {
   Alert,
   Skeleton,
   Tag,
+  Select,
+  Segmented,
+  type SegmentedProps,
 } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined,
+  TeamOutlined,
+  AppstoreOutlined,
+  SolutionOutlined,
+  CheckSquareOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
 import { getTaskStats } from '../../tasks/api/tasks.api';
 import { useRealtimeReconnect } from '../../realtime';
 import type {
   TaskStats,
-  TaskStatus,
+  TaskFilterPatch,
+  ScopeFilter,
   TaskPriorityStats,
   TaskDeadlinePoint,
 } from '../../tasks/types/task.types';
+import type { Team } from '../../teams/types/team.types';
 import { DashboardStatCards } from '../components/DashboardStatCards';
 
 const DashboardCharts = lazy(() =>
@@ -64,13 +76,22 @@ function ChartsSkeleton() {
 
 const { Title, Paragraph } = Typography;
 
-interface DashboardPageProps {
-  onNavigateToTasks?: (status?: TaskStatus) => void;
-  onOpenCreateTask?: () => void;
+export interface DashboardPageProps {
+  teams?: Team[];
+  onNavigateToTasks?: (patch?: TaskFilterPatch) => void;
+  onOpenCreateTask?: (defaultTeamId?: number | null) => void;
   active?: boolean;
   refreshTrigger?: number;
   onLoadingChange?: (loading: boolean) => void;
 }
+
+const DASHBOARD_SCOPE_OPTIONS: NonNullable<SegmentedProps<ScopeFilter>['options']> = [
+  { value: 'all', label: 'Tất cả công việc', icon: <AppstoreOutlined /> },
+  { value: 'my_work', label: 'Công việc của tôi', icon: <SolutionOutlined /> },
+  { value: 'assigned_to_me', label: 'Tôi phụ trách', icon: <CheckSquareOutlined /> },
+  { value: 'collaborating', label: 'Tôi phối hợp', icon: <TeamOutlined /> },
+  { value: 'created_by_me', label: 'Tôi đã tạo', icon: <UserOutlined /> },
+];
 
 function sanitizeNumber(val: unknown): number {
   if (typeof val === 'number' && !Number.isNaN(val) && Number.isFinite(val) && val >= 0) {
@@ -116,6 +137,7 @@ function sanitizeStats(raw: Partial<TaskStats> | null | undefined): TaskStats {
 }
 
 export default function DashboardPage({
+  teams = [],
   onNavigateToTasks,
   onOpenCreateTask,
   active = true,
@@ -126,33 +148,50 @@ export default function DashboardPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [teamFilter, setTeamFilter] = useState<number | 'ALL'>('ALL');
+  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all');
 
   useEffect(() => {
     onLoadingChange?.(loading);
   }, [loading, onLoadingChange]);
 
-  const fetchStats = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const data = await getTaskStats(signal);
-      setStats(sanitizeStats(data));
-      setError(null);
-      const now = new Date();
-      setLastUpdated(
-        now.toLocaleTimeString('vi-VN', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        }),
-      );
-    } catch (err: unknown) {
-      if (err instanceof Error && (err.name === 'AbortError' || err.name === 'UnauthorizedError')) {
-        return;
+  const fetchStats = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        const data = await getTaskStats(
+          {
+            teamId: teamFilter !== 'ALL' ? teamFilter : undefined,
+            scope: scopeFilter,
+          },
+          signal,
+        );
+        if (!signal?.aborted) {
+          setStats(sanitizeStats(data));
+          setError(null);
+          const now = new Date();
+          setLastUpdated(
+            now.toLocaleTimeString('vi-VN', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            }),
+          );
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && (err.name === 'AbortError' || err.name === 'UnauthorizedError')) {
+          return;
+        }
+        if (!signal?.aborted) {
+          setError(err instanceof Error ? err.message : 'Không thể tải số liệu thống kê');
+        }
+      } finally {
+        if (!signal?.aborted) {
+          setLoading(false);
+        }
       }
-      setError(err instanceof Error ? err.message : 'Không thể tải số liệu thống kê');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    [teamFilter, scopeFilter],
+  );
 
   const handleRetry = useCallback(() => {
     setLoading(true);
@@ -180,6 +219,7 @@ export default function DashboardPage({
 
     async function load() {
       await Promise.resolve();
+      setLoading(true);
       void fetchStats(controller.signal);
     }
 
@@ -189,6 +229,17 @@ export default function DashboardPage({
       controller.abort();
     };
   }, [active, fetchStats]);
+
+  const handleNavigateWithDashboardContext = useCallback(
+    (patch: TaskFilterPatch = {}) => {
+      onNavigateToTasks?.({
+        teamFilter,
+        scopeFilter,
+        ...patch,
+      });
+    },
+    [onNavigateToTasks, teamFilter, scopeFilter],
+  );
 
   const safeStats = stats || sanitizeStats(null);
 
@@ -201,7 +252,7 @@ export default function DashboardPage({
           alignItems: 'flex-start',
           flexWrap: 'wrap',
           gap: 16,
-          marginBottom: 24,
+          marginBottom: 16,
         }}
       >
         <div>
@@ -222,12 +273,63 @@ export default function DashboardPage({
             <Button
               type="primary"
               icon={<PlusOutlined />}
-              onClick={onOpenCreateTask}
+              onClick={() => onOpenCreateTask(teamFilter !== 'ALL' ? teamFilter : null)}
             >
               Thêm công việc
             </Button>
           )}
         </Space>
+      </div>
+
+      <div
+        style={{
+          background: '#ffffff',
+          padding: '12px 16px',
+          borderRadius: 8,
+          border: '1px solid #f0f0f0',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+          marginBottom: 24,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 12,
+        }}
+      >
+        <div style={{ overflowX: 'auto', maxWidth: '100%' }}>
+          <Segmented<ScopeFilter>
+            value={scopeFilter}
+            onChange={(val) => setScopeFilter(val)}
+            options={DASHBOARD_SCOPE_OPTIONS}
+            style={{ overflowX: 'auto', maxWidth: '100%' }}
+          />
+        </div>
+
+        <Select<number | 'ALL'>
+          value={teamFilter}
+          onChange={(val) => setTeamFilter(val)}
+          style={{ minWidth: 200 }}
+          options={[
+            {
+              value: 'ALL',
+              label: (
+                <Space size={6}>
+                  <TeamOutlined style={{ color: '#8c8c8c' }} />
+                  <span>Tất cả nhóm</span>
+                </Space>
+              ),
+            },
+            ...teams.map((t) => ({
+              value: t.id,
+              label: (
+                <Space size={6}>
+                  <TeamOutlined style={{ color: '#1677ff' }} />
+                  <span>{t.name}</span>
+                </Space>
+              ),
+            })),
+          ]}
+        />
       </div>
 
       {error && (
@@ -262,12 +364,12 @@ export default function DashboardPage({
         <>
           <DashboardStatCards
             stats={safeStats}
-            onNavigateToTasks={onNavigateToTasks}
+            onNavigateToTasks={handleNavigateWithDashboardContext}
           />
           <Suspense fallback={<ChartsSkeleton />}>
             <DashboardCharts
               stats={safeStats}
-              onNavigateToTasks={onNavigateToTasks}
+              onNavigateToTasks={handleNavigateWithDashboardContext}
             />
           </Suspense>
         </>
