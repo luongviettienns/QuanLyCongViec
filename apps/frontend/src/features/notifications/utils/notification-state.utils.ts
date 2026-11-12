@@ -1,4 +1,4 @@
-import type { Notification, NotificationType } from '../types/notification.types';
+import type { Notification, NotificationType } from '../types/notification.types.ts';
 
 export interface RealtimeNotificationPayload {
   id?: number;
@@ -16,6 +16,30 @@ export interface NotificationDestination {
   type: 'task' | 'team';
   id: number;
   subtaskId?: number | null;
+  targetTab?: 'info' | 'collaborators' | 'subtasks';
+}
+
+/**
+ * Resolves which modal tab to focus when opening a task from a notification.
+ * Prioritizes subtask navigation if a subtaskId is present, then checks for collaborator
+ * events, falling back to 'info'.
+ */
+export function resolveNotificationModalTab(
+  type?: NotificationType,
+  subtaskId?: number | null,
+): 'info' | 'collaborators' | 'subtasks' {
+  if (subtaskId) {
+    return 'subtasks';
+  }
+  if (
+    type === 'TASK_COLLABORATOR_INVITED' ||
+    type === 'TASK_COLLABORATOR_ACCEPTED' ||
+    type === 'TASK_COLLABORATOR_DECLINED' ||
+    type === 'TASK_COLLABORATOR_REMOVED'
+  ) {
+    return 'collaborators';
+  }
+  return 'info';
 }
 
 /**

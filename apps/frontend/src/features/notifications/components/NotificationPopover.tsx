@@ -5,6 +5,7 @@ import { NotificationItemView } from './NotificationItemView';
 import type { Notification } from '../types/notification.types';
 import {
   buildNotificationDestination,
+  resolveNotificationModalTab,
   type NotificationDestination,
 } from '../utils/notification-state.utils';
 
@@ -49,7 +50,14 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
 
     const dest = buildNotificationDestination(notification);
     if (dest) {
-      onNavigate?.(dest);
+      if (dest.type === 'task') {
+        onNavigate?.({
+          ...dest,
+          targetTab: resolveNotificationModalTab(notification.type, notification.subtaskId),
+        });
+      } else {
+        onNavigate?.(dest);
+      }
     }
   };
 

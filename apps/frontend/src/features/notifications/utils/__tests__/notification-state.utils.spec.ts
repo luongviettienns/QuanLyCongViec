@@ -4,6 +4,7 @@ import {
   mergeRealtimeNotificationState,
   appendPaginatedNotifications,
   buildNotificationDestination,
+  resolveNotificationModalTab,
 } from '../notification-state.utils.ts';
 import type { Notification } from '../../types/notification.types.ts';
 
@@ -123,5 +124,15 @@ describe('Notification State & Deep-Link Utils', () => {
       makeNotif({ taskId: null, subtaskId: null, teamId: null }),
     );
     assert.equal(empty, null);
+  });
+
+  it('resolves collaborator modal tab for collaborator events while prioritizing subtaskId', () => {
+    assert.equal(resolveNotificationModalTab('TASK_COLLABORATOR_INVITED', null), 'collaborators');
+    assert.equal(resolveNotificationModalTab('TASK_COLLABORATOR_ACCEPTED', null), 'collaborators');
+    assert.equal(resolveNotificationModalTab('TASK_COLLABORATOR_DECLINED', null), 'collaborators');
+    assert.equal(resolveNotificationModalTab('TASK_COLLABORATOR_REMOVED', null), 'collaborators');
+    assert.equal(resolveNotificationModalTab('TASK_COLLABORATOR_INVITED', 12), 'subtasks');
+    assert.equal(resolveNotificationModalTab('SUBTASK_ASSIGNED', 12), 'subtasks');
+    assert.equal(resolveNotificationModalTab('TASK_ASSIGNED', null), 'info');
   });
 });
