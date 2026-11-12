@@ -9,6 +9,7 @@ import {
   ArrowRightOutlined,
 } from '@ant-design/icons';
 import type { TaskStats, TaskFilterPatch } from '../../tasks/types/task.types';
+import { DASHBOARD_STAT_CARD_PATCHES } from '../utils/dashboard-navigation.utils.ts';
 
 const { Text } = Typography;
 
@@ -23,7 +24,7 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
       <Col xs={24} sm={12} lg={8} xl={4}>
         <Card
           hoverable
-          onClick={() => onNavigateToTasks?.({})}
+          onClick={() => onNavigateToTasks?.(DASHBOARD_STAT_CARD_PATCHES.total)}
           style={{
             borderRadius: 8,
             borderTop: '3px solid #1677ff',
@@ -47,7 +48,7 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
       <Col xs={24} sm={12} lg={8} xl={4}>
         <Card
           hoverable
-          onClick={() => onNavigateToTasks?.({ statusFilter: 'TODO' })}
+          onClick={() => onNavigateToTasks?.(DASHBOARD_STAT_CARD_PATCHES.todo)}
           style={{
             borderRadius: 8,
             borderTop: '3px solid #faad14',
@@ -71,7 +72,7 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
       <Col xs={24} sm={12} lg={8} xl={4}>
         <Card
           hoverable
-          onClick={() => onNavigateToTasks?.({ statusFilter: 'IN_PROGRESS' })}
+          onClick={() => onNavigateToTasks?.(DASHBOARD_STAT_CARD_PATCHES.inProgress)}
           style={{
             borderRadius: 8,
             borderTop: '3px solid #13c2c2',
@@ -95,7 +96,7 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
       <Col xs={24} sm={12} lg={8} xl={4}>
         <Card
           hoverable
-          onClick={() => onNavigateToTasks?.({ statusFilter: 'DONE' })}
+          onClick={() => onNavigateToTasks?.(DASHBOARD_STAT_CARD_PATCHES.done)}
           style={{
             borderRadius: 8,
             borderTop: '3px solid #52c41a',
@@ -119,7 +120,7 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
       <Col xs={24} sm={12} lg={8} xl={4}>
         <Card
           hoverable
-          onClick={() => onNavigateToTasks?.({ statusFilter: 'ALL', deadlineFilter: 'overdue' })}
+          onClick={() => onNavigateToTasks?.(DASHBOARD_STAT_CARD_PATCHES.overdue)}
           style={{
             borderRadius: 8,
             borderTop: stats.overdue > 0 ? '3px solid #ff4d4f' : '3px solid #d9d9d9',
@@ -144,7 +145,7 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
       <Col xs={24} sm={12} lg={8} xl={4}>
         <Card
           hoverable
-          onClick={() => onNavigateToTasks?.({ statusFilter: 'ALL', deadlineFilter: 'due_soon' })}
+          onClick={() => onNavigateToTasks?.(DASHBOARD_STAT_CARD_PATCHES.dueSoon)}
           style={{
             borderRadius: 8,
             borderTop: stats.dueSoon > 0 ? '3px solid #fa8c16' : '3px solid #d9d9d9',

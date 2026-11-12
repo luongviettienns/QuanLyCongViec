@@ -1,79 +1,49 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import type { TaskFilterPatch, ScopeFilter } from '../../tasks/types/task.types.ts';
 import type { Team } from '../../teams/types/team.types.ts';
-
-/**
- * Pure helper mirroring DashboardPage's handleNavigateWithDashboardContext
- */
-export function buildDashboardNavigationPatch(
-  context: { teamFilter: number | 'ALL'; scopeFilter: ScopeFilter },
-  patch: TaskFilterPatch = {},
-): TaskFilterPatch {
-  return {
-    teamFilter: context.teamFilter,
-    scopeFilter: context.scopeFilter,
-    ...patch,
-  };
-}
-
-/**
- * Pure helper mirroring DashboardPage's defaultTeamId calculation for onOpenCreateTask
- */
-export function resolveDashboardCreateTaskTeamId(teamFilter: number | 'ALL'): number | null {
-  return teamFilter !== 'ALL' ? teamFilter : null;
-}
-
-/**
- * Pure helper mirroring getTaskStats parameter construction in DashboardPage
- */
-export function buildDashboardStatsParams(
-  teamFilter: number | 'ALL',
-  scopeFilter: ScopeFilter,
-): { teamId?: number; scope?: string } {
-  return {
-    teamId: teamFilter !== 'ALL' ? teamFilter : undefined,
-    scope: scopeFilter,
-  };
-}
+import {
+  DASHBOARD_STAT_CARD_PATCHES,
+  buildDashboardNavigationPatch,
+  resolveDashboardCreateTaskTeamId,
+  buildDashboardStatsParams,
+} from '../utils/dashboard-navigation.utils.ts';
 
 describe('Dashboard Navigation & Context Filters Integration', () => {
   describe('Stat Cards Click Patches Contract', () => {
     it('generates empty patch for Total card', () => {
-      const cardPatch: TaskFilterPatch = {};
-      assert.deepEqual(cardPatch, {});
+      assert.deepEqual(DASHBOARD_STAT_CARD_PATCHES.total, {});
     });
 
     it('generates statusFilter TODO for Todo card', () => {
-      const cardPatch: TaskFilterPatch = { statusFilter: 'TODO' };
-      assert.deepEqual(cardPatch, { statusFilter: 'TODO' });
+      assert.deepEqual(DASHBOARD_STAT_CARD_PATCHES.todo, { statusFilter: 'TODO' });
     });
 
     it('generates statusFilter IN_PROGRESS for In Progress card', () => {
-      const cardPatch: TaskFilterPatch = { statusFilter: 'IN_PROGRESS' };
-      assert.deepEqual(cardPatch, { statusFilter: 'IN_PROGRESS' });
+      assert.deepEqual(DASHBOARD_STAT_CARD_PATCHES.inProgress, { statusFilter: 'IN_PROGRESS' });
     });
 
     it('generates statusFilter DONE for Done card', () => {
-      const cardPatch: TaskFilterPatch = { statusFilter: 'DONE' };
-      assert.deepEqual(cardPatch, { statusFilter: 'DONE' });
+      assert.deepEqual(DASHBOARD_STAT_CARD_PATCHES.done, { statusFilter: 'DONE' });
     });
 
     it('generates statusFilter ALL and deadlineFilter overdue for Overdue card', () => {
-      const cardPatch: TaskFilterPatch = { statusFilter: 'ALL', deadlineFilter: 'overdue' };
-      assert.deepEqual(cardPatch, { statusFilter: 'ALL', deadlineFilter: 'overdue' });
+      assert.deepEqual(DASHBOARD_STAT_CARD_PATCHES.overdue, {
+        statusFilter: 'ALL',
+        deadlineFilter: 'overdue',
+      });
     });
 
     it('generates statusFilter ALL and deadlineFilter due_soon for DueSoon card', () => {
-      const cardPatch: TaskFilterPatch = { statusFilter: 'ALL', deadlineFilter: 'due_soon' };
-      assert.deepEqual(cardPatch, { statusFilter: 'ALL', deadlineFilter: 'due_soon' });
+      assert.deepEqual(DASHBOARD_STAT_CARD_PATCHES.dueSoon, {
+        statusFilter: 'ALL',
+        deadlineFilter: 'due_soon',
+      });
     });
   });
 
   describe('buildDashboardNavigationPatch (Context Preservation)', () => {
     it('preserves team and scope when navigating from Total card', () => {
-      const context = { teamFilter: 12, scopeFilter: 'my_work' as ScopeFilter };
-      const patch = buildDashboardNavigationPatch(context, {});
+      const patch = buildDashboardNavigationPatch(12, 'my_work', DASHBOARD_STAT_CARD_PATCHES.total);
       assert.deepEqual(patch, {
         teamFilter: 12,
         scopeFilter: 'my_work',
@@ -81,8 +51,7 @@ describe('Dashboard Navigation & Context Filters Integration', () => {
     });
 
     it('merges status filter while preserving team and scope context', () => {
-      const context = { teamFilter: 5, scopeFilter: 'assigned_to_me' as ScopeFilter };
-      const patch = buildDashboardNavigationPatch(context, { statusFilter: 'TODO' });
+      const patch = buildDashboardNavigationPatch(5, 'assigned_to_me', DASHBOARD_STAT_CARD_PATCHES.todo);
       assert.deepEqual(patch, {
         teamFilter: 5,
         scopeFilter: 'assigned_to_me',
@@ -91,11 +60,11 @@ describe('Dashboard Navigation & Context Filters Integration', () => {
     });
 
     it('merges deadline filter while preserving team and scope context', () => {
-      const context = { teamFilter: 'ALL' as const, scopeFilter: 'collaborating' as ScopeFilter };
-      const patch = buildDashboardNavigationPatch(context, {
-        statusFilter: 'ALL',
-        deadlineFilter: 'overdue',
-      });
+      const patch = buildDashboardNavigationPatch(
+        'ALL',
+        'collaborating',
+        DASHBOARD_STAT_CARD_PATCHES.overdue,
+      );
       assert.deepEqual(patch, {
         teamFilter: 'ALL',
         scopeFilter: 'collaborating',

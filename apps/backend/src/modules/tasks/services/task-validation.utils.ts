@@ -1,18 +1,19 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { type Prisma } from '@prisma/client';
 
+const VN_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Ho_Chi_Minh',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
 /**
  * Returns 00:00:00.000Z representing the current calendar day in Asia/Ho_Chi_Minh.
  * Shared across TaskStatsService and TaskQueryService so stat cards and task filters match.
  */
 export function getVietnamTodayDate(referenceDate: Date = new Date()): Date {
-  const vnDateFormatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const [vnYear, vnMonth, vnDay] = vnDateFormatter
+  const [vnYear, vnMonth, vnDay] = VN_DATE_FORMATTER
     .format(referenceDate)
     .split('-')
     .map((part) => parseInt(part, 10));

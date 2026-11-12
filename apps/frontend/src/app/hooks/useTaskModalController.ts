@@ -170,6 +170,7 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
   const openTaskFromNotification = useCallback(
     async (dest: NotificationDestination) => {
       if (dest.type !== 'task') return;
+      ensureMetadataLoaded?.();
       try {
         const targetTask = await getTaskById(dest.id);
         modalTaskIdRef.current = targetTask.id;
@@ -197,7 +198,7 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
         );
       }
     },
-    [],
+    [ensureMetadataLoaded],
   );
 
   useRealtimeReconnect(() => {

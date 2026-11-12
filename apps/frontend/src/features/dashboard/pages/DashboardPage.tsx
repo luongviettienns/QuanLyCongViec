@@ -32,6 +32,11 @@ import type {
 } from '../../tasks/types/task.types';
 import type { Team } from '../../teams/types/team.types';
 import { DashboardStatCards } from '../components/DashboardStatCards';
+import {
+  buildDashboardNavigationPatch,
+  resolveDashboardCreateTaskTeamId,
+  buildDashboardStatsParams,
+} from '../utils/dashboard-navigation.utils.ts';
 
 const DashboardCharts = lazy(() =>
   import('../components/DashboardCharts').then((m) => ({ default: m.DashboardCharts })),
@@ -159,10 +164,7 @@ export default function DashboardPage({
     async (signal?: AbortSignal) => {
       try {
         const data = await getTaskStats(
-          {
-            teamId: teamFilter !== 'ALL' ? teamFilter : undefined,
-            scope: scopeFilter,
-          },
+          buildDashboardStatsParams(teamFilter, scopeFilter),
           signal,
         );
         if (!signal?.aborted) {
@@ -219,6 +221,7 @@ export default function DashboardPage({
 
     async function load() {
       await Promise.resolve();
+      if (controller.signal.aborted) return;
       setLoading(true);
       void fetchStats(controller.signal);
     }
@@ -232,11 +235,7 @@ export default function DashboardPage({
 
   const handleNavigateWithDashboardContext = useCallback(
     (patch: TaskFilterPatch = {}) => {
-      onNavigateToTasks?.({
-        teamFilter,
-        scopeFilter,
-        ...patch,
-      });
+      onNavigateToTasks?.(buildDashboardNavigationPatch(teamFilter, scopeFilter, patch));
     },
     [onNavigateToTasks, teamFilter, scopeFilter],
   );
@@ -273,7 +272,7 @@ export default function DashboardPage({
             <Button
               type="primary"
               icon={<PlusOutlined />}
-              onClick={() => onOpenCreateTask(teamFilter !== 'ALL' ? teamFilter : null)}
+              onClick={() => onOpenCreateTask(resolveDashboardCreateTaskTeamId(teamFilter))}
             >
               Thêm công việc
             </Button>
