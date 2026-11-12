@@ -254,4 +254,100 @@ describe('Task Trash, Permanent Delete & Advanced Filters (E2E)', () => {
     const dbTask = await prisma.task.findUnique({ where: { id: taskId } });
     expect(dbTask).toBeNull();
   });
+
+  it('supports deadlineFilter matching stats, sortBy nulls-last & priority order, and scope=pending_invites', async () => {
+    // Compute VN today & relative ISO YYYY-MM-DD strings
+    const vnFmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const todayStr = vnFmt.format(new Date());
+    const shiftDays = (days: number) => {
+      const [y, m, d] = todayStr.split('-').map(Number);
+      const dt = new Date(Date.UTC(y, m - 1, d + days));
+      return dt.toISOString().slice(0, 10);
+    };
+
+    const createTask = (payload: Record<string, unknown>) =>
+      request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ teamId, ...payload });
+
+    const overdueRes = await createTask({
+      title: `Overdue ${runId}`,
+      priority: 'LOW',
+      dueDate: shiftDays(-2),
+    });
+    const todayRes = await createTask({
+      title: `Today ${runId}`,
+      priority: 'HIGH',
+      dueDate: todayStr,
+    });
+    const soonRes = await createTask({
+      title: `Soon ${runId}`,
+      priority: 'MEDIUM',
+      dueDate: shiftDays(3),
+    });
+    const noDueRes = await createTask({
+      title: `NoDue ${runId}`,
+      priority: 'HIGH',
+    });
+
+    // Invite member as collaborator on soonRes (stays PENDING)
+    await request(app.getHttpServer())
+      .post(`/api/tasks/${soonRes.body.id}/collaborators`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ userId: memberId })
+      .expect(201);
+
+    const overdueList = await request(app.getHttpServer())
+      .get(`/api/tasks?teamId=${teamId}&deadlineFilter=overdue`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    expect(overdueList.body.map((t: { id: number }) => t.id)).toContain(overdueRes.body.id);
+    expect(overdueList.body.map((t: { id: number }) => t.id)).not.toContain(todayRes.body.id);
+
+    const dueSoonList = await request(app.getHttpServer())
+      .get(`/api/tasks?teamId=${teamId}&deadlineFilter=due_soon`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    const dueSoonIds = dueSoonList.body.map((t: { id: number }) => t.id);
+    expect(dueSoonIds).toContain(todayRes.body.id);
+    expect(dueSoonIds).toContain(soonRes.body.id);
+    expect(dueSoonIds).not.toContain(overdueRes.body.id);
+
+    const noDueList = await request(app.getHttpServer())
+      .get(`/api/tasks?teamId=${teamId}&deadlineFilter=no_due_date`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    expect(noDueList.body.map((t: { id: number }) => t.id)).toContain(noDueRes.body.id);
+
+    // sortBy=due_date_asc puts tasks without dueDate last
+    const sortedDueAsc = await request(app.getHttpServer())
+      .get(`/api/tasks?teamId=${teamId}&sortBy=due_date_asc`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    const ascIds = sortedDueAsc.body.map((t: { id: number }) => t.id);
+    expect(ascIds.indexOf(overdueRes.body.id)).toBeLessThan(ascIds.indexOf(todayRes.body.id));
+    expect(ascIds.indexOf(soonRes.body.id)).toBeLessThan(ascIds.indexOf(noDueRes.body.id));
+
+    // sortBy=priority_desc orders HIGH before MEDIUM before LOW
+    const sortedPriority = await request(app.getHttpServer())
+      .get(`/api/tasks?teamId=${teamId}&sortBy=priority_desc`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    const prioIds = sortedPriority.body.map((t: { id: number }) => t.id);
+    expect(prioIds.indexOf(todayRes.body.id)).toBeLessThan(prioIds.indexOf(soonRes.body.id));
+    expect(prioIds.indexOf(soonRes.body.id)).toBeLessThan(prioIds.indexOf(overdueRes.body.id));
+
+    // scope=pending_invites returns only tasks with PENDING collaborator invite for member
+    const pendingRes = await request(app.getHttpServer())
+      .get(`/api/tasks?teamId=${teamId}&scope=pending_invites`)
+      .set('Authorization', `Bearer ${memberToken}`)
+      .expect(200);
+    expect(pendingRes.body.map((t: { id: number }) => t.id)).toEqual([soonRes.body.id]);
+  });
 });

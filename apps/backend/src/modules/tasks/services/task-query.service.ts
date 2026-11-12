@@ -4,9 +4,14 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service.js';
-import { FilterTasksDto } from '../dto/filter-tasks.dto.js';
+import {
+  FilterTasksDto,
+  type DeadlineFilter,
+  type TaskSortBy,
+} from '../dto/filter-tasks.dto.js';
 import { TaskPolicyService, type TaskWithTeamAndMembers } from '../policies/task-policy.service.js';
-import { type Task, Prisma } from '@prisma/client';
+import { type Task, Prisma, TaskStatus } from '@prisma/client';
+import { getVietnamTodayDate } from './task-validation.utils.js';
 
 @Injectable()
 export class TaskQueryService {
@@ -15,7 +20,11 @@ export class TaskQueryService {
     private readonly policy: TaskPolicyService,
   ) {}
 
-  async buildTeamAccessWhere(userId: number, teamId?: number): Promise<Prisma.TaskWhereInput> {
+  async buildTeamAccessWhere(
+    userId: number,
+    teamId?: number,
+    options?: { includePendingCollaboratorAccess?: boolean },
+  ): Promise<Prisma.TaskWhereInput> {
     if (teamId) {
       const team = await this.prisma.team.findUnique({
         where: { id: teamId },
@@ -34,12 +43,25 @@ export class TaskQueryService {
       ],
     };
 
+    const personalOrTeamClauses: Prisma.TaskWhereInput[] = [
+      { teamId: null, userId },
+      { teamId: null, assigneeId: userId },
+      { team: userTeamAccessWhere },
+    ];
+
+    if (options?.includePendingCollaboratorAccess) {
+      personalOrTeamClauses.push({
+        collaborators: {
+          some: {
+            userId,
+            status: 'PENDING',
+          },
+        },
+      });
+    }
+
     return {
-      OR: [
-        { teamId: null, userId },
-        { teamId: null, assigneeId: userId },
-        { team: userTeamAccessWhere },
-      ],
+      OR: personalOrTeamClauses,
     };
   }
 
@@ -72,8 +94,57 @@ export class TaskQueryService {
     }
   }
 
+  private buildDeadlineWhere(deadlineFilter?: DeadlineFilter): Prisma.TaskWhereInput | null {
+    if (!deadlineFilter) return null;
+    if (deadlineFilter === 'no_due_date') {
+      return { dueDate: null };
+    }
+    const todayDate = getVietnamTodayDate();
+    if (deadlineFilter === 'overdue') {
+      return { status: { not: TaskStatus.DONE }, dueDate: { not: null, lt: todayDate } };
+    }
+    if (deadlineFilter === 'today') {
+      return { status: { not: TaskStatus.DONE }, dueDate: todayDate };
+    }
+    // 'due_soon': 7-day rolling window matching TaskStatsService (today .. today+6)
+    const next7Days = new Date(todayDate.getTime() + 7 * 86400000);
+    return { status: { not: TaskStatus.DONE }, dueDate: { gte: todayDate, lt: next7Days } };
+  }
+
+  private buildOrderBy(sortBy?: TaskSortBy): Prisma.TaskOrderByWithRelationInput[] {
+    switch (sortBy) {
+      case 'due_date_asc':
+        return [
+          { dueDate: { sort: 'asc', nulls: 'last' } },
+          { position: 'asc' },
+          { createdAt: 'desc' },
+        ];
+      case 'due_date_desc':
+        return [
+          { dueDate: { sort: 'desc', nulls: 'last' } },
+          { position: 'asc' },
+          { createdAt: 'desc' },
+        ];
+      case 'priority_desc':
+        return [
+          { priority: 'desc' },
+          { dueDate: { sort: 'asc', nulls: 'last' } },
+          { createdAt: 'desc' },
+        ];
+      case 'default':
+      default:
+        return [
+          { status: 'asc' },
+          { position: 'asc' },
+          { createdAt: 'desc' },
+        ];
+    }
+  }
+
   async findAll(query: FilterTasksDto | undefined, userId: number): Promise<Task[]> {
-    const teamAccessWhere = await this.buildTeamAccessWhere(userId, query?.teamId);
+    const teamAccessWhere = await this.buildTeamAccessWhere(userId, query?.teamId, {
+      includePendingCollaboratorAccess: query?.scope === 'pending_invites',
+    });
 
     let scopeWhere: Prisma.TaskWhereInput = {};
     if (query?.scope === 'created_by_me') {
@@ -86,6 +157,15 @@ export class TaskQueryService {
           some: {
             userId,
             status: 'ACCEPTED',
+          },
+        },
+      };
+    } else if (query?.scope === 'pending_invites') {
+      scopeWhere = {
+        collaborators: {
+          some: {
+            userId,
+            status: 'PENDING',
           },
         },
       };
@@ -126,6 +206,10 @@ export class TaskQueryService {
     if (Object.keys(scopeWhere).length > 0) {
       andClauses.push(scopeWhere);
     }
+    const deadlineWhere = this.buildDeadlineWhere(query?.deadlineFilter);
+    if (deadlineWhere) {
+      andClauses.push(deadlineWhere);
+    }
     this.applyAttributeFilters(andClauses, query);
 
     const where: Prisma.TaskWhereInput = {
@@ -144,7 +228,10 @@ export class TaskQueryService {
           select: { id: true, name: true, ownerId: true },
         },
         collaborators: {
-          where: { status: 'ACCEPTED' },
+          where:
+            query?.scope === 'pending_invites'
+              ? { OR: [{ status: 'ACCEPTED' }, { userId, status: 'PENDING' }] }
+              : { status: 'ACCEPTED' },
           select: {
             id: true,
             userId: true,
@@ -164,11 +251,7 @@ export class TaskQueryService {
           orderBy: { position: 'asc' },
         },
       },
-      orderBy: [
-        { status: 'asc' },
-        { position: 'asc' },
-        { createdAt: 'desc' },
-      ],
+      orderBy: this.buildOrderBy(query?.sortBy),
     });
   }
 
