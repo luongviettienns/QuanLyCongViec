@@ -4,6 +4,7 @@ import {
   canTransitionTask,
   canReorderTask,
   getTaskPermissions,
+  canManageTrashTask,
 } from '../task-permission.utils.ts';
 import type { Task } from '../../types/task.types.ts';
 import type { Team } from '../../../teams/types/team.types.ts';
@@ -358,6 +359,24 @@ describe('Task Permission Utils', () => {
       const canReopen = perms.allowedNextStatuses.some((s) => s === 'TODO' || s === 'IN_PROGRESS');
       assert.equal(canReopen, false);
       assert.deepEqual(perms.allowedNextStatuses, []);
+    });
+  });
+
+  describe('canManageTrashTask', () => {
+    it('allows personal creator, team Owner/Admin, and denies regular team member or outsider', () => {
+      // Uses existing mockTeam & users from suite: currentUser (10, MEMBER), otherUser (20), outsiderUser (30)
+      const ownerUser = { id: 100, email: 'owner@example.com', name: 'Owner', createdAt: '', updatedAt: '' };
+      const adminUser = { id: 200, email: 'admin@example.com', name: 'Admin', createdAt: '', updatedAt: '' };
+      const personalTask: Task = { id: 1, title: 'P', status: 'TODO', userId: 10 };
+      const teamTask: Task = { id: 2, title: 'T', status: 'TODO', userId: 10, teamId: 1 };
+
+      assert.equal(canManageTrashTask(currentUser, personalTask, null), true);
+      assert.equal(canManageTrashTask(otherUser, personalTask, null), false);
+
+      assert.equal(canManageTrashTask(currentUser, teamTask, mockTeam), false);
+      assert.equal(canManageTrashTask(adminUser, teamTask, mockTeam), true);
+      assert.equal(canManageTrashTask(ownerUser, teamTask, mockTeam), true);
+      assert.equal(canManageTrashTask(outsiderUser, teamTask, mockTeam), false);
     });
   });
 });

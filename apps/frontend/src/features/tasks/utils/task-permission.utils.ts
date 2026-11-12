@@ -327,3 +327,25 @@ export function getTaskPermissions(
     roleBadge,
   };
 }
+
+/**
+ * Checks whether a user has permission to restore or permanently delete a trashed task.
+ * - Personal task: Only creator.
+ * - Team task: Only Team Owner or Admin (not regular members, even if creator).
+ */
+export function canManageTrashTask(
+  user: User | null | undefined,
+  task: Task,
+  team?: Team | null,
+): boolean {
+  if (!user) {
+    return false;
+  }
+  const roles = getTaskActorRoles(user, task, team);
+  const isOwner = roles.includes('OWNER');
+  const isAdmin = roles.includes('ADMIN');
+  const isCreator = roles.includes('CREATOR');
+  const isTeamTask = Boolean(task.teamId || team);
+
+  return !isTeamTask ? isCreator : isOwner || isAdmin;
+}

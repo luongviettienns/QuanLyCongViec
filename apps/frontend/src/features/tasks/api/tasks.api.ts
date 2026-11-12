@@ -1,5 +1,6 @@
 import type {
   Task,
+  TrashTask,
   TaskCollaborator,
   Subtask,
   CreateTaskPayload,
@@ -23,6 +24,8 @@ export async function getTasks(
     teamId?: number;
     assigneeId?: number;
     scope?: string;
+    deadlineFilter?: string;
+    sortBy?: string;
   },
   signal?: AbortSignal,
 ): Promise<Task[]> {
@@ -48,6 +51,12 @@ export async function getTasks(
   }
   if (params?.scope) {
     searchParams.append('scope', params.scope);
+  }
+  if (params?.deadlineFilter && params.deadlineFilter !== 'ALL') {
+    searchParams.append('deadlineFilter', params.deadlineFilter);
+  }
+  if (params?.sortBy && params.sortBy !== 'default') {
+    searchParams.append('sortBy', params.sortBy);
   }
 
   const queryString = searchParams.toString();
@@ -160,6 +169,84 @@ export async function deleteTask(id: number): Promise<void> {
   });
 
   await handleVoidApiResponse(response, 'Không thể xoá công việc');
+}
+
+export async function getTrashTasks(
+  params?: {
+    search?: string;
+    status?: string;
+    categoryId?: number;
+    priority?: string;
+    teamId?: number;
+    assigneeId?: number;
+    scope?: string;
+    deadlineFilter?: string;
+    sortBy?: string;
+  },
+  signal?: AbortSignal,
+): Promise<TrashTask[]> {
+  const searchParams = new URLSearchParams();
+  const cleanSearch = params?.search?.trim();
+  if (cleanSearch) {
+    searchParams.append('search', cleanSearch);
+  }
+  if (params?.status && params.status !== 'ALL') {
+    searchParams.append('status', params.status);
+  }
+  if (params?.priority && params.priority !== 'ALL') {
+    searchParams.append('priority', params.priority);
+  }
+  if (params?.categoryId !== undefined) {
+    searchParams.append('categoryId', String(params.categoryId));
+  }
+  if (params?.teamId !== undefined) {
+    searchParams.append('teamId', String(params.teamId));
+  }
+  if (params?.assigneeId !== undefined) {
+    searchParams.append('assigneeId', String(params.assigneeId));
+  }
+  if (params?.scope) {
+    searchParams.append('scope', params.scope);
+  }
+  if (params?.deadlineFilter && params.deadlineFilter !== 'ALL') {
+    searchParams.append('deadlineFilter', params.deadlineFilter);
+  }
+  if (params?.sortBy && params.sortBy !== 'default') {
+    searchParams.append('sortBy', params.sortBy);
+  }
+
+  const queryString = searchParams.toString();
+  const url = queryString ? `/api/tasks/trash?${queryString}` : '/api/tasks/trash';
+  const response = await fetch(url, {
+    headers: {
+      ...getAuthHeaders(),
+    },
+    signal,
+  });
+
+  return handleApiResponse<TrashTask[]>(response, 'Không thể tải danh sách công việc đã xoá');
+}
+
+export async function restoreTask(id: number): Promise<Task> {
+  const response = await fetch(`/api/tasks/${id}/restore`, {
+    method: 'POST',
+    headers: {
+      ...getAuthHeaders(),
+    },
+  });
+
+  return handleApiResponse<Task>(response, 'Không thể khôi phục công việc');
+}
+
+export async function permanentDeleteTask(id: number): Promise<void> {
+  const response = await fetch(`/api/tasks/${id}/permanent`, {
+    method: 'DELETE',
+    headers: {
+      ...getAuthHeaders(),
+    },
+  });
+
+  await handleVoidApiResponse(response, 'Không thể xoá vĩnh viễn công việc');
 }
 
 export async function reorderTasks(taskIds: number[], status?: TaskStatus, teamId?: number): Promise<void> {
