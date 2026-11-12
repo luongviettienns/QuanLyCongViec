@@ -3,10 +3,6 @@ import dayjs from 'dayjs';
 import {
   Modal,
   Form,
-  Input,
-  Select,
-  DatePicker,
-  Tag,
   Alert,
   Button,
   message,
@@ -19,6 +15,7 @@ import {
 } from '@ant-design/icons';
 import { useResponsive } from '../../../shared/hooks';
 import type { Task, TaskFormValues } from '../types/task.types';
+import { TASK_STATUS_CONFIG } from '../types/task.types';
 import type { Category } from '../../categories/types/category.types';
 import type { Team } from '../../teams/types/team.types';
 import {
@@ -30,10 +27,13 @@ import { useAuth } from '../../auth/hooks/useAuth';
 import { getTaskPermissions } from '../utils/task-permission.utils';
 import { TaskCollaboratorsSection } from './TaskCollaboratorsSection';
 import { TaskSubtasksSection } from './TaskSubtasksSection';
+import { TaskInfoForm } from './TaskInfoForm';
+import { TaskReturnAction } from './TaskReturnAction';
 
-interface TaskFormModalProps {
+export interface TaskFormModalProps {
   open: boolean;
   task: Task | null;
+  defaultTeamId?: number | null;
   initialTab?: 'info' | 'collaborators' | 'subtasks';
   highlightSubtaskId?: number | null;
   categories: Category[];
@@ -62,6 +62,7 @@ function getTaskVersion(task: Task | null): string {
 export default function TaskFormModal({
   open,
   task,
+  defaultTeamId,
   initialTab = 'info',
   highlightSubtaskId = null,
   categories,
@@ -78,6 +79,9 @@ export default function TaskFormModal({
   const [baseVersion, setBaseVersion] = useState<string>(() => getTaskVersion(task));
   const [isFormDirty, setIsFormDirty] = useState(false);
   const syncedVersionRef = useRef<string>('');
+
+  const screens = useResponsive();
+  const watchedStatus = Form.useWatch('status', form);
 
   const applyTaskValues = useCallback(
     (target: Task) => {
@@ -122,44 +126,29 @@ export default function TaskFormModal({
       };
     }
   }, [open, task, currentVersion, isFormDirty, applyTaskValues]);
-  const screens = useResponsive();
 
-  const selectedTeamId = Form.useWatch('teamId', form);
-  const currentTeam = teams.find((t) => t.id === selectedTeamId);
-  const assigneeOptions = currentTeam?.members?.map((m) => ({
-    value: m.userId,
-    label: `${m.user?.name} (${m.user?.email})`,
-  })) ?? [];
-
-  const scopedCategories = useMemo(() => {
-    let filtered = categories.filter((c) => {
-      if (selectedTeamId) {
-        return c.teamId === selectedTeamId;
-      }
-      return !c.teamId;
-    });
-
-    if (task?.category && !filtered.some((c) => c.id === task.category!.id)) {
-      const sameScope = (task.teamId ?? null) === (selectedTeamId ?? null);
-      if (sameScope) {
-        filtered = [task.category, ...filtered];
-      }
+  useEffect(() => {
+    if (open && !task && !isFormDirty) {
+      form.setFieldsValue({
+        teamId: defaultTeamId ?? null,
+      });
     }
-
-    return filtered;
-  }, [categories, selectedTeamId, task]);
+  }, [open, task, defaultTeamId, isFormDirty, form]);
 
   const taskTeam = task?.teamId ? teams.find((t) => t.id === task.teamId) : null;
   const permissions = task ? getTaskPermissions(user, task, taskTeam) : null;
 
   const canEditContent = !task ? true : (permissions?.canEditContent ?? true);
-  const canChangeAssignee = !task ? true : (permissions?.canChangeAssignee ?? true);
   const canChangeStatus = !task ? true : (permissions?.canChangeStatus ?? true);
   const isReadOnly = Boolean(task && !canEditContent && !canChangeStatus);
   const canManage = Boolean(
     permissions?.roles.some((r) =>
       ['OWNER', 'ADMIN', 'CREATOR', 'ASSIGNEE'].includes(r),
     ),
+  );
+
+  const isSaveDisabled = Boolean(
+    task && !canEditContent && canChangeStatus && watchedStatus === task.status,
   );
 
   const isParentDone = task?.status === 'DONE';
@@ -169,6 +158,35 @@ export default function TaskFormModal({
         (status) => status === 'TODO' || status === 'IN_PROGRESS',
       ),
   );
+
+  const statusOptions = useMemo(
+    () =>
+      (['TODO', 'IN_PROGRESS', 'DONE'] as const).map((status) => ({
+        value: status,
+        label: TASK_STATUS_CONFIG[status].label,
+        disabled: Boolean(
+          task &&
+            task.status !== status &&
+            !permissions?.allowedNextStatuses.includes(status),
+        ),
+      })),
+    [task, permissions],
+  );
+
+  const handleTeamChange = useCallback(
+    (teamId: number | null) => {
+      form.setFieldValue('teamId', teamId);
+      form.setFieldValue('assigneeId', null);
+      form.setFieldValue('categoryId', null);
+    },
+    [form],
+  );
+
+  const handleReturned = useCallback(async () => {
+    setIsFormDirty(false);
+    onClose();
+    await onSuccess();
+  }, [onClose, onSuccess]);
 
   // Consolidated single alert for task info form according to role and status
   let alertConfig: { type: 'warning' | 'info'; message: string; description?: string } | null = null;
@@ -287,188 +305,47 @@ export default function TaskFormModal({
             setIsFormDirty(true);
           }
         }}
-        initialValues={{ status: 'TODO', priority: 'MEDIUM' }}
-    >
-      {alertConfig && (
-        <Alert
-          message={alertConfig.message}
-          description={alertConfig.description}
-          type={alertConfig.type}
-          showIcon
-          style={{ marginBottom: 16 }}
-        />
-      )}
-      <Form.Item
-        name="title"
-        label="Tiêu đề"
-        rules={[
-          { required: true, message: 'Vui lòng nhập tiêu đề công việc' },
-          { min: 3, message: 'Tiêu đề phải có ít nhất 3 ký tự' },
-          { max: 100, message: 'Tiêu đề không được vượt quá 100 ký tự' },
-          {
-            validator: (_, value: string) => {
-              if (value && value.trim().length < 3) {
-                return Promise.reject(new Error('Tiêu đề không được chỉ chứa khoảng trắng'));
-              }
-              return Promise.resolve();
-            },
-          },
-        ]}
+        initialValues={{
+          status: 'TODO',
+          priority: 'MEDIUM',
+          teamId: defaultTeamId ?? null,
+        }}
       >
-        <Input
-          disabled={!canEditContent}
-          placeholder="Nhập tiêu đề công việc (từ 3 đến 100 ký tự)..."
+        {alertConfig && (
+          <Alert
+            message={alertConfig.message}
+            description={alertConfig.description}
+            type={alertConfig.type}
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+        )}
+        <TaskInfoForm
+          form={form}
+          task={task}
+          teams={teams}
+          categories={categories}
+          isFormDisabled={!canEditContent}
+          canEditStatus={canChangeStatus}
+          statusOptions={statusOptions}
+          onTeamChange={handleTeamChange}
         />
-      </Form.Item>
-
-      <Form.Item
-        name="description"
-        label="Mô tả"
-        rules={[{ max: 1000, message: 'Mô tả không được vượt quá 1000 ký tự' }]}
-      >
-        <Input.TextArea
-          disabled={!canEditContent}
-          rows={3}
-          placeholder="Nhập mô tả chi tiết (tuỳ chọn, tối đa 1000 ký tự)..."
-          maxLength={1000}
-          showCount
-        />
-      </Form.Item>
-
-      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', gap: screens.xs ? 0 : 16 }}>
-        <Form.Item name="teamId" label="Nhóm làm việc" style={{ flex: 1 }}>
-          <Select
-            allowClear
-            disabled={!canEditContent}
-            placeholder="Chọn nhóm (hoặc để trống nếu cá nhân)"
-            onChange={() => {
-              form.setFieldValue('assigneeId', null);
-              form.setFieldValue('categoryId', null);
-            }}
-            options={teams.map((t) => ({
-              value: t.id,
-              label: t.name,
-            }))}
-          />
-        </Form.Item>
-
-        <Form.Item name="assigneeId" label="Người thực hiện (Assignee)" style={{ flex: 1 }}>
-          <Select
-            allowClear
-            disabled={!canChangeAssignee || !selectedTeamId}
-            placeholder={selectedTeamId ? 'Chọn thành viên thực hiện' : 'Chọn nhóm trước để giao việc'}
-            options={assigneeOptions}
-          />
-        </Form.Item>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', gap: screens.xs ? 0 : 16 }}>
-        <Form.Item name="startDate" label="Ngày bắt đầu" style={{ flex: 1 }}>
-          <DatePicker
-            disabled={!canEditContent}
-            format="DD/MM/YYYY"
-            placeholder="Chọn ngày bắt đầu"
-            style={{ width: '100%' }}
-          />
-        </Form.Item>
-
-        <Form.Item
-          name="dueDate"
-          label="Hạn chót (Deadline)"
-          style={{ flex: 1 }}
-          dependencies={['startDate']}
-          rules={[
-            ({ getFieldValue }) => ({
-              validator(_, value) {
-                const start = getFieldValue('startDate');
-                if (start && value && value.isBefore(start, 'day')) {
-                  return Promise.reject(new Error('Hạn chót phải sau hoặc cùng ngày bắt đầu'));
-                }
-                return Promise.resolve();
-              },
-            }),
-          ]}
-        >
-          <DatePicker
-            disabled={!canEditContent}
-            format="DD/MM/YYYY"
-            placeholder="Chọn hạn chót"
-            style={{ width: '100%' }}
-          />
-        </Form.Item>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', gap: screens.xs ? 0 : 16 }}>
-        <Form.Item name="status" label="Trạng thái" style={{ flex: 1 }}>
-          <Select
-            disabled={Boolean(task && !canChangeStatus)}
-            options={[
-              {
-                value: 'TODO',
-                label: 'TODO',
-                disabled: Boolean(
-                  task &&
-                    task.status !== 'TODO' &&
-                    !permissions?.allowedNextStatuses.includes('TODO'),
-                ),
-              },
-              {
-                value: 'IN_PROGRESS',
-                label: 'IN_PROGRESS',
-                disabled: Boolean(
-                  task &&
-                    task.status !== 'IN_PROGRESS' &&
-                    !permissions?.allowedNextStatuses.includes('IN_PROGRESS'),
-                ),
-              },
-              {
-                value: 'DONE',
-                label: 'DONE',
-                disabled: Boolean(
-                  task &&
-                    task.status !== 'DONE' &&
-                    !permissions?.allowedNextStatuses.includes('DONE'),
-                ),
-              },
-            ]}
-          />
-        </Form.Item>
-
-        <Form.Item name="priority" label="Độ ưu tiên" style={{ flex: 1 }}>
-          <Select
-            disabled={!canEditContent}
-            options={[
-              { value: 'LOW', label: 'Thấp (LOW)' },
-              { value: 'MEDIUM', label: 'Trung bình (MEDIUM)' },
-              { value: 'HIGH', label: 'Cao (HIGH)' },
-            ]}
-          />
-        </Form.Item>
-      </div>
-
-      <Form.Item name="categoryId" label="Danh mục">
-        <Select
-          allowClear
-          disabled={!canEditContent}
-          placeholder={
-            selectedTeamId
-              ? 'Chọn danh mục của nhóm (tuỳ chọn)'
-              : 'Chọn danh mục cá nhân (tuỳ chọn)'
-          }
-          options={scopedCategories.map((c) => ({
-            value: c.id,
-            label: (
-              <Tag color={c.color} style={{ margin: 0 }}>
-                {c.name}
-                {c.id === task?.category?.id && !categories.some((x) => x.id === c.id)
-                  ? ' (Từ người tạo)'
-                  : ''}
-              </Tag>
-            ),
-          }))}
-        />
-      </Form.Item>
       </Form>
+      {task && permissions?.canReturnTask ? (
+        <div
+          style={{
+            marginTop: 16,
+            display: 'flex',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <TaskReturnAction
+            taskId={task.id}
+            taskTitle={task.title}
+            onReturned={handleReturned}
+          />
+        </div>
+      ) : null}
     </>
   );
 
@@ -501,7 +378,7 @@ export default function TaskFormModal({
                 status: 'TODO',
                 priority: 'MEDIUM',
                 categoryId: null,
-                teamId: null,
+                teamId: defaultTeamId ?? null,
                 assigneeId: null,
                 startDate: null,
                 dueDate: null,
@@ -514,7 +391,7 @@ export default function TaskFormModal({
       okButtonProps={
         isReadOnly || (task && activeTab !== 'info')
           ? { style: { display: 'none' } }
-          : undefined
+          : { disabled: isSaveDisabled }
       }
       okText={task ? 'Lưu thay đổi' : 'Tạo mới'}
       cancelText={isReadOnly || (task && activeTab !== 'info') ? 'Đóng' : 'Huỷ'}
