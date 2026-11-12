@@ -4,11 +4,13 @@ import {
   ForbiddenException,
   ConflictException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service.js';
 import { CreateCategoryDto } from './dto/create-category.dto.js';
 import { UpdateCategoryDto } from './dto/update-category.dto.js';
 import { Category, TeamRole } from '@prisma/client';
+import { RealtimeService } from '../realtime/realtime.service.js';
 
 export interface FindCategoriesOptions {
   teamId?: number;
@@ -17,7 +19,10 @@ export interface FindCategoriesOptions {
 
 @Injectable()
 export class CategoriesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly realtimeService?: RealtimeService,
+  ) {}
 
   private isTeamMember(userId: number, team?: { ownerId: number; members?: { userId: number }[] } | null): boolean {
     if (!team) return false;
@@ -158,7 +163,7 @@ export class CategoriesService {
       }
 
       try {
-        return await this.prisma.category.create({
+        const created = await this.prisma.category.create({
           data: {
             name: cleanName,
             color: cleanColor,
@@ -166,6 +171,19 @@ export class CategoriesService {
             teamId: data.teamId,
           },
         });
+
+        void this.realtimeService?.emit({
+          type: 'TEAM_CATEGORY_CHANGED',
+          actorId: userId,
+          teamId: data.teamId,
+          payload: {
+            teamId: data.teamId,
+            categoryId: created.id,
+            action: 'CREATED',
+          },
+        });
+
+        return created;
       } catch (error: any) {
         if (error?.code === 'P2002') {
           throw new ConflictException(`Danh mục '${cleanName}' đã tồn tại trong nhóm`);
@@ -263,10 +281,25 @@ export class CategoriesService {
     }
 
     try {
-      return await this.prisma.category.update({
+      const updated = await this.prisma.category.update({
         where: { id },
         data: updateData,
       });
+
+      if (updated.teamId) {
+        void this.realtimeService?.emit({
+          type: 'TEAM_CATEGORY_CHANGED',
+          actorId: userId,
+          teamId: updated.teamId,
+          payload: {
+            teamId: updated.teamId,
+            categoryId: updated.id,
+            action: 'UPDATED',
+          },
+        });
+      }
+
+      return updated;
     } catch (error: any) {
       if (error?.code === 'P2002') {
         throw new ConflictException(`Danh mục '${data.name?.trim()}' đã tồn tại`);
@@ -296,6 +329,19 @@ export class CategoriesService {
     const deletedCategory = await this.prisma.category.delete({
       where: { id },
     });
+
+    if (deletedCategory.teamId) {
+      void this.realtimeService?.emit({
+        type: 'TEAM_CATEGORY_CHANGED',
+        actorId: userId,
+        teamId: deletedCategory.teamId,
+        payload: {
+          teamId: deletedCategory.teamId,
+          categoryId: deletedCategory.id,
+          action: 'DELETED',
+        },
+      });
+    }
 
     return {
       success: true,

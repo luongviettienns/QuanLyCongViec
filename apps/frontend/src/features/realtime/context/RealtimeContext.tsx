@@ -123,13 +123,16 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
                 }
 
                 if (data) {
-                  if (currentMessage) {
-                    currentMessage({ data });
-                  }
-                  const typeListeners = listeners.get(eventType);
-                  if (typeListeners) {
-                    for (const l of typeListeners) {
-                      l({ data });
+                  if (eventType === 'message') {
+                    if (currentMessage) {
+                      currentMessage({ data });
+                    }
+                  } else {
+                    const typeListeners = listeners.get(eventType);
+                    if (typeListeners) {
+                      for (const l of typeListeners) {
+                        l({ data });
+                      }
                     }
                   }
                 }

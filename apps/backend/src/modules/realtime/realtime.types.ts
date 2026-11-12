@@ -12,7 +12,11 @@ export type RealtimeEventType =
   | 'SUBTASK_UPDATED'
   | 'SUBTASK_DELETED'
   | 'SUBTASK_REORDERED'
-  | 'TASK_COLLABORATORS_CHANGED';
+  | 'TASK_COLLABORATORS_CHANGED'
+  | 'TEAM_UPDATED'
+  | 'TEAM_DELETED'
+  | 'TEAM_ACTIVITY_CREATED'
+  | 'TEAM_CATEGORY_CHANGED';
 
 export interface RealtimeBroadcastEvent {
   type: RealtimeEventType;

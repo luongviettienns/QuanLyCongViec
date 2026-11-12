@@ -291,6 +291,7 @@ export function TeamDetailCard({
                   />
 
                   <TeamCategorySection
+                    key={`cat-admin-${selectedTeam.id}`}
                     teamId={selectedTeam.id}
                     canManage={canManageMembers}
                   />
@@ -306,6 +307,7 @@ export function TeamDetailCard({
               ),
               children: (
                 <TeamActivitySection
+                  key={`activity-${selectedTeam.id}`}
                   teamId={selectedTeam.id}
                   members={selectedTeam.members}
                   owner={selectedTeam.owner}
@@ -331,6 +333,7 @@ export function TeamDetailCard({
           />
 
           <TeamCategorySection
+            key={`cat-member-${selectedTeam.id}`}
             teamId={selectedTeam.id}
             canManage={false}
           />

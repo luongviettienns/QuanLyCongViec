@@ -170,6 +170,36 @@ function TaskAppShell() {
 
   useRealtimeEvent('NOTIFICATION_NEW', handleRealtimeNotification);
 
+  const handleRealtimeTeamMeta = useCallback(
+    (event: RealtimeEventData) => {
+      if (event.actorId && event.actorId === user?.id) {
+        return;
+      }
+      if (currentNav === 'tasks') {
+        void fetchTeams();
+        scheduleRefetch();
+      }
+    },
+    [currentNav, fetchTeams, scheduleRefetch, user?.id],
+  );
+
+  const handleRealtimeTeamCategory = useCallback(
+    (event: RealtimeEventData) => {
+      if (event.actorId && event.actorId === user?.id) {
+        return;
+      }
+      if (currentNav === 'tasks') {
+        void fetchCategories();
+        scheduleRefetch();
+      }
+    },
+    [currentNav, fetchCategories, scheduleRefetch, user?.id],
+  );
+
+  useRealtimeEvent('TEAM_UPDATED', handleRealtimeTeamMeta);
+  useRealtimeEvent('TEAM_DELETED', handleRealtimeTeamMeta);
+  useRealtimeEvent('TEAM_CATEGORY_CHANGED', handleRealtimeTeamCategory);
+
   const [modalState, setModalState] = useState<{
     open: boolean;
     task: Task | null;

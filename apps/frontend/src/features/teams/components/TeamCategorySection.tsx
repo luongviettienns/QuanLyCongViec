@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Space,
   Tag,
@@ -22,6 +22,13 @@ import {
   updateCategory,
   deleteCategory,
 } from '../../categories/api/categories.api';
+import { useAuth } from '../../auth/hooks/useAuth';
+import { useRealtimeEvent, useRealtimeReconnect } from '../../realtime';
+import type { RealtimeEventData } from '../../realtime/types/realtime.types';
+import {
+  shouldRefreshTeamCategoriesOnEvent,
+  createDebouncedCallback,
+} from '../utils/team-realtime.utils';
 
 const { Text } = Typography;
 
@@ -31,6 +38,7 @@ interface TeamCategorySectionProps {
 }
 
 export function TeamCategorySection({ teamId, canManage }: TeamCategorySectionProps) {
+  const { user } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -64,6 +72,40 @@ export function TeamCategorySection({ teamId, canManage }: TeamCategorySectionPr
       active = false;
     };
   }, [loadCategories]);
+
+  const debouncedReloadRef = useRef<ReturnType<typeof createDebouncedCallback> | null>(null);
+
+  useEffect(() => {
+    const debounced = createDebouncedCallback(() => {
+      void loadCategories();
+    }, 300);
+    debouncedReloadRef.current = debounced;
+    return () => {
+      debounced.cancel();
+      debouncedReloadRef.current = null;
+    };
+  }, [loadCategories]);
+
+  const handleRealtimeCategoryChanged = useCallback(
+    (event: RealtimeEventData) => {
+      if (
+        shouldRefreshTeamCategoriesOnEvent({
+          eventType: event.type,
+          activeTeamId: teamId,
+          currentUserId: user?.id,
+          event,
+        })
+      ) {
+        debouncedReloadRef.current?.trigger();
+      }
+    },
+    [teamId, user?.id],
+  );
+
+  useRealtimeEvent('TEAM_CATEGORY_CHANGED', handleRealtimeCategoryChanged);
+  useRealtimeReconnect(() => {
+    debouncedReloadRef.current?.trigger();
+  });
 
   function handleOpenCreate() {
     setEditingCategory(null);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   List,
   Typography,
@@ -25,6 +25,12 @@ import type {
   TeamActivityActor,
 } from '../types/team.types';
 import { renderActivityItem } from './team-activity.renderers';
+import { useRealtimeEvent, useRealtimeReconnect } from '../../realtime';
+import type { RealtimeEventData } from '../../realtime/types/realtime.types';
+import {
+  shouldRefreshTeamActivityOnEvent,
+  createDebouncedCallback,
+} from '../utils/team-realtime.utils';
 
 const { Text } = Typography;
 
@@ -117,6 +123,39 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
       controller.abort();
     };
   }, [loadLogs, page, selectedAction, selectedActorId, reloadKey]);
+
+  const debouncedReloadRef = useRef<ReturnType<typeof createDebouncedCallback> | null>(null);
+
+  useEffect(() => {
+    const debounced = createDebouncedCallback(() => {
+      setReloadKey((k) => k + 1);
+    }, 300);
+    debouncedReloadRef.current = debounced;
+    return () => {
+      debounced.cancel();
+      debouncedReloadRef.current = null;
+    };
+  }, [teamId]);
+
+  const handleRealtimeActivityCreated = useCallback(
+    (event: RealtimeEventData) => {
+      if (
+        shouldRefreshTeamActivityOnEvent({
+          eventType: event.type,
+          activeTeamId: teamId,
+          event,
+        })
+      ) {
+        debouncedReloadRef.current?.trigger();
+      }
+    },
+    [teamId],
+  );
+
+  useRealtimeEvent('TEAM_ACTIVITY_CREATED', handleRealtimeActivityCreated);
+  useRealtimeReconnect(() => {
+    debouncedReloadRef.current?.trigger();
+  });
 
   const handleActionChange = (value?: TeamActivityAction) => {
     setSelectedAction(value);

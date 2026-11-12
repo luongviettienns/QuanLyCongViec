@@ -15,6 +15,7 @@ import { TeamPolicyService } from './policies/team-policy.service.js';
 import { TeamMembershipService } from './services/team-membership.service.js';
 import { TeamActivityService } from '../team-activity/team-activity.service.js';
 import { GetTeamActivityLogsDto } from '../team-activity/dto/get-activity-logs.dto.js';
+import { RealtimeService } from '../realtime/realtime.service.js';
 
 @Injectable()
 export class TeamsService {
@@ -24,6 +25,7 @@ export class TeamsService {
     private readonly policy: TeamPolicyService,
     private readonly membershipService: TeamMembershipService,
     private readonly teamActivityService: TeamActivityService,
+    private readonly realtimeService: RealtimeService,
   ) {}
 
   async create(userId: number, dto: CreateTeamDto) {
@@ -139,7 +141,7 @@ export class TeamsService {
   }
 
   async update(userId: number, teamId: number, dto: UpdateTeamDto) {
-    return this.prisma.$transaction(async (tx) => {
+    const updatedTeam = await this.prisma.$transaction(async (tx) => {
       // 1. Khóa dòng Team trước tiên trong transaction
       const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
         SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR NO KEY UPDATE
@@ -189,10 +191,22 @@ export class TeamsService {
         },
       });
     });
+
+    void this.realtimeService.emit({
+      type: 'TEAM_UPDATED',
+      actorId: userId,
+      teamId,
+      payload: {
+        teamId,
+        action: 'UPDATE_TEAM',
+      },
+    });
+
+    return updatedTeam;
   }
 
   async remove(userId: number, teamId: number) {
-    return this.prisma.$transaction(async (tx) => {
+    const deletionSummary = await this.prisma.$transaction(async (tx) => {
       // 1. Khóa dòng Team trước tiên trong transaction để tuần tự hóa các mutation
       const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
         SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR NO KEY UPDATE
@@ -238,6 +252,15 @@ export class TeamsService {
         });
       }
 
+      // Chụp danh sách thành viên trước khi xóa team để phát SSE TEAM_DELETED chính xác post-commit
+      const membersToNotify = await tx.teamMember.findMany({
+        where: { teamId },
+        select: { userId: true },
+      });
+      const targetUserIds = Array.from(
+        new Set([team.ownerId, ...membersToNotify.map((m) => m.userId)]),
+      );
+
       await this.notificationEventService.publish(
         {
           type: 'TEAM_DELETED',
@@ -257,8 +280,24 @@ export class TeamsService {
         where: { id: teamId },
       });
 
-      return { message: 'Đã giải tán nhóm thành công' };
+      return {
+        teamName: team.name,
+        targetUserIds,
+      };
     });
+
+    void this.realtimeService.emit({
+      type: 'TEAM_DELETED',
+      actorId: userId,
+      teamId,
+      targetUserIds: deletionSummary.targetUserIds,
+      payload: {
+        teamId,
+        teamName: deletionSummary.teamName,
+      },
+    });
+
+    return { message: 'Đã giải tán nhóm thành công' };
   }
 
   async addMember(userId: number, teamId: number, dto: AddMemberDto) {

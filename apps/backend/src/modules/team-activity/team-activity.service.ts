@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { PrismaService } from '../../database/prisma.service.js';
+import { PrismaService, POST_COMMIT_HOOKS } from '../../database/prisma.service.js';
 import { Prisma, TeamActivityAction, TeamRole, TeamActivityLog } from '@prisma/client';
 import { GetTeamActivityLogsDto } from './dto/get-activity-logs.dto.js';
+import { RealtimeService } from '../realtime/realtime.service.js';
 
 export interface LogActivityParams {
   teamId: number;
@@ -34,7 +35,10 @@ export interface PaginatedTeamActivityLogs {
 export class TeamActivityService {
   private readonly logger = new Logger(TeamActivityService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly realtimeService?: RealtimeService,
+  ) {}
 
   async logActivity(
     tx: Prisma.TransactionClient,
@@ -58,7 +62,7 @@ export class TeamActivityService {
       teamName = team.name;
     }
 
-    return tx.teamActivityLog.create({
+    const created = await tx.teamActivityLog.create({
       data: {
         teamIdSnapshot: params.teamId,
         teamNameSnapshot: teamName,
@@ -71,6 +75,30 @@ export class TeamActivityService {
         metadata: params.metadata ? (params.metadata as Prisma.InputJsonValue) : Prisma.JsonNull,
       },
     });
+
+    if (this.realtimeService) {
+      const emitActivity = () => {
+        void this.realtimeService?.emit({
+          type: 'TEAM_ACTIVITY_CREATED',
+          actorId: params.actorId > 0 ? params.actorId : undefined,
+          teamId: params.teamId,
+          payload: {
+            activityId: created.id,
+            teamId: params.teamId,
+            action: params.action,
+          },
+        });
+      };
+
+      const hooks = (tx as unknown as Record<symbol, Array<() => void> | undefined>)[POST_COMMIT_HOOKS];
+      if (hooks && Array.isArray(hooks)) {
+        hooks.push(emitActivity);
+      } else {
+        (tx as unknown as Record<symbol, Array<() => void>>)[POST_COMMIT_HOOKS] = [emitActivity];
+      }
+    }
+
+    return created;
   }
 
   async getPaginatedLogs(

@@ -24,7 +24,7 @@ export class TeamMembershipService {
   ) {}
 
   async addMember(userId: number, teamId: number, dto: AddMemberDto) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Khóa dòng Team trong transaction để tuần tự hóa và chống race condition
       const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
         SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR NO KEY UPDATE
@@ -113,8 +113,35 @@ export class TeamMembershipService {
         tx,
       );
 
-      return createdMember;
+      return {
+        createdMember,
+        activityLogId: activityLog.id,
+      };
     });
+
+    void this.realtimeService.emit({
+      type: 'TEAM_UPDATED',
+      actorId: userId,
+      teamId,
+      payload: {
+        teamId,
+        action: 'ADD_MEMBER',
+        memberUserId: result.createdMember.userId,
+      },
+    });
+
+    void this.realtimeService.emit({
+      type: 'TEAM_ACTIVITY_CREATED',
+      actorId: userId,
+      teamId,
+      payload: {
+        activityId: result.activityLogId,
+        teamId,
+        action: 'ADD_MEMBER',
+      },
+    });
+
+    return result.createdMember;
   }
 
   async updateMemberRole(
@@ -123,7 +150,7 @@ export class TeamMembershipService {
     memberId: number,
     dto: UpdateMemberRoleDto,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Khóa dòng Team trong transaction
       const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
         SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR NO KEY UPDATE
@@ -162,7 +189,7 @@ export class TeamMembershipService {
 
       // 4.1. Thao tác idempotent: nếu role không thay đổi thì trả về luôn, không ghi log hay phát notification
       if (targetMember.role === dto.role) {
-        return tx.teamMember.findUniqueOrThrow({
+        const unchangedMember = await tx.teamMember.findUniqueOrThrow({
           where: { id: memberId },
           include: {
             user: {
@@ -170,6 +197,11 @@ export class TeamMembershipService {
             },
           },
         });
+        return {
+          member: unchangedMember,
+          changed: false,
+          activityLogId: null as number | null,
+        };
       }
 
       // 5. Cập nhật role
@@ -214,12 +246,43 @@ export class TeamMembershipService {
         tx,
       );
 
-      return res;
+      return {
+        member: res,
+        changed: true,
+        activityLogId: activityLog.id,
+      };
     });
+
+    if (result.changed) {
+      void this.realtimeService.emit({
+        type: 'TEAM_UPDATED',
+        actorId: userId,
+        teamId,
+        payload: {
+          teamId,
+          action: 'CHANGE_ROLE',
+          memberId,
+          newRole: dto.role,
+        },
+      });
+
+      void this.realtimeService.emit({
+        type: 'TEAM_ACTIVITY_CREATED',
+        actorId: userId,
+        teamId,
+        payload: {
+          activityId: result.activityLogId,
+          teamId,
+          action: 'CHANGE_ROLE',
+        },
+      });
+    }
+
+    return result.member;
   }
 
   async transferOwnership(userId: number, teamId: number, dto: TransferOwnershipDto) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Khóa dòng Team trong transaction để tuần tự hóa chuyển quyền
       const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
         SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR NO KEY UPDATE
@@ -308,7 +371,7 @@ export class TeamMembershipService {
         tx,
       );
 
-      return tx.team.findUnique({
+      const updatedTeam = await tx.team.findUnique({
         where: { id: teamId },
         include: {
           owner: {
@@ -326,7 +389,36 @@ export class TeamMembershipService {
           },
         },
       });
+
+      return {
+        team: updatedTeam,
+        activityLogId: activityLog.id,
+      };
     });
+
+    void this.realtimeService.emit({
+      type: 'TEAM_UPDATED',
+      actorId: userId,
+      teamId,
+      payload: {
+        teamId,
+        action: 'TRANSFER_OWNER',
+        newOwnerId: dto.newOwnerId,
+      },
+    });
+
+    void this.realtimeService.emit({
+      type: 'TEAM_ACTIVITY_CREATED',
+      actorId: userId,
+      teamId,
+      payload: {
+        activityId: result.activityLogId,
+        teamId,
+        action: 'TRANSFER_OWNER',
+      },
+    });
+
+    return result.team;
   }
 
   async removeMember(userId: number, teamId: number, memberId: number) {
@@ -335,6 +427,9 @@ export class TeamMembershipService {
     const revokedCollabTaskIds: number[] = [];
     let isSelfLeaving = false;
     let targetMemberUserId = 0;
+    let allAffectedUserIds: number[] = [];
+    let remainingUserIds: number[] = [];
+    let activityLogId = 0;
 
     await this.prisma.$transaction(async (tx) => {
       // 1. Khóa dòng Team trong transaction để tuần tự hóa xóa thành viên
@@ -500,6 +595,16 @@ export class TeamMembershipService {
 
       // 4. Các công việc DONE được giữ nguyên vẹn để bảo toàn lịch sử người đã hoàn thành!
 
+      // Chụp danh sách người nhận SSE trước khi xóa thành viên để người bị xóa vẫn nhận được TEAM_UPDATED
+      const preDeleteMembers = await tx.teamMember.findMany({
+        where: { teamId },
+        select: { userId: true },
+      });
+      allAffectedUserIds = Array.from(
+        new Set([team.ownerId, ...preDeleteMembers.map((m) => m.userId)]),
+      );
+      remainingUserIds = allAffectedUserIds.filter((id) => id !== targetMemberUserId);
+
       // 5. Xóa quan hệ thành viên khỏi nhóm
       await tx.teamMember.delete({
         where: { id: memberId },
@@ -522,6 +627,7 @@ export class TeamMembershipService {
           },
         },
       });
+      activityLogId = activityLog.id;
 
       // 7. Phát thông báo thành viên đã rời / bị xóa khỏi nhóm
       await this.notificationEventService.publish(
@@ -575,6 +681,32 @@ export class TeamMembershipService {
           action: isSelfLeaving ? 'LEAVE' : 'REMOVE',
           userId: targetMemberUserId,
           status: 'REVOKED',
+        },
+      });
+    }
+
+    void this.realtimeService.emit({
+      type: 'TEAM_UPDATED',
+      actorId: userId,
+      teamId,
+      targetUserIds: allAffectedUserIds,
+      payload: {
+        teamId,
+        action: isSelfLeaving ? 'LEAVE_TEAM' : 'REMOVE_MEMBER',
+        removedUserId: targetMemberUserId,
+      },
+    });
+
+    if (remainingUserIds.length > 0) {
+      void this.realtimeService.emit({
+        type: 'TEAM_ACTIVITY_CREATED',
+        actorId: userId,
+        teamId,
+        targetUserIds: remainingUserIds,
+        payload: {
+          activityId: activityLogId,
+          teamId,
+          action: isSelfLeaving ? 'LEAVE_TEAM' : 'REMOVE_MEMBER',
         },
       });
     }
