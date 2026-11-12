@@ -64,6 +64,15 @@ export class TasksController {
     return this.tasksService.getStats(user.id, query);
   }
 
+  @ApiOperation({ summary: 'Lấy danh sách công việc trong thùng rác' })
+  @Get('trash')
+  findTrash(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query?: FilterTasksDto,
+  ) {
+    return this.tasksService.findTrash(query, user.id);
+  }
+
   @ApiOperation({ summary: 'Lấy chi tiết công việc theo ID' })
   @Get(':id')
   findOne(
@@ -158,6 +167,15 @@ export class TasksController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.tasksService.restore(id, user.id);
+  }
+
+  @ApiOperation({ summary: 'Xoá vĩnh viễn công việc' })
+  @Delete(':id/permanent')
+  permanentDelete(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasksService.permanentDelete(id, user.id);
   }
 
   // ==================== COLLABORATORS ====================

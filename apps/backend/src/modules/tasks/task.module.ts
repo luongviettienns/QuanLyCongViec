@@ -3,6 +3,7 @@ import { TasksController } from './tasks.controller.js';
 import { TasksService } from './tasks.service.js';
 import { TaskQueryService } from './services/task-query.service.js';
 import { TaskCrudService } from './services/task-crud.service.js';
+import { TaskTrashService } from './services/task-trash.service.js';
 import { TaskWorkflowService } from './services/task-workflow.service.js';
 import { TaskStatusService } from './services/task-status.service.js';
 import { TaskAssignmentService } from './services/task-assignment.service.js';
@@ -24,6 +25,7 @@ import { TeamActivityModule } from '../team-activity/team-activity.module.js';
     TasksService,
     TaskQueryService,
     TaskCrudService,
+    TaskTrashService,
     TaskWorkflowService,
     TaskStatusService,
     TaskAssignmentService,
@@ -47,6 +49,7 @@ import { TeamActivityModule } from '../team-activity/team-activity.module.js';
     TaskTransferService,
     TaskQueryService,
     TaskCrudService,
+    TaskTrashService,
     TaskReorderService,
     TaskStatsService,
   ],

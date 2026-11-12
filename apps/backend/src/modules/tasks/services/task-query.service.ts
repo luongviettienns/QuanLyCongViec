@@ -15,7 +15,18 @@ export class TaskQueryService {
     private readonly policy: TaskPolicyService,
   ) {}
 
-  async findAll(query: FilterTasksDto | undefined, userId: number): Promise<Task[]> {
+  async buildTeamAccessWhere(userId: number, teamId?: number): Promise<Prisma.TaskWhereInput> {
+    if (teamId) {
+      const team = await this.prisma.team.findUnique({
+        where: { id: teamId },
+        include: { members: true },
+      });
+      if (!this.policy.isTeamMember(userId, team)) {
+        throw new NotFoundException('Không tìm thấy nhóm');
+      }
+      return { teamId };
+    }
+
     const userTeamAccessWhere: Prisma.TeamWhereInput = {
       OR: [
         { ownerId: userId },
@@ -23,26 +34,46 @@ export class TaskQueryService {
       ],
     };
 
-    let teamAccessWhere: Prisma.TaskWhereInput;
+    return {
+      OR: [
+        { teamId: null, userId },
+        { teamId: null, assigneeId: userId },
+        { team: userTeamAccessWhere },
+      ],
+    };
+  }
 
-    if (query?.teamId) {
-      const team = await this.prisma.team.findUnique({
-        where: { id: query.teamId },
-        include: { members: true },
-      });
-      if (!this.policy.isTeamMember(userId, team)) {
-        throw new NotFoundException('Không tìm thấy nhóm');
-      }
-      teamAccessWhere = { teamId: query.teamId };
-    } else {
-      teamAccessWhere = {
-        OR: [
-          { teamId: null, userId },
-          { teamId: null, assigneeId: userId },
-          { team: userTeamAccessWhere },
-        ],
-      };
+  applyAttributeFilters(andClauses: Prisma.TaskWhereInput[], query?: FilterTasksDto): void {
+    if (!query) return;
+
+    if (query.assigneeId) {
+      andClauses.push({ assigneeId: query.assigneeId });
     }
+
+    if (query.search && query.search.trim().length > 0) {
+      andClauses.push({
+        title: {
+          contains: query.search.trim(),
+          mode: 'insensitive',
+        },
+      });
+    }
+
+    if (query.status) {
+      andClauses.push({ status: query.status });
+    }
+
+    if (query.priority) {
+      andClauses.push({ priority: query.priority });
+    }
+
+    if (query.categoryId !== undefined) {
+      andClauses.push({ categoryId: query.categoryId });
+    }
+  }
+
+  async findAll(query: FilterTasksDto | undefined, userId: number): Promise<Task[]> {
+    const teamAccessWhere = await this.buildTeamAccessWhere(userId, query?.teamId);
 
     let scopeWhere: Prisma.TaskWhereInput = {};
     if (query?.scope === 'created_by_me') {
@@ -91,33 +122,16 @@ export class TaskQueryService {
       };
     }
 
+    const andClauses: Prisma.TaskWhereInput[] = [teamAccessWhere];
+    if (Object.keys(scopeWhere).length > 0) {
+      andClauses.push(scopeWhere);
+    }
+    this.applyAttributeFilters(andClauses, query);
+
     const where: Prisma.TaskWhereInput = {
       deletedAt: null,
-      AND: [teamAccessWhere, scopeWhere],
+      AND: andClauses,
     };
-
-    if (query?.assigneeId) {
-      where.assigneeId = query.assigneeId;
-    }
-
-    if (query?.search && query.search.trim().length > 0) {
-      where.title = {
-        contains: query.search.trim(),
-        mode: 'insensitive',
-      };
-    }
-
-    if (query?.status) {
-      where.status = query.status;
-    }
-
-    if (query?.priority) {
-      where.priority = query.priority;
-    }
-
-    if (query?.categoryId !== undefined) {
-      where.categoryId = query.categoryId;
-    }
 
     return this.prisma.task.findMany({
       where,
@@ -155,6 +169,26 @@ export class TaskQueryService {
         { position: 'asc' },
         { createdAt: 'desc' },
       ],
+    });
+  }
+
+  async findTrash(query: FilterTasksDto | undefined, userId: number): Promise<Task[]> {
+    const accessWhere = await this.buildTeamAccessWhere(userId, query?.teamId);
+    const andClauses: Prisma.TaskWhereInput[] = [accessWhere];
+    this.applyAttributeFilters(andClauses, query);
+
+    return this.prisma.task.findMany({
+      where: {
+        deletedAt: { not: null },
+        AND: andClauses,
+      },
+      include: {
+        category: true,
+        assignee: { select: { id: true, name: true, email: true } },
+        deletedBy: { select: { id: true, name: true, email: true } },
+        team: { select: { id: true, name: true } },
+      },
+      orderBy: [{ deletedAt: 'desc' }, { updatedAt: 'desc' }],
     });
   }
 

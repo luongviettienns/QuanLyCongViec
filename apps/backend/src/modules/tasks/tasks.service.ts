@@ -2,6 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service.js';
 import { TaskQueryService } from './services/task-query.service.js';
 import { TaskCrudService } from './services/task-crud.service.js';
+import { TaskTrashService } from './services/task-trash.service.js';
 import { TaskWorkflowService } from './services/task-workflow.service.js';
 import { TaskReorderService } from './services/task-reorder.service.js';
 import { TaskStatsService } from './services/task-stats.service.js';
@@ -32,6 +33,7 @@ export class TasksService {
     private readonly prisma: PrismaService,
     private readonly taskQueryService: TaskQueryService,
     private readonly taskCrudService: TaskCrudService,
+    private readonly taskTrashService: TaskTrashService,
     private readonly taskWorkflowService: TaskWorkflowService,
     private readonly taskReorderService: TaskReorderService,
     private readonly taskStatsService: TaskStatsService,
@@ -42,6 +44,10 @@ export class TasksService {
 
   findAll(query: FilterTasksDto | undefined, userId: number): Promise<Task[]> {
     return this.taskQueryService.findAll(query, userId);
+  }
+
+  findTrash(query: FilterTasksDto | undefined, userId: number): Promise<Task[]> {
+    return this.taskTrashService.findTrash(query, userId);
   }
 
   findOne(id: number, userId: number): Promise<TaskWithTeamAndMembers> {
@@ -163,11 +169,15 @@ export class TasksService {
   }
 
   remove(id: number, userId: number): Promise<{ success: boolean; message: string; deletedTask: Task }> {
-    return this.taskCrudService.remove(id, userId);
+    return this.taskTrashService.remove(id, userId);
   }
 
   restore(id: number, userId: number): Promise<Task> {
-    return this.taskCrudService.restore(id, userId);
+    return this.taskTrashService.restore(id, userId);
+  }
+
+  permanentDelete(id: number, userId: number): Promise<{ success: boolean; message: string }> {
+    return this.taskTrashService.permanentDelete(id, userId);
   }
 
   updateStatus(id: number, data: UpdateTaskStatusDto, userId: number): Promise<Task> {
