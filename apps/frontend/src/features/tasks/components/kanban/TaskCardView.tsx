@@ -11,7 +11,7 @@ import {
 } from '@ant-design/icons';
 import { TASK_PRIORITY_CONFIG, type Task } from '../../types/task.types';
 import type { TaskPermissions } from '../../utils/task-permission.utils';
-import { formatDate, checkIsOverdue } from '../../../../shared/utils/date.utils';
+import { formatDate, getDeadlineDisplayState } from '../../../../shared/utils/date.utils';
 
 interface TaskCardViewProps {
   task: Task;
@@ -34,6 +34,7 @@ export const TaskCardView = memo(function TaskCardView({
   const totalSubtasks = subtasks.length;
   const doneSubtasks = subtasks.filter((s) => s.status === 'DONE').length;
   const subtaskPercent = totalSubtasks > 0 ? Math.round((doneSubtasks / totalSubtasks) * 100) : 0;
+  const deadline = getDeadlineDisplayState(task.dueDate, task.status);
 
   return (
     <Card
@@ -177,11 +178,11 @@ export const TaskCardView = memo(function TaskCardView({
         )}
         {task.dueDate && (
           <Tag
-            color={checkIsOverdue(task.dueDate, task.status) ? 'error' : 'default'}
+            color={deadline.color}
             style={{ fontSize: 11, margin: 0 }}
           >
-            Hạn: {formatDate(task.dueDate)}
-            {checkIsOverdue(task.dueDate, task.status) ? ' (Quá hạn)' : ''}
+            Hạn: {deadline.formatted || formatDate(task.dueDate)}
+            {deadline.badgeText ? ` (${deadline.badgeText})` : ''}
           </Tag>
         )}
       </div>

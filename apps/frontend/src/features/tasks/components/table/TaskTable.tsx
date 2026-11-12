@@ -1,12 +1,12 @@
 import { Table, Tag, Button, Popconfirm, Space, List, Card, Tooltip } from 'antd';
 import { EditOutlined, DeleteOutlined, UserOutlined, EyeOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { TASK_PRIORITY_CONFIG, type Task } from '../../types/task.types';
+import { TASK_PRIORITY_CONFIG, TASK_STATUS_CONFIG, type Task } from '../../types/task.types';
 import type { Category } from '../../../categories/types/category.types';
 import type { Team } from '../../../teams/types/team.types';
 import { useAuth } from '../../../auth/hooks/useAuth';
 import { getTaskPermissions } from '../../utils/task-permission.utils';
-import { formatDate, checkIsOverdue } from '../../../../shared/utils/date.utils';
+import { formatDate, getDeadlineDisplayState } from '../../../../shared/utils/date.utils';
 import { useResponsive } from '../../../../shared/hooks';
 
 interface TaskTableProps {
@@ -74,8 +74,8 @@ export default function TaskTable({
       dataIndex: 'status',
       width: 130,
       render: (status: Task['status']) => {
-        const color = status === 'DONE' ? 'green' : status === 'IN_PROGRESS' ? 'blue' : 'orange';
-        return <Tag color={color}>{status}</Tag>;
+        const config = TASK_STATUS_CONFIG[status] || { color: 'default', label: status };
+        return <Tag color={config.color}>{config.label}</Tag>;
       },
     },
     {
@@ -105,14 +105,20 @@ export default function TaskTable({
     {
       title: 'Hạn chót',
       dataIndex: 'dueDate',
-      width: 150,
+      width: 160,
       render: (date?: string | null, record?: Task) => {
         if (!date) return <span style={{ color: '#bbb' }}>-</span>;
-        const overdue = record ? checkIsOverdue(date, record.status) : false;
+        const deadline = getDeadlineDisplayState(date, record?.status);
+        if (!deadline.formatted) return <span style={{ color: '#bbb' }}>-</span>;
         return (
-          <span style={{ color: overdue ? '#ff4d4f' : 'inherit', fontWeight: overdue ? 600 : 400 }}>
-            {formatDate(date)} {overdue ? '(Quá hạn)' : ''}
-          </span>
+          <Space size={4} wrap>
+            <span>{deadline.formatted}</span>
+            {deadline.badgeText && (
+              <Tag color={deadline.color} style={{ margin: 0, fontSize: 11 }}>
+                {deadline.badgeText}
+              </Tag>
+            )}
+          </Space>
         );
       },
     },
@@ -163,10 +169,10 @@ export default function TaskTable({
         pagination={{ pageSize: 6, align: 'center', size: 'small' }}
         locale={{ emptyText: 'Không có công việc nào' }}
         renderItem={(task) => {
-          const statusColor = task.status === 'DONE' ? 'green' : task.status === 'IN_PROGRESS' ? 'blue' : 'orange';
+          const statusConfig = TASK_STATUS_CONFIG[task.status] || { color: 'default', label: task.status };
           const priority = task.priority || 'MEDIUM';
           const pConfig = TASK_PRIORITY_CONFIG[priority] || { color: 'default', label: priority };
-          const isOverdue = checkIsOverdue(task.dueDate, task.status);
+          const deadline = getDeadlineDisplayState(task.dueDate, task.status);
           const perms = getPerms(task);
           const editLabel = perms.canEditContent ? 'Sửa' : perms.canChangeStatus ? 'Cập nhật' : 'Xem';
 
@@ -183,7 +189,7 @@ export default function TaskTable({
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
                 <span style={{ fontWeight: 600, fontSize: 15 }}>{task.title}</span>
-                <Tag color={statusColor}>{task.status}</Tag>
+                <Tag color={statusConfig.color}>{statusConfig.label}</Tag>
               </div>
 
               {task.description && (
@@ -203,11 +209,19 @@ export default function TaskTable({
                 {task.category && <Tag color={task.category.color}>{task.category.name}</Tag>}
               </div>
 
-              <div style={{ fontSize: 12, color: '#888', display: 'flex', gap: 12, marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: '#888', display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 8, alignItems: 'center' }}>
                 {task.startDate && <span>Bắt đầu: {formatDate(task.startDate)}</span>}
-                {task.dueDate && (
-                  <span style={{ color: isOverdue ? '#ff4d4f' : 'inherit', fontWeight: isOverdue ? 600 : 400 }}>
-                    Hạn: {formatDate(task.dueDate)} {isOverdue ? '(Quá hạn)' : ''}
+                {task.dueDate && deadline.formatted && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <span>Hạn: {deadline.formatted}</span>
+                    {deadline.badgeText && (
+                      <Tag
+                        color={deadline.color}
+                        style={{ margin: 0, fontSize: 10, lineHeight: '18px', padding: '0 4px' }}
+                      >
+                        {deadline.badgeText}
+                      </Tag>
+                    )}
                   </span>
                 )}
               </div>
