@@ -1,4 +1,5 @@
 import type { TaskFilterPatch, TaskFilterState, TaskViewMode } from '../types/task.types.ts';
+import type { Team } from '../../teams/types/team.types.ts';
 
 const VIEW_MODE_STORAGE_KEY = 'taskflow.tasksViewMode';
 
@@ -62,4 +63,55 @@ export function loadSavedViewMode(): Exclude<TaskViewMode, 'trash'> {
 export function saveViewMode(mode: TaskViewMode): void {
   if (typeof window === 'undefined' || mode === 'trash') return;
   window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+}
+
+export interface AssigneeOption {
+  value: number | 'ALL';
+  label: string;
+}
+
+export function buildAssigneeOptions(
+  teams: Team[],
+  teamFilter: number | 'ALL',
+  currentUserId?: number,
+): AssigneeOption[] {
+  const options: AssigneeOption[] = [
+    { value: 'ALL', label: 'Tất cả người phụ trách' },
+  ];
+
+  const userMap = new Map<number, string>();
+
+  const targetTeams =
+    teamFilter !== 'ALL'
+      ? teams.filter((t) => t.id === teamFilter)
+      : teams;
+
+  for (const team of targetTeams) {
+    if (team.owner) {
+      userMap.set(team.owner.id, team.owner.name);
+    }
+    if (Array.isArray(team.members)) {
+      for (const m of team.members) {
+        if (m.user) {
+          userMap.set(m.user.id, m.user.name);
+        }
+      }
+    }
+  }
+
+  // If viewing all teams and currentUserId is not in userMap, add current user
+  if (teamFilter === 'ALL' && currentUserId && !userMap.has(currentUserId)) {
+    userMap.set(currentUserId, 'Tôi');
+  }
+
+  for (const [id, name] of userMap.entries()) {
+    const isCurrentUser = currentUserId !== undefined && id === currentUserId;
+    const label =
+      isCurrentUser && name !== 'Tôi'
+        ? `${name} (Tôi)`
+        : name;
+    options.push({ value: id, label });
+  }
+
+  return options;
 }

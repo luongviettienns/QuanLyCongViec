@@ -83,6 +83,8 @@ function TaskAppShell() {
 
   const {
     tasks,
+    trashTasks,
+    trashLoading,
     categories,
     teams,
     loading,
@@ -94,6 +96,8 @@ function TaskAppShell() {
     handleReset,
     refetch,
     handleDelete,
+    handleRestore,
+    handlePermanentDelete,
     handleReorder,
     handleStatusMove,
     fetchCategories,
@@ -185,7 +189,7 @@ function TaskAppShell() {
   return (
     <AppLayout
       onReload={handleGlobalReload}
-      onCreateTask={() => openCreateModal()}
+      onCreateTask={() => openCreateModal(filters.teamFilter !== 'ALL' ? filters.teamFilter : null)}
       onOpenCategories={() => setCategoryModalOpen(true)}
       loading={currentNav === 'dashboard' ? dashboardLoading : loading}
       currentNav={currentNav}
@@ -211,31 +215,28 @@ function TaskAppShell() {
           element={
             <TasksPage
               tasks={tasks}
+              trashTasks={trashTasks}
+              trashLoading={trashLoading}
               categories={categories}
               teams={teams}
               loading={loading}
-              searchText={filters.searchText}
-              statusFilter={filters.statusFilter}
-              categoryFilter={filters.categoryFilter}
-              priorityFilter={filters.priorityFilter}
-              teamFilter={filters.teamFilter}
-              scopeFilter={filters.scopeFilter}
+              filters={filters}
               isFiltering={isFiltering}
-              categoryModalOpen={categoryModalOpen}
-              onSearchChange={(value) => applyFilters({ searchText: value })}
-              onSearch={(value) => applyFilters({ searchText: value })}
-              onStatusChange={(status) => applyFilters({ statusFilter: status })}
-              onCategoryChange={(catId) => applyFilters({ categoryFilter: catId })}
-              onPriorityChange={(priority) => applyFilters({ priorityFilter: priority })}
-              onTeamChange={(tId) => applyFilters({ teamFilter: tId })}
-              onScopeChange={(scope) => applyFilters({ scopeFilter: scope })}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              onFiltersChange={applyFilters}
               onReset={handleReset}
-              onReorder={handleReorder}
-              onStatusMove={handleStatusMove}
+              onCreate={openCreateModal}
               onEdit={openEditModal}
               onDelete={(id) => void handleDelete(id)}
+              onRestore={handleRestore}
+              onPermanentDelete={handlePermanentDelete}
+              onReorder={handleReorder}
+              onStatusMove={handleStatusMove}
+              categoryModalOpen={categoryModalOpen}
               onCloseCategoryModal={() => setCategoryModalOpen(false)}
               onCategoryChanged={() => void refetch()}
+              currentUserId={user?.id}
             />
           }
         />
@@ -255,6 +256,7 @@ function TaskAppShell() {
           key={`${modalState.task?.id ?? 'new'}-${modalState.defaultTab ?? 'info'}-${modalState.highlightSubtaskId ?? ''}`}
           open={modalState.open}
           task={activeModalTask}
+          defaultTeamId={modalState.defaultTeamId}
           initialTab={modalState.defaultTab}
           highlightSubtaskId={modalState.highlightSubtaskId}
           categories={categories}
