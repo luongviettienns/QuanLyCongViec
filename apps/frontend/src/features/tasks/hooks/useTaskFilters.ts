@@ -1,56 +1,31 @@
 import { useState, useCallback, useMemo } from 'react';
-import type { StatusFilter, PriorityFilter } from '../types/task.types';
+import type { TaskFilterState, TaskFilterPatch } from '../types/task.types';
+import {
+  createDefaultTaskFilters,
+  applyFilterPatch,
+  computeIsFiltering,
+} from '../utils/task-filter.utils';
 
-export interface TaskFilterState {
-  searchText: string;
-  statusFilter: StatusFilter;
-  categoryFilter: number | 'ALL';
-  priorityFilter: PriorityFilter;
-  teamFilter: number | 'ALL';
-  scopeFilter: 'all' | 'created_by_me' | 'assigned_to_me';
-}
+export type { TaskFilterState, TaskFilterPatch };
 
 export function useTaskFilters() {
-  const [searchText, setSearchText] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
-  const [categoryFilter, setCategoryFilter] = useState<number | 'ALL'>('ALL');
-  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('ALL');
-  const [teamFilter, setTeamFilter] = useState<number | 'ALL'>('ALL');
-  const [scopeFilter, setScopeFilter] = useState<'all' | 'created_by_me' | 'assigned_to_me'>('all');
+  const [filters, setFilters] = useState<TaskFilterState>(createDefaultTaskFilters);
 
-  const isFiltering = useMemo(
-    () =>
-      searchText.trim() !== '' ||
-      statusFilter !== 'ALL' ||
-      categoryFilter !== 'ALL' ||
-      priorityFilter !== 'ALL' ||
-      scopeFilter !== 'all',
-    [searchText, statusFilter, categoryFilter, priorityFilter, scopeFilter],
-  );
+  const isFiltering = useMemo(() => computeIsFiltering(filters), [filters]);
+
+  const updateFilters = useCallback((patch: TaskFilterPatch) => {
+    setFilters((prev) => applyFilterPatch(prev, patch));
+  }, []);
 
   const resetFilters = useCallback(() => {
-    setSearchText('');
-    setStatusFilter('ALL');
-    setCategoryFilter('ALL');
-    setPriorityFilter('ALL');
-    setTeamFilter('ALL');
-    setScopeFilter('all');
+    setFilters(createDefaultTaskFilters());
   }, []);
 
   return {
-    searchText,
-    statusFilter,
-    categoryFilter,
-    priorityFilter,
-    teamFilter,
-    scopeFilter,
+    filters,
+    setFilters,
     isFiltering,
-    setSearchText,
-    setStatusFilter,
-    setCategoryFilter,
-    setPriorityFilter,
-    setTeamFilter,
-    setScopeFilter,
+    updateFilters,
     resetFilters,
   };
 }

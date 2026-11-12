@@ -3,6 +3,7 @@ import { PrismaService } from '../../../database/prisma.service.js';
 import { FilterTasksDto } from '../dto/filter-tasks.dto.js';
 import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { Prisma } from '@prisma/client';
+import { getVietnamTodayDate } from './task-validation.utils.js';
 
 @Injectable()
 export class TaskStatsService {
@@ -12,22 +13,11 @@ export class TaskStatsService {
   ) {}
 
   async getStats(userId: number, query?: FilterTasksDto) {
-    const vnDateFormatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Ho_Chi_Minh',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
-    const [vnYear, vnMonth, vnDay] = vnDateFormatter
-      .format(new Date())
-      .split('-')
-      .map((part) => parseInt(part, 10));
-
-    const todayDate = new Date(Date.UTC(vnYear, vnMonth - 1, vnDay));
+    const todayDate = getVietnamTodayDate();
     const next7Days = new Date(todayDate);
     next7Days.setUTCDate(next7Days.getUTCDate() + 7);
 
-    let whereSql: Prisma.Sql;
+    let teamAccessSql: Prisma.Sql;
 
     if (query?.teamId) {
       const team = await this.prisma.team.findUnique({
@@ -37,45 +27,58 @@ export class TaskStatsService {
       if (!this.policy.isTeamMember(userId, team)) {
         throw new NotFoundException('Không tìm thấy nhóm');
       }
-      whereSql = Prisma.sql`"teamId" = ${query.teamId}`;
-    } else if (query?.scope === 'created_by_me') {
-      whereSql = Prisma.sql`
-        "userId" = ${userId}
-        AND (
-          "teamId" IS NULL
-          OR "teamId" IN (
-            SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId}
-            UNION
-            SELECT "id" FROM "Team" WHERE "ownerId" = ${userId}
-          )
-        )
-      `;
-    } else if (query?.scope === 'assigned_to_me') {
-      whereSql = Prisma.sql`
-        "assigneeId" = ${userId}
-        AND (
-          "teamId" IS NULL
-          OR "teamId" IN (
-            SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId}
-            UNION
-            SELECT "id" FROM "Team" WHERE "ownerId" = ${userId}
-          )
-        )
-      `;
+      teamAccessSql = Prisma.sql`"teamId" = ${query.teamId}`;
     } else {
-      whereSql = Prisma.sql`
+      teamAccessSql = Prisma.sql`
         (
-          "teamId" IS NULL AND ("userId" = ${userId} OR "assigneeId" = ${userId})
-        )
-        OR (
-          "teamId" IN (
-            SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId}
-            UNION
-            SELECT "id" FROM "Team" WHERE "ownerId" = ${userId}
+          ("teamId" IS NULL AND ("userId" = ${userId} OR "assigneeId" = ${userId}))
+          OR (
+            "teamId" IN (
+              SELECT "teamId" FROM "TeamMember" WHERE "userId" = ${userId}
+              UNION
+              SELECT "id" FROM "Team" WHERE "ownerId" = ${userId}
+            )
           )
         )
       `;
     }
+
+    let scopeSql = Prisma.sql`1=1`;
+    if (query?.scope === 'created_by_me') {
+      scopeSql = Prisma.sql`"userId" = ${userId}`;
+    } else if (query?.scope === 'assigned_to_me') {
+      scopeSql = Prisma.sql`"assigneeId" = ${userId}`;
+    } else if (query?.scope === 'collaborating') {
+      scopeSql = Prisma.sql`
+        EXISTS (
+          SELECT 1 FROM "TaskCollaborator" tc
+          WHERE tc."taskId" = "Task"."id" AND tc."userId" = ${userId} AND tc."status" = 'ACCEPTED'
+        )
+      `;
+    } else if (query?.scope === 'subtasks_assigned_to_me') {
+      scopeSql = Prisma.sql`
+        EXISTS (
+          SELECT 1 FROM "Subtask" st
+          WHERE st."taskId" = "Task"."id" AND st."assigneeId" = ${userId} AND st."deletedAt" IS NULL
+        )
+      `;
+    } else if (query?.scope === 'my_work') {
+      scopeSql = Prisma.sql`
+        (
+          "assigneeId" = ${userId}
+          OR EXISTS (
+            SELECT 1 FROM "TaskCollaborator" tc
+            WHERE tc."taskId" = "Task"."id" AND tc."userId" = ${userId} AND tc."status" = 'ACCEPTED'
+          )
+          OR EXISTS (
+            SELECT 1 FROM "Subtask" st
+            WHERE st."taskId" = "Task"."id" AND st."assigneeId" = ${userId} AND st."deletedAt" IS NULL
+          )
+        )
+      `;
+    }
+
+    const whereSql = Prisma.sql`(${teamAccessSql}) AND (${scopeSql})`;
 
     const [statsResult, deadlinesResult] = await Promise.all([
       this.prisma.$queryRaw<
@@ -102,7 +105,8 @@ export class TaskStatsService {
           COUNT(*) FILTER (WHERE "Priority" = 'MEDIUM')::bigint AS "priorityMedium",
           COUNT(*) FILTER (WHERE "Priority" = 'HIGH')::bigint AS "priorityHigh"
         FROM "Task"
-        WHERE ${whereSql};
+        WHERE (${whereSql})
+          AND "deletedAt" IS NULL;
       `,
       this.prisma.$queryRaw<
         Array<{
@@ -114,7 +118,8 @@ export class TaskStatsService {
           to_char("dueDate", 'YYYY-MM-DD') AS date,
           COUNT(*)::bigint AS count
         FROM "Task"
-        WHERE ${whereSql}
+        WHERE (${whereSql})
+          AND "deletedAt" IS NULL
           AND status != 'DONE'
           AND "dueDate" IS NOT NULL
           AND "dueDate" >= ${todayDate}::date

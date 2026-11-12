@@ -8,6 +8,7 @@ import { PrismaService } from '../../../database/prisma.service.js';
 import { ReorderTasksDto } from '../dto/reorder-tasks.dto.js';
 import { TaskPolicyService, type TaskWithTeamAndMembers } from '../policies/task-policy.service.js';
 import { TaskWorkflowPolicy } from '../policies/task-workflow-policy.service.js';
+import { RealtimeService } from '../../realtime/realtime.service.js';
 import { Prisma, TaskStatus } from '@prisma/client';
 
 export interface BoardLockScope {
@@ -21,6 +22,7 @@ export class TaskReorderService {
     private readonly prisma: PrismaService,
     private readonly policy: TaskPolicyService,
     private readonly workflowPolicy: TaskWorkflowPolicy,
+    private readonly realtimeService: RealtimeService,
   ) {}
 
   private resolveLockKey(scope: BoardLockScope): { namespace: number; key: number } {
@@ -61,6 +63,7 @@ export class TaskReorderService {
       where: {
         ...scopeWhere,
         status,
+        deletedAt: null,
         ...(excludeIds.length > 0 ? { NOT: { id: { in: excludeIds } } } : {}),
       },
       orderBy: [
@@ -89,6 +92,7 @@ export class TaskReorderService {
       where: {
         ...scopeWhere,
         status,
+        deletedAt: null,
         ...(excludeIds.length > 0 ? { NOT: { id: { in: excludeIds } } } : {}),
       },
     });
@@ -105,6 +109,17 @@ export class TaskReorderService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      // Kiểm tra tư cách thành viên nhóm trước khi khóa để người ngoài nhóm nhận 404 ngay lập tức
+      if (dto.teamId) {
+        const team = await tx.team.findUnique({
+          where: { id: dto.teamId },
+          include: { members: true },
+        });
+        if (!this.policy.isTeamMember(userId, team)) {
+          throw new NotFoundException('Không tìm thấy nhóm');
+        }
+      }
+
       await this.lockScope(tx, { teamId: dto.teamId ?? null, userId });
 
       if (dto.teamId) {
@@ -125,6 +140,7 @@ export class TaskReorderService {
         where: {
           id: { in: dto.taskIds },
           ...scopeWhere,
+          deletedAt: null,
         },
         include: {
           team: {
@@ -173,6 +189,7 @@ export class TaskReorderService {
           where: {
             ...scopeWhere,
             status: targetStatus,
+            deletedAt: null,
             NOT: { id: { in: dto.taskIds } },
           },
           orderBy: [
@@ -214,6 +231,7 @@ export class TaskReorderService {
           where: {
             ...scopeWhere,
             status: firstStatus,
+            deletedAt: null,
             NOT: { id: { in: dto.taskIds } },
           },
           orderBy: [
@@ -239,6 +257,18 @@ export class TaskReorderService {
           }
         }
       }
+    });
+
+    void this.realtimeService.emit({
+      type: 'TASK_REORDERED',
+      actorId: userId,
+      teamId: dto.teamId,
+      targetUserIds: dto.teamId ? undefined : [userId],
+      payload: {
+        teamId: dto.teamId,
+        status: dto.status,
+        taskIds: dto.taskIds,
+      },
     });
 
     return {

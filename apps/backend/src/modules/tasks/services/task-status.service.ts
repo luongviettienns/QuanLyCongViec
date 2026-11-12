@@ -1,6 +1,8 @@
 import {
   Injectable,
   ForbiddenException,
+  NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service.js';
 import { UpdateTaskStatusDto } from '../dto/update-task-status.dto.js';
@@ -9,7 +11,9 @@ import { TaskWorkflowPolicy } from '../policies/task-workflow-policy.service.js'
 import { TaskQueryService } from './task-query.service.js';
 import { TaskReorderService } from './task-reorder.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
-import { type Task, Prisma, TaskStatus } from '@prisma/client';
+import { RealtimeService } from '../../realtime/realtime.service.js';
+import { TeamActivityService } from '../../team-activity/team-activity.service.js';
+import { type Task, Prisma, TaskStatus, TeamActivityAction } from '@prisma/client';
 
 @Injectable()
 export class TaskStatusService {
@@ -20,6 +24,8 @@ export class TaskStatusService {
     private readonly queryService: TaskQueryService,
     private readonly reorderService: TaskReorderService,
     private readonly notificationEventService: NotificationEventService,
+    private readonly realtimeService: RealtimeService,
+    private readonly teamActivityService: TeamActivityService,
   ) {}
 
   private executeInTransaction<T>(
@@ -38,17 +44,35 @@ export class TaskStatusService {
     userId: number,
     externalTx?: Prisma.TransactionClient,
   ): Promise<Task> {
-    return this.executeInTransaction(externalTx, async (tx) => {
+    try {
+      const updatedTask = await this.executeInTransaction(externalTx, async (tx) => {
       const initialTask = await this.queryService.findOne(id, userId, tx);
       await this.reorderService.lockScope(tx, {
         teamId: initialTask.teamId,
         userId: initialTask.userId,
       });
+      await tx.$executeRaw`SELECT id, status FROM "Task" WHERE id = ${id} FOR UPDATE;`;
       const currentTask = await this.queryService.findOne(id, userId, tx);
 
+      if (data.status === TaskStatus.DONE) {
+        const unfinishedSubtasksCount = await tx.subtask.count({
+          where: {
+            taskId: id,
+            status: { not: TaskStatus.DONE },
+            deletedAt: null,
+          },
+        });
+
+        if (unfinishedSubtasksCount > 0) {
+          throw new BadRequestException(
+            'Không thể chuyển công việc chính sang hoàn thành khi vẫn còn công việc con chưa hoàn thành',
+          );
+        }
+      }
+
       const scopeWhere: Prisma.TaskWhereInput = currentTask.teamId
-        ? { teamId: currentTask.teamId }
-        : { userId: currentTask.userId, teamId: null };
+        ? { teamId: currentTask.teamId, deletedAt: null }
+        : { userId: currentTask.userId, teamId: null, deletedAt: null };
 
       if (currentTask.status === data.status) {
         if (data.position === undefined) {
@@ -115,6 +139,7 @@ export class TaskStatusService {
         where: {
           ...scopeWhere,
           status: data.status,
+          deletedAt: null,
           NOT: { id },
         },
         orderBy: [{ position: 'asc' }, { createdAt: 'desc' }],
@@ -128,6 +153,17 @@ export class TaskStatusService {
       const newDestTasks = [...destTasks];
       newDestTasks.splice(targetIdx, 0, currentTask);
 
+      // Nếu mở lại task từ DONE, kiểm tra xem Assignee có còn thuộc Team không
+      let shouldUnassign = false;
+      if (currentTask.status === TaskStatus.DONE && data.status !== TaskStatus.DONE) {
+        if (currentTask.teamId && currentTask.assigneeId) {
+          const isStillMember = this.policy.isTeamMember(currentTask.assigneeId, currentTask.team);
+          if (!isStillMember) {
+            shouldUnassign = true;
+          }
+        }
+      }
+
       let updatedCurrentTask: Task = currentTask;
       for (let idx = 0; idx < newDestTasks.length; idx++) {
         const item = newDestTasks[idx];
@@ -137,6 +173,7 @@ export class TaskStatusService {
             data: {
               status: data.status,
               position: idx,
+              ...(shouldUnassign ? { assignee: { disconnect: true } } : {}),
             },
             include: {
               category: true,
@@ -152,6 +189,48 @@ export class TaskStatusService {
         }
       }
 
+      if (currentTask.teamId && currentTask.status !== data.status) {
+        await this.teamActivityService.logActivity(tx, {
+          teamId: currentTask.teamId,
+          actorId: userId,
+          action: TeamActivityAction.TASK_STATUS_CHANGED,
+          metadata: {
+            taskId: currentTask.id,
+            taskTitle: currentTask.title,
+            oldStatus: currentTask.status,
+            newStatus: data.status,
+          },
+        });
+      }
+
+      if (shouldUnassign && currentTask.assigneeId) {
+        if (currentTask.teamId) {
+          await this.teamActivityService.logActivity(tx, {
+            teamId: currentTask.teamId,
+            actorId: userId,
+            action: TeamActivityAction.TASK_UNASSIGNED,
+            targetUserId: currentTask.assigneeId,
+            metadata: {
+              taskId: currentTask.id,
+              taskTitle: currentTask.title,
+            },
+          });
+        }
+
+        await this.notificationEventService.publish(
+          {
+            type: 'TASK_UNASSIGNED',
+            actorId: userId,
+            taskId: currentTask.id,
+            taskTitle: currentTask.title,
+            previousAssigneeId: currentTask.assigneeId,
+            teamId: currentTask.teamId,
+            timestamp: updatedCurrentTask.updatedAt.getTime(),
+          },
+          tx,
+        );
+      }
+
       if (data.status === TaskStatus.DONE) {
         await this.notificationEventService.publish(
           {
@@ -162,6 +241,7 @@ export class TaskStatusService {
             teamId: updatedCurrentTask.teamId,
             creatorId: updatedCurrentTask.userId,
             assigneeId: updatedCurrentTask.assigneeId,
+            timestamp: updatedCurrentTask.updatedAt.getTime(),
           },
           tx,
         );
@@ -177,6 +257,7 @@ export class TaskStatusService {
             teamId: updatedCurrentTask.teamId,
             creatorId: updatedCurrentTask.userId,
             assigneeId: updatedCurrentTask.assigneeId,
+            timestamp: updatedCurrentTask.updatedAt.getTime(),
           },
           tx,
         );
@@ -184,5 +265,30 @@ export class TaskStatusService {
 
       return updatedCurrentTask;
     });
+
+    if (!externalTx) {
+      void this.realtimeService.emit({
+        type: 'TASK_STATUS_CHANGED',
+        actorId: userId,
+        teamId: updatedTask.teamId,
+        targetUserIds: updatedTask.teamId
+          ? undefined
+          : [updatedTask.userId, ...(updatedTask.assigneeId ? [updatedTask.assigneeId] : [])],
+        payload: {
+          taskId: updatedTask.id,
+          status: updatedTask.status,
+          position: updatedTask.position,
+          teamId: updatedTask.teamId,
+        },
+      });
+    }
+
+      return updatedTask;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        throw new NotFoundException('Không tìm thấy công việc (có thể đã bị xoá bởi người khác)');
+      }
+      throw error;
+    }
   }
 }

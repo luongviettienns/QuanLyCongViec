@@ -28,6 +28,26 @@ export class NotificationRecipientService {
         if (event.previousAssigneeId) {
           candidateIds.push(event.previousAssigneeId);
         }
+        if (event.teamId) {
+          const team = await prisma.team.findUnique({
+            where: { id: event.teamId },
+            select: {
+              ownerId: true,
+              members: {
+                where: { role: 'ADMIN' },
+                select: { userId: true },
+              },
+            },
+          });
+          if (team?.ownerId) {
+            candidateIds.push(team.ownerId);
+          }
+          if (team?.members) {
+            for (const m of team.members) {
+              candidateIds.push(m.userId);
+            }
+          }
+        }
         break;
 
       case 'TASK_STATUS_CHANGED':
@@ -54,7 +74,7 @@ export class NotificationRecipientService {
         break;
 
       case 'TASK_RETURNED':
-        // Creator if still in team, else Team Owner
+        // Creator if still in team, else Team Owner & Admins
         if (event.teamId) {
           const creatorMember = await prisma.teamMember.findUnique({
             where: {
@@ -66,10 +86,21 @@ export class NotificationRecipientService {
           } else {
             const team = await prisma.team.findUnique({
               where: { id: event.teamId },
-              select: { ownerId: true },
+              select: {
+                ownerId: true,
+                members: {
+                  where: { role: 'ADMIN' },
+                  select: { userId: true },
+                },
+              },
             });
             if (team?.ownerId) {
               candidateIds.push(team.ownerId);
+            }
+            if (team?.members) {
+              for (const m of team.members) {
+                candidateIds.push(m.userId);
+              }
             }
           }
         } else {
@@ -146,6 +177,69 @@ export class NotificationRecipientService {
           candidateIds.push(m.userId);
         }
         break;
+
+      case 'TASK_COLLABORATOR_INVITED':
+        if (event.invitedUserId) {
+          candidateIds.push(event.invitedUserId);
+        }
+        break;
+
+      case 'TASK_COLLABORATOR_ACCEPTED':
+      case 'TASK_COLLABORATOR_DECLINED':
+        if (event.invitedById) {
+          candidateIds.push(event.invitedById);
+        }
+        if (event.assigneeId) {
+          candidateIds.push(event.assigneeId);
+        }
+        break;
+
+      case 'TASK_COLLABORATOR_REMOVED':
+        if (event.isSelfLeave) {
+          // If self leaving, notify Main Assignee and Team Owner
+          if (event.assigneeId) {
+            candidateIds.push(event.assigneeId);
+          }
+          if (event.teamId) {
+            const team = await prisma.team.findUnique({
+              where: { id: event.teamId },
+              select: { ownerId: true },
+            });
+            if (team?.ownerId) {
+              candidateIds.push(team.ownerId);
+            }
+          }
+        } else {
+          // If removed by manager, notify the removed collaborator
+          candidateIds.push(event.removedUserId);
+        }
+        break;
+
+      case 'SUBTASK_ASSIGNED':
+        if (event.subtaskAssigneeId) {
+          candidateIds.push(event.subtaskAssigneeId);
+        }
+        break;
+
+      case 'SUBTASK_UNASSIGNED':
+        if (event.previousAssigneeId) {
+          candidateIds.push(event.previousAssigneeId);
+        }
+        break;
+
+      case 'SUBTASK_STATUS_CHANGED':
+      case 'SUBTASK_COMPLETED':
+      case 'SUBTASK_REOPENED':
+        if (event.creatorId) {
+          candidateIds.push(event.creatorId);
+        }
+        if (event.assigneeId) {
+          candidateIds.push(event.assigneeId);
+        }
+        if (event.subtaskAssigneeId) {
+          candidateIds.push(event.subtaskAssigneeId);
+        }
+        break;
     }
 
     // Filter out actor and deduplicate
@@ -176,6 +270,9 @@ export class NotificationRecipientService {
             return true;
           }
           if (event.type === 'TEAM_MEMBER_REMOVED' && id === event.removedUserId) {
+            return true;
+          }
+          if (event.type === 'TASK_COLLABORATOR_REMOVED' && id === event.removedUserId) {
             return true;
           }
           if (event.type === 'TEAM_DELETED') {

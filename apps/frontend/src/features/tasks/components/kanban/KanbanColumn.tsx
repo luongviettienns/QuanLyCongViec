@@ -1,8 +1,9 @@
-import { Badge, Grid, Tooltip } from 'antd';
+import { Badge, Tooltip } from 'antd';
 import { useDroppable } from '@dnd-kit/react';
 import type { Task, TaskStatus } from '../../types/task.types';
 import type { TaskPermissions } from '../../utils/task-permission.utils';
 import { TaskCard } from './TaskCard';
+import { useResponsive } from '../../../../shared/hooks';
 
 export interface ColumnConfig {
   id: TaskStatus;
@@ -31,7 +32,7 @@ export function KanbanColumn({
   taskPermissionsMap = {},
   onEdit,
 }: KanbanColumnProps) {
-  const screens = Grid.useBreakpoint();
+  const screens = useResponsive();
   const { ref, isDropTarget } = useDroppable({
     id: `column-${column.id}`,
     disabled: false,

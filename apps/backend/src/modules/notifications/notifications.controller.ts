@@ -16,6 +16,7 @@ import { QueryNotificationsDto } from './dto/query-notifications.dto.js';
 import { MarkBulkReadDto } from './dto/mark-notification-read.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { InternalApiKeyGuard } from '../auth/guards/internal-api-key.guard.js';
+import { Public } from '../auth/decorators/public.decorator.js';
 import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js';
 
 @ApiTags('Notifications')
@@ -29,6 +30,7 @@ export class NotificationsController {
   ) {}
 
   @ApiOperation({ summary: 'Kích hoạt quét và gửi nhắc nhở deadline' })
+  @Public()
   @UseGuards(InternalApiKeyGuard)
   @Post('reminders/trigger')
   triggerDeadlineReminders() {

@@ -19,7 +19,7 @@ import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard.js';
         return {
           secret,
           signOptions: {
-            expiresIn: '7d',
+            expiresIn: (process.env.JWT_EXPIRATION ?? '1d') as any,
           },
         };
       },

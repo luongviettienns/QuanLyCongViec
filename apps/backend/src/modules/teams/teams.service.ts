@@ -1,6 +1,7 @@
 import {
   Injectable,
   NotFoundException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service.js';
 import { CreateTeamDto } from './dto/create-team.dto.js';
@@ -12,6 +13,9 @@ import { TeamRole } from '@prisma/client';
 import { NotificationEventService } from '../notifications/services/notification-event.service.js';
 import { TeamPolicyService } from './policies/team-policy.service.js';
 import { TeamMembershipService } from './services/team-membership.service.js';
+import { TeamActivityService } from '../team-activity/team-activity.service.js';
+import { GetTeamActivityLogsDto } from '../team-activity/dto/get-activity-logs.dto.js';
+import { RealtimeService } from '../realtime/realtime.service.js';
 
 @Injectable()
 export class TeamsService {
@@ -20,6 +24,8 @@ export class TeamsService {
     private readonly notificationEventService: NotificationEventService,
     private readonly policy: TeamPolicyService,
     private readonly membershipService: TeamMembershipService,
+    private readonly teamActivityService: TeamActivityService,
+    private readonly realtimeService: RealtimeService,
   ) {}
 
   async create(userId: number, dto: CreateTeamDto) {
@@ -135,76 +141,126 @@ export class TeamsService {
   }
 
   async update(userId: number, teamId: number, dto: UpdateTeamDto) {
-    const team = await this.prisma.team.findUnique({
-      where: { id: teamId },
-    });
+    const updatedTeam = await this.prisma.$transaction(async (tx) => {
+      // 1. Khóa dòng Team trước tiên trong transaction
+      const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
+        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR NO KEY UPDATE
+      `;
 
-    if (!team) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
+      if (!lockedTeams || lockedTeams.length === 0) {
+        throw new NotFoundException('Không tìm thấy nhóm');
+      }
+      const team = lockedTeams[0];
 
-    const caller = await this.prisma.teamMember.findUnique({
-      where: {
-        teamId_userId: { teamId, userId },
-      },
-    });
-
-    const { isOwner, callerRole } = this.policy.resolveCallerContext(
-      team.ownerId,
-      caller,
-      userId,
-    );
-
-    this.policy.assertCanUpdate(isOwner, callerRole);
-
-    return this.prisma.team.update({
-      where: { id: teamId },
-      data: {
-        ...(dto.name ? { name: dto.name.trim() } : {}),
-        ...(dto.description !== undefined ? { description: dto.description?.trim() || null } : {}),
-      },
-      include: {
-        owner: {
-          select: { id: true, name: true, email: true },
+      // 2. Đọc membership của caller ngay trong transaction đã khóa
+      const caller = await tx.teamMember.findUnique({
+        where: {
+          teamId_userId: { teamId, userId },
         },
-        members: {
-          include: {
-            user: {
-              select: { id: true, name: true, email: true },
+      });
+
+      // 3. Xác thực quyền ngay trong transaction
+      const { isOwner, callerRole } = this.policy.resolveCallerContext(
+        team.ownerId,
+        caller,
+        userId,
+      );
+
+      this.policy.assertCanUpdate(isOwner, callerRole);
+
+      return tx.team.update({
+        where: { id: teamId },
+        data: {
+          ...(dto.name ? { name: dto.name.trim() } : {}),
+          ...(dto.description !== undefined ? { description: dto.description?.trim() || null } : {}),
+        },
+        include: {
+          owner: {
+            select: { id: true, name: true, email: true },
+          },
+          members: {
+            include: {
+              user: {
+                select: { id: true, name: true, email: true },
+              },
             },
           },
+          _count: {
+            select: { members: true, tasks: true },
+          },
         },
-        _count: {
-          select: { members: true, tasks: true },
-        },
+      });
+    });
+
+    void this.realtimeService.emit({
+      type: 'TEAM_UPDATED',
+      actorId: userId,
+      teamId,
+      payload: {
+        teamId,
+        action: 'UPDATE_TEAM',
       },
     });
+
+    return updatedTeam;
   }
 
   async remove(userId: number, teamId: number) {
-    const team = await this.prisma.team.findUnique({
-      where: { id: teamId },
-    });
+    const deletionSummary = await this.prisma.$transaction(async (tx) => {
+      // 1. Khóa dòng Team trước tiên trong transaction để tuần tự hóa các mutation
+      const lockedTeams = await tx.$queryRaw<Array<{ id: number; name: string; ownerId: number }>>`
+        SELECT id, name, "ownerId" FROM "Team" WHERE id = ${teamId} FOR NO KEY UPDATE
+      `;
 
-    if (!team) {
-      throw new NotFoundException('Không tìm thấy nhóm');
-    }
+      if (!lockedTeams || lockedTeams.length === 0) {
+        throw new NotFoundException('Không tìm thấy nhóm');
+      }
+      const team = lockedTeams[0];
 
-    const caller = await this.prisma.teamMember.findUnique({
-      where: {
-        teamId_userId: { teamId, userId },
-      },
-    });
+      // 2. Đọc caller membership ngay trong transaction đã khóa
+      const caller = await tx.teamMember.findUnique({
+        where: {
+          teamId_userId: { teamId, userId },
+        },
+      });
 
-    const { isOwner } = this.policy.resolveCallerContext(
-      team.ownerId,
-      caller,
-      userId,
-    );
+      // 3. Xác thực quyền Owner ngay trong transaction
+      const { isOwner } = this.policy.resolveCallerContext(
+        team.ownerId,
+        caller,
+        userId,
+      );
 
-    this.policy.assertCanDelete(isOwner);
+      this.policy.assertCanDelete(isOwner);
 
-    await this.prisma.$transaction(async (tx) => {
+      // 4. Kiểm tra dữ liệu công việc đang hoạt động và danh mục phụ thuộc
+      const [taskCount, categoryCount] = await Promise.all([
+        tx.task.count({
+          where: { teamId, deletedAt: null },
+        }),
+        tx.category.count({
+          where: { teamId },
+        }),
+      ]);
+
+      if (taskCount > 0 || categoryCount > 0) {
+        throw new ConflictException({
+          code: 'TEAM_HAS_DEPENDENT_DATA',
+          message: 'Không thể xóa nhóm khi vẫn còn dữ liệu công việc hoặc danh mục',
+          taskCount,
+          categoryCount,
+        });
+      }
+
+      // Chụp danh sách thành viên trước khi xóa team để phát SSE TEAM_DELETED chính xác post-commit
+      const membersToNotify = await tx.teamMember.findMany({
+        where: { teamId },
+        select: { userId: true },
+      });
+      const targetUserIds = Array.from(
+        new Set([team.ownerId, ...membersToNotify.map((m) => m.userId)]),
+      );
+
       await this.notificationEventService.publish(
         {
           type: 'TEAM_DELETED',
@@ -215,9 +271,30 @@ export class TeamsService {
         tx,
       );
 
+      // Dọn sạch vĩnh viễn các task trong thùng rác (đã xóa mềm) trước khi giải tán nhóm
+      await tx.task.deleteMany({
+        where: { teamId, deletedAt: { not: null } },
+      });
+
       await tx.team.delete({
         where: { id: teamId },
       });
+
+      return {
+        teamName: team.name,
+        targetUserIds,
+      };
+    });
+
+    void this.realtimeService.emit({
+      type: 'TEAM_DELETED',
+      actorId: userId,
+      teamId,
+      targetUserIds: deletionSummary.targetUserIds,
+      payload: {
+        teamId,
+        teamName: deletionSummary.teamName,
+      },
     });
 
     return { message: 'Đã giải tán nhóm thành công' };
@@ -242,5 +319,31 @@ export class TeamsService {
 
   async removeMember(userId: number, teamId: number, memberId: number) {
     return this.membershipService.removeMember(userId, teamId, memberId);
+  }
+
+  async getActivityLogs(userId: number, teamId: number, query?: GetTeamActivityLogsDto) {
+    const team = await this.prisma.team.findUnique({
+      where: { id: teamId },
+    });
+
+    if (!team) {
+      throw new NotFoundException('Không tìm thấy nhóm');
+    }
+
+    const caller = await this.prisma.teamMember.findUnique({
+      where: {
+        teamId_userId: { teamId, userId },
+      },
+    });
+
+    const { isOwner, callerRole } = this.policy.resolveCallerContext(
+      team.ownerId,
+      caller,
+      userId,
+    );
+
+    this.policy.assertCanViewActivityLogs(isOwner, callerRole);
+
+    return this.teamActivityService.getPaginatedLogs(teamId, query);
   }
 }

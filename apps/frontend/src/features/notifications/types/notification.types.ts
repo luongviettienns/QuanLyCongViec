@@ -15,7 +15,16 @@ export type NotificationType =
   | 'TEAM_OWNERSHIP_TRANSFERRED'
   | 'TEAM_DELETED'
   | 'TEAM_INVITED'
-  | 'DEADLINE_SOON';
+  | 'DEADLINE_SOON'
+  | 'TASK_COLLABORATOR_INVITED'
+  | 'TASK_COLLABORATOR_ACCEPTED'
+  | 'TASK_COLLABORATOR_DECLINED'
+  | 'TASK_COLLABORATOR_REMOVED'
+  | 'SUBTASK_ASSIGNED'
+  | 'SUBTASK_UNASSIGNED'
+  | 'SUBTASK_STATUS_CHANGED'
+  | 'SUBTASK_COMPLETED'
+  | 'SUBTASK_REOPENED';
 
 export interface NotificationActor {
   id: number;
@@ -33,6 +42,7 @@ export interface Notification {
   isRead: boolean;
   readAt: string | null;
   taskId: number | null;
+  subtaskId?: number | null;
   teamId: number | null;
   eventKey: string | null;
   createdAt: string;

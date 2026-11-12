@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { message } from 'antd';
-import { deleteTask } from '../api/tasks.api';
+import { deleteTask, restoreTask, permanentDeleteTask } from '../api/tasks.api';
 import { UnauthorizedError } from '../../../shared/api';
 
 export function useTaskMutations(isAuthenticated: boolean) {
@@ -30,7 +30,61 @@ export function useTaskMutations(isAuthenticated: boolean) {
     [isAuthenticated],
   );
 
+  const handleRestoreTask = useCallback(
+    async (id: number, onSuccess?: () => Promise<void> | void) => {
+      if (!isAuthenticated) {
+        return;
+      }
+      try {
+        await restoreTask(id);
+        message.success('Khôi phục công việc thành công');
+        if (onSuccess) {
+          await onSuccess();
+        }
+      } catch (error) {
+        if (
+          error instanceof UnauthorizedError ||
+          (error instanceof Error && error.name === 'UnauthorizedError')
+        ) {
+          return;
+        }
+        message.error(
+          error instanceof Error ? error.message : 'Khôi phục công việc thất bại',
+        );
+      }
+    },
+    [isAuthenticated],
+  );
+
+  const handlePermanentDeleteTask = useCallback(
+    async (id: number, onSuccess?: () => Promise<void> | void) => {
+      if (!isAuthenticated) {
+        return;
+      }
+      try {
+        await permanentDeleteTask(id);
+        message.success('Đã xoá vĩnh viễn công việc');
+        if (onSuccess) {
+          await onSuccess();
+        }
+      } catch (error) {
+        if (
+          error instanceof UnauthorizedError ||
+          (error instanceof Error && error.name === 'UnauthorizedError')
+        ) {
+          return;
+        }
+        message.error(
+          error instanceof Error ? error.message : 'Xoá vĩnh viễn công việc thất bại',
+        );
+      }
+    },
+    [isAuthenticated],
+  );
+
   return {
     handleDeleteTask,
+    handleRestoreTask,
+    handlePermanentDeleteTask,
   };
 }

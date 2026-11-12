@@ -27,7 +27,7 @@ import {
   BarElement,
 } from 'chart.js';
 import { Doughnut, Bar } from 'react-chartjs-2';
-import type { TaskStats, TaskStatus } from '../../tasks/types/task.types';
+import type { TaskStats, TaskFilterPatch } from '../../tasks/types/task.types';
 
 ChartJS.register(
   ArcElement,
@@ -40,9 +40,9 @@ ChartJS.register(
 
 const { Text, Paragraph } = Typography;
 
-interface DashboardChartsProps {
+export interface DashboardChartsProps {
   stats: TaskStats;
-  onNavigateToTasks?: (status?: TaskStatus) => void;
+  onNavigateToTasks?: (patch?: TaskFilterPatch) => void;
 }
 
 const barChartOptions = {
@@ -261,7 +261,7 @@ export function DashboardCharts({ stats, onNavigateToTasks }: DashboardChartsPro
               <Button
                 type="link"
                 size="small"
-                onClick={() => onNavigateToTasks?.()}
+                onClick={() => onNavigateToTasks?.({})}
               >
                 Xem chi tiết danh sách
               </Button>

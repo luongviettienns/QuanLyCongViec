@@ -5,6 +5,8 @@ import type {
   CreateTeamPayload,
   UpdateTeamPayload,
   AddMemberPayload,
+  PaginatedTeamActivityLogs,
+  GetTeamActivityLogsQuery,
 } from '../types/team.types';
 import {
   getAuthHeaders,
@@ -13,7 +15,7 @@ import {
 } from '../../../shared/api';
 
 export async function getTeams(signal?: AbortSignal): Promise<Team[]> {
-  const response = await fetch('/teams', {
+  const response = await fetch('/api/teams', {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -26,7 +28,7 @@ export async function getTeams(signal?: AbortSignal): Promise<Team[]> {
 }
 
 export async function getTeamById(id: number, signal?: AbortSignal): Promise<Team> {
-  const response = await fetch(`/teams/${id}`, {
+  const response = await fetch(`/api/teams/${id}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -39,7 +41,7 @@ export async function getTeamById(id: number, signal?: AbortSignal): Promise<Tea
 }
 
 export async function createTeam(payload: CreateTeamPayload): Promise<Team> {
-  const response = await fetch('/teams', {
+  const response = await fetch('/api/teams', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -52,7 +54,7 @@ export async function createTeam(payload: CreateTeamPayload): Promise<Team> {
 }
 
 export async function updateTeam(id: number, payload: UpdateTeamPayload): Promise<Team> {
-  const response = await fetch(`/teams/${id}`, {
+  const response = await fetch(`/api/teams/${id}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -65,7 +67,7 @@ export async function updateTeam(id: number, payload: UpdateTeamPayload): Promis
 }
 
 export async function deleteTeam(id: number): Promise<void> {
-  const response = await fetch(`/teams/${id}`, {
+  const response = await fetch(`/api/teams/${id}`, {
     method: 'DELETE',
     headers: {
       'Content-Type': 'application/json',
@@ -77,7 +79,7 @@ export async function deleteTeam(id: number): Promise<void> {
 }
 
 export async function addTeamMember(teamId: number, payload: AddMemberPayload): Promise<TeamMember> {
-  const response = await fetch(`/teams/${teamId}/members`, {
+  const response = await fetch(`/api/teams/${teamId}/members`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -94,7 +96,7 @@ export async function updateTeamMemberRole(
   memberId: number,
   role: TeamRole,
 ): Promise<TeamMember> {
-  const response = await fetch(`/teams/${teamId}/members/${memberId}`, {
+  const response = await fetch(`/api/teams/${teamId}/members/${memberId}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -107,7 +109,7 @@ export async function updateTeamMemberRole(
 }
 
 export async function transferOwnership(teamId: number, newOwnerId: number): Promise<Team> {
-  const response = await fetch(`/teams/${teamId}/transfer-ownership`, {
+  const response = await fetch(`/api/teams/${teamId}/transfer-ownership`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -120,7 +122,7 @@ export async function transferOwnership(teamId: number, newOwnerId: number): Pro
 }
 
 export async function removeTeamMember(teamId: number, memberId: number): Promise<void> {
-  const response = await fetch(`/teams/${teamId}/members/${memberId}`, {
+  const response = await fetch(`/api/teams/${teamId}/members/${memberId}`, {
     method: 'DELETE',
     headers: {
       'Content-Type': 'application/json',
@@ -129,4 +131,32 @@ export async function removeTeamMember(teamId: number, memberId: number): Promis
   });
 
   await handleVoidApiResponse(response, 'Không thể xóa thành viên khỏi nhóm');
+}
+
+export async function getTeamActivityLogs(
+  teamId: number,
+  query?: GetTeamActivityLogsQuery,
+  signal?: AbortSignal,
+): Promise<PaginatedTeamActivityLogs> {
+  const searchParams = new URLSearchParams();
+  if (query?.page) searchParams.set('page', String(query.page));
+  if (query?.limit) searchParams.set('limit', String(query.limit));
+  if (query?.action) searchParams.set('action', query.action);
+  if (query?.actorId) searchParams.set('actorId', String(query.actorId));
+  const qs = searchParams.toString();
+  const url = `/api/teams/${teamId}/activity-logs${qs ? `?${qs}` : ''}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    signal,
+  });
+
+  return handleApiResponse<PaginatedTeamActivityLogs>(
+    response,
+    'Không thể tải lịch sử hoạt động của nhóm',
+  );
 }

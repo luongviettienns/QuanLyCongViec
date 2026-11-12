@@ -137,4 +137,13 @@ export class TeamPolicyService {
 
     return { isSelfLeaving };
   }
+
+  /**
+   * Only the team owner or ADMIN members can view team activity history.
+   */
+  assertCanViewActivityLogs(isOwner: boolean, callerRole?: TeamRole): void {
+    if (!isOwner && callerRole !== TeamRole.ADMIN) {
+      throw new ForbiddenException('Chỉ chủ nhóm và quản trị viên mới có quyền xem lịch sử hoạt động');
+    }
+  }
 }

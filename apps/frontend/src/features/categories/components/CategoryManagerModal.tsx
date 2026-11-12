@@ -11,9 +11,9 @@ import {
   Popconfirm,
   Typography,
   Card,
-  Grid,
   type TableColumnsType,
 } from 'antd';
+import { useResponsive } from '../../../shared/hooks';
 import {
   PlusOutlined,
   EditOutlined,
@@ -49,7 +49,7 @@ export default function CategoryManagerModal({
     handleDelete,
   } = useCategories();
 
-  const screens = Grid.useBreakpoint();
+  const screens = useResponsive();
   const [createForm] = Form.useForm<{ name: string; color: string }>();
   const [editForm] = Form.useForm<{ name: string; color: string }>();
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -57,9 +57,10 @@ export default function CategoryManagerModal({
   const [editColor, setEditColor] = useState<string>('#1677ff');
 
   async function onFinishCreate(values: { name: string }) {
+    const normalizedColor = createColor ? (createColor.trim().startsWith('#') ? createColor.trim() : `#${createColor.trim()}`) : '#1677ff';
     const payload: CreateCategoryPayload = {
       name: values.name.trim(),
-      color: createColor,
+      color: normalizedColor,
     };
     const success = await handleCreate(payload);
     if (success) {
@@ -80,9 +81,10 @@ export default function CategoryManagerModal({
 
   async function onFinishEdit(values: { name: string }) {
     if (!editingCategory) return;
+    const normalizedColor = editColor ? (editColor.trim().startsWith('#') ? editColor.trim() : `#${editColor.trim()}`) : '#1677ff';
     const success = await handleUpdate(editingCategory.id, {
       name: values.name.trim(),
-      color: editColor,
+      color: normalizedColor,
     });
     if (success) {
       setEditingCategory(null);

@@ -36,6 +36,19 @@ export async function handleVoidApiResponse(
   }
 }
 
+export const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL as string | undefined) || '/api';
+
+export function apiUrl(path: string): string {
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path;
+  }
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  if (cleanPath.startsWith('/api/') || cleanPath === '/api') {
+    return cleanPath;
+  }
+  return `${API_BASE_URL}${cleanPath}`;
+}
+
 async function executeRequest<T>(
   url: string,
   options: HttpRequestOptions = {},
@@ -58,7 +71,8 @@ async function executeRequest<T>(
     }
   }
 
-  const response = await fetch(url, {
+  const resolvedUrl = apiUrl(url);
+  const response = await fetch(resolvedUrl, {
     ...rest,
     headers,
     body: serializedBody,
@@ -106,7 +120,7 @@ export const httpClient = {
       }
     }
 
-    return fetch(url, {
+    return fetch(apiUrl(url), {
       ...rest,
       headers,
       body: serializedBody,

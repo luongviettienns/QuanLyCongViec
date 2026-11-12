@@ -12,7 +12,14 @@ import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { TaskQueryService } from './task-query.service.js';
 import { TaskReorderService } from './task-reorder.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
-import { type Task, Prisma, TaskStatus, TaskPriority } from '@prisma/client';
+import { RealtimeService } from '../../realtime/realtime.service.js';
+import { TeamActivityService } from '../../team-activity/team-activity.service.js';
+import { type Task, Prisma, TaskStatus, TaskPriority, TeamActivityAction } from '@prisma/client';
+import {
+  parseDateOnly,
+  assertDateRangeValid,
+  validateScopedCategory,
+} from './task-validation.utils.js';
 
 @Injectable()
 export class TaskCrudService {
@@ -22,6 +29,8 @@ export class TaskCrudService {
     private readonly queryService: TaskQueryService,
     private readonly reorderService: TaskReorderService,
     private readonly notificationEventService: NotificationEventService,
+    private readonly realtimeService: RealtimeService,
+    private readonly teamActivityService: TeamActivityService,
   ) {}
 
   private executeInTransaction<T>(
@@ -32,25 +41,6 @@ export class TaskCrudService {
       return fn(externalTx);
     }
     return this.prisma.$transaction(fn);
-  }
-
-  private parseDateOnly(dateStr: string): Date {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
-    if (!match) {
-      throw new BadRequestException('Định dạng ngày phải là YYYY-MM-DD');
-    }
-    const year = parseInt(match[1], 10);
-    const month = parseInt(match[2], 10);
-    const day = parseInt(match[3], 10);
-    const date = new Date(Date.UTC(year, month - 1, day));
-    if (
-      date.getUTCFullYear() !== year ||
-      date.getUTCMonth() !== month - 1 ||
-      date.getUTCDate() !== day
-    ) {
-      throw new BadRequestException('Ngày không hợp lệ trong lịch');
-    }
-    return date;
   }
 
   async create(data: CreateTaskDto, userId: number): Promise<Task> {
@@ -70,32 +60,55 @@ export class TaskCrudService {
 
     let parsedStartDate: Date | null = null;
     if (data.startDate) {
-      parsedStartDate = this.parseDateOnly(data.startDate);
+      parsedStartDate = parseDateOnly(data.startDate);
     }
 
     let parsedDueDate: Date | null = null;
     if (data.dueDate) {
-      parsedDueDate = this.parseDateOnly(data.dueDate);
+      parsedDueDate = parseDateOnly(data.dueDate);
     }
 
-    if (parsedStartDate && parsedDueDate && parsedStartDate > parsedDueDate) {
-      throw new BadRequestException('Ngày bắt đầu không được lớn hơn hạn chót (deadline)');
-    }
+    assertDateRangeValid(parsedStartDate, parsedDueDate);
 
     const initialStatus: TaskStatus = data.status ? data.status : TaskStatus.TODO;
     const initialPriority: TaskPriority = data.priority ? data.priority : TaskPriority.MEDIUM;
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const createdTask = await this.prisma.$transaction(async (tx) => {
+        let targetTeam: any = null;
+        // 1. Kiểm tra quyền thành viên nhóm trước tiên (trả về 404 nếu không thuộc nhóm) để tránh rò rỉ dữ liệu
+        if (data.teamId) {
+          targetTeam = await tx.team.findUnique({
+            where: { id: data.teamId },
+            include: { members: true },
+          });
+          if (!this.policy.isTeamMember(userId, targetTeam)) {
+            throw new NotFoundException('Không tìm thấy nhóm');
+          }
+        }
+
+        // 2. Khóa phân tán phạm vi bảng
         await this.reorderService.lockScope(tx, {
           teamId: data.teamId ?? null,
           userId,
         });
 
-        const titleScopeWhere: Prisma.TaskWhereInput = data.teamId
-          ? { teamId: data.teamId }
-          : { userId, teamId: null };
+        // 3. Đọc lại quyền thành viên trong khóa để chống race condition
+        if (data.teamId) {
+          targetTeam = await tx.team.findUnique({
+            where: { id: data.teamId },
+            include: { members: true },
+          });
+          if (!this.policy.isTeamMember(userId, targetTeam)) {
+            throw new NotFoundException('Không tìm thấy nhóm');
+          }
+        }
 
+        const titleScopeWhere: Prisma.TaskWhereInput = data.teamId
+          ? { teamId: data.teamId, deletedAt: null }
+          : { userId, teamId: null, deletedAt: null };
+
+        // 4. Kiểm tra trùng tiêu đề sau khi đã xác thực tư cách thành viên nhóm
         const existingTask = await tx.task.findFirst({
           where: {
             ...titleScopeWhere,
@@ -111,26 +124,15 @@ export class TaskCrudService {
         }
 
         if (data.categoryId) {
-          const category = await tx.category.findFirst({
-            where: {
-              id: data.categoryId,
-              userId,
-            },
-          });
-          if (!category) {
-            throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
-          }
+          await validateScopedCategory(
+            tx,
+            data.categoryId,
+            data.teamId ?? null,
+            [userId],
+          );
         }
 
         if (data.teamId) {
-          const targetTeam = await tx.team.findUnique({
-            where: { id: data.teamId },
-            include: { members: true },
-          });
-          if (!this.policy.isTeamMember(userId, targetTeam)) {
-            throw new NotFoundException('Không tìm thấy nhóm');
-          }
-
           if (data.assigneeId) {
             if (!this.policy.isTeamMember(data.assigneeId, targetTeam)) {
               throw new BadRequestException('Người được phân công không thuộc nhóm này');
@@ -173,22 +175,68 @@ export class TaskCrudService {
           },
         });
 
-        if (createdTask.assigneeId && createdTask.assigneeId !== userId) {
-          await this.notificationEventService.publish(
-            {
-              type: 'TASK_ASSIGNED',
-              actorId: userId,
+        if (createdTask.teamId) {
+          await this.teamActivityService.logActivity(tx, {
+            teamId: createdTask.teamId,
+            actorId: userId,
+            action: TeamActivityAction.TASK_CREATED,
+            metadata: {
               taskId: createdTask.id,
               taskTitle: createdTask.title,
-              assigneeId: createdTask.assigneeId,
-              teamId: createdTask.teamId,
+              priority: createdTask.priority,
+              status: createdTask.status,
             },
-            tx,
-          );
+          });
+        }
+
+        if (createdTask.assigneeId) {
+          if (createdTask.teamId) {
+            await this.teamActivityService.logActivity(tx, {
+              teamId: createdTask.teamId,
+              actorId: userId,
+              action: TeamActivityAction.TASK_ASSIGNED,
+              targetUserId: createdTask.assigneeId,
+              metadata: {
+                taskId: createdTask.id,
+                taskTitle: createdTask.title,
+              },
+            });
+          }
+
+          if (createdTask.assigneeId !== userId) {
+            await this.notificationEventService.publish(
+              {
+                type: 'TASK_ASSIGNED',
+                actorId: userId,
+                taskId: createdTask.id,
+                taskTitle: createdTask.title,
+                assigneeId: createdTask.assigneeId,
+                teamId: createdTask.teamId,
+                timestamp: createdTask.createdAt.getTime(),
+              },
+              tx,
+            );
+          }
         }
 
         return createdTask;
       });
+
+      void this.realtimeService.emit({
+        type: 'TASK_CREATED',
+        actorId: userId,
+        teamId: createdTask.teamId,
+        targetUserIds: createdTask.teamId
+          ? undefined
+          : [createdTask.userId, ...(createdTask.assigneeId ? [createdTask.assigneeId] : [])],
+        payload: {
+          taskId: createdTask.id,
+          teamId: createdTask.teamId,
+          status: createdTask.status,
+        },
+      });
+
+      return createdTask;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException(`Tiêu đề '${cleanTitle}' đã tồn tại, vui lòng đặt tên khác`);
@@ -215,7 +263,7 @@ export class TaskCrudService {
     }
 
     try {
-      return await this.executeInTransaction(externalTx, async (tx) => {
+      const updatedTask = await this.executeInTransaction(externalTx, async (tx) => {
         const initialTask = await this.queryService.findOne(id, userId, tx);
         if (hasTitle) {
           await this.reorderService.lockScope(tx, {
@@ -229,6 +277,10 @@ export class TaskCrudService {
           throw new ForbiddenException('Bạn không có quyền chỉnh sửa nội dung công việc này');
         }
 
+        if (currentTask.status === TaskStatus.DONE) {
+          throw new BadRequestException('Không thể chỉnh sửa nội dung công việc đã hoàn thành. Vui lòng mở lại công việc trước khi chỉnh sửa.');
+        }
+
         const updateData: Prisma.TaskUpdateInput = {};
 
         let parsedStartDate: Date | null = null;
@@ -236,7 +288,7 @@ export class TaskCrudService {
           if (data.startDate === null || data.startDate === '') {
             updateData.startDate = null;
           } else if (data.startDate) {
-            parsedStartDate = this.parseDateOnly(data.startDate);
+            parsedStartDate = parseDateOnly(data.startDate);
             updateData.startDate = parsedStartDate;
           }
         }
@@ -246,7 +298,7 @@ export class TaskCrudService {
           if (data.dueDate === null || data.dueDate === '') {
             updateData.dueDate = null;
           } else if (data.dueDate) {
-            parsedDueDate = this.parseDateOnly(data.dueDate);
+            parsedDueDate = parseDateOnly(data.dueDate);
             updateData.dueDate = parsedDueDate;
           }
         }
@@ -254,9 +306,7 @@ export class TaskCrudService {
         const effectiveStartDate = hasStartDate ? parsedStartDate : currentTask.startDate;
         const effectiveDueDate = hasDueDate ? parsedDueDate : currentTask.dueDate;
 
-        if (effectiveStartDate && effectiveDueDate && effectiveStartDate > effectiveDueDate) {
-          throw new BadRequestException('Ngày bắt đầu không được lớn hơn hạn chót (deadline)');
-        }
+        assertDateRangeValid(effectiveStartDate, effectiveDueDate);
 
         if (hasTitle && data.title !== undefined) {
           const cleanTitle = data.title.trim();
@@ -265,8 +315,8 @@ export class TaskCrudService {
           }
 
           const duplicateScopeWhere: Prisma.TaskWhereInput = currentTask.teamId
-            ? { teamId: currentTask.teamId }
-            : { userId: currentTask.userId, teamId: null };
+            ? { teamId: currentTask.teamId, deletedAt: null }
+            : { userId: currentTask.userId, teamId: null, deletedAt: null };
 
           const duplicateTask = await tx.task.findFirst({
             where: {
@@ -299,15 +349,14 @@ export class TaskCrudService {
 
         if (hasCategory) {
           if (data.categoryId) {
-            const category = await tx.category.findFirst({
-              where: {
-                id: data.categoryId,
-                userId: { in: [userId, currentTask.userId] },
-              },
-            });
-            if (!category) {
-              throw new NotFoundException(`Không tìm thấy danh mục với mã #${data.categoryId}`);
-            }
+            const effectiveTeamId = currentTask.teamId;
+            await validateScopedCategory(
+              tx,
+              data.categoryId,
+              effectiveTeamId,
+              [userId, currentTask.userId],
+              currentTask.categoryId,
+            );
             updateData.category = { connect: { id: data.categoryId } };
           } else {
             updateData.category = { disconnect: true };
@@ -331,6 +380,20 @@ export class TaskCrudService {
         const oldDueDateStr = currentTask.dueDate ? currentTask.dueDate.toISOString().slice(0, 10) : null;
         const newDueDateStr = parsedDueDate ? parsedDueDate.toISOString().slice(0, 10) : null;
         if (hasDueDate && oldDueDateStr !== newDueDateStr) {
+          if (updatedTask.teamId) {
+            await this.teamActivityService.logActivity(tx, {
+              teamId: updatedTask.teamId,
+              actorId: userId,
+              action: TeamActivityAction.TASK_DEADLINE_CHANGED,
+              metadata: {
+                taskId: updatedTask.id,
+                taskTitle: updatedTask.title,
+                oldDueDate: oldDueDateStr,
+                newDueDate: newDueDateStr,
+              },
+            });
+          }
+
           await this.notificationEventService.publish(
             {
               type: 'TASK_DEADLINE_CHANGED',
@@ -341,62 +404,87 @@ export class TaskCrudService {
               teamId: updatedTask.teamId,
               assigneeId: updatedTask.assigneeId,
               creatorId: updatedTask.userId,
+              timestamp: updatedTask.updatedAt.getTime(),
             },
             tx,
           );
         }
 
+        if (hasPriority && currentTask.priority !== updatedTask.priority && updatedTask.teamId) {
+          await this.teamActivityService.logActivity(tx, {
+            teamId: updatedTask.teamId,
+            actorId: userId,
+            action: TeamActivityAction.TASK_PRIORITY_CHANGED,
+            metadata: {
+              taskId: updatedTask.id,
+              taskTitle: updatedTask.title,
+              oldPriority: currentTask.priority,
+              newPriority: updatedTask.priority,
+            },
+          });
+        }
+
+        const changedFields: string[] = [];
+        if (hasTitle && currentTask.title !== updatedTask.title) {
+          changedFields.push('title');
+        }
+        if (hasDescription && currentTask.description !== updatedTask.description) {
+          changedFields.push('description');
+        }
+        if (
+          hasStartDate &&
+          (currentTask.startDate ? currentTask.startDate.toISOString().slice(0, 10) : null) !==
+            (parsedStartDate ? parsedStartDate.toISOString().slice(0, 10) : null)
+        ) {
+          changedFields.push('startDate');
+        }
+        if (hasCategory && currentTask.categoryId !== updatedTask.categoryId) {
+          changedFields.push('category');
+        }
+
+        if (updatedTask.teamId && changedFields.length > 0) {
+          await this.teamActivityService.logActivity(tx, {
+            teamId: updatedTask.teamId,
+            actorId: userId,
+            action: TeamActivityAction.TASK_UPDATED,
+            metadata: {
+              taskId: updatedTask.id,
+              taskTitle: updatedTask.title,
+              changedFields,
+            },
+          });
+        }
+
         return updatedTask;
       });
+
+      if (!externalTx) {
+        void this.realtimeService.emit({
+          type: 'TASK_UPDATED',
+          actorId: userId,
+          teamId: updatedTask.teamId,
+          targetUserIds: updatedTask.teamId
+            ? undefined
+            : [updatedTask.userId, ...(updatedTask.assigneeId ? [updatedTask.assigneeId] : [])],
+          payload: {
+            taskId: updatedTask.id,
+            teamId: updatedTask.teamId,
+            status: updatedTask.status,
+          },
+        });
+      }
+
+      return updatedTask;
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException('Tiêu đề công việc đã được sử dụng bởi một công việc khác');
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new ConflictException('Tiêu đề công việc đã được sử dụng bởi một công việc khác');
+        }
+        if (error.code === 'P2025') {
+          throw new NotFoundException('Không tìm thấy công việc (có thể đã bị xoá bởi người khác)');
+        }
       }
       throw error;
     }
-  }
-
-  async remove(id: number, userId: number): Promise<{ success: boolean; message: string; deletedTask: Task }> {
-    return this.prisma.$transaction(async (tx) => {
-      const initialTask = await this.queryService.findOne(id, userId, tx);
-      await this.reorderService.lockScope(tx, {
-        teamId: initialTask.teamId,
-        userId: initialTask.userId,
-      });
-      const taskToDelete = await this.queryService.findOne(id, userId, tx);
-
-      if (!this.policy.canDeleteTask(userId, taskToDelete)) {
-        throw new ForbiddenException('Bạn không có quyền xóa công việc này');
-      }
-
-      await this.notificationEventService.publish(
-        {
-          type: 'TASK_DELETED',
-          actorId: userId,
-          taskId: taskToDelete.id,
-          taskTitle: taskToDelete.title,
-          teamId: taskToDelete.teamId,
-          assigneeId: taskToDelete.assigneeId,
-          creatorId: taskToDelete.userId,
-        },
-        tx,
-      );
-
-      const remainingTasksScope: Prisma.TaskWhereInput = taskToDelete.teamId
-        ? { teamId: taskToDelete.teamId }
-        : { userId: taskToDelete.userId, teamId: null };
-
-      const deletedTask = await tx.task.delete({
-        where: { id },
-      });
-
-      await this.reorderService.reindexColumn(tx, remainingTasksScope, taskToDelete.status, [id]);
-
-      return {
-        success: true,
-        message: `Đã xoá thành công công việc #${id} - "${taskToDelete.title}"`,
-        deletedTask,
-      };
-    });
   }
 }

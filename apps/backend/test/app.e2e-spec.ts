@@ -3,6 +3,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { AppModule } from './../src/app.module.js';
+import { configureTestApp } from './test-app.helper.js';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
@@ -12,7 +13,7 @@ describe('AppController (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
+    app = configureTestApp(moduleFixture.createNestApplication());
     await app.init();
   });
 
@@ -21,6 +22,12 @@ describe('AppController (e2e)', () => {
       .get('/')
       .expect(200)
       .expect('Hello World!');
+  });
+
+  it('rejects /tasks without /api prefix with 404 (no rewrite shim)', () => {
+    return request(app.getHttpServer())
+      .get('/tasks')
+      .expect(404);
   });
 
   afterEach(async () => {

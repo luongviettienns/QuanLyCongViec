@@ -8,13 +8,14 @@ import {
   CalendarOutlined,
   ArrowRightOutlined,
 } from '@ant-design/icons';
-import type { TaskStats, TaskStatus } from '../../tasks/types/task.types';
+import type { TaskStats, TaskFilterPatch } from '../../tasks/types/task.types';
+import { DASHBOARD_STAT_CARD_PATCHES } from '../utils/dashboard-navigation.utils.ts';
 
 const { Text } = Typography;
 
-interface DashboardStatCardsProps {
+export interface DashboardStatCardsProps {
   stats: TaskStats;
-  onNavigateToTasks?: (status?: TaskStatus) => void;
+  onNavigateToTasks?: (patch?: TaskFilterPatch) => void;
 }
 
 export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCardsProps) {
@@ -23,11 +24,12 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
       <Col xs={24} sm={12} lg={8} xl={4}>
         <Card
           hoverable
-          onClick={() => onNavigateToTasks?.()}
+          onClick={() => onNavigateToTasks?.(DASHBOARD_STAT_CARD_PATCHES.total)}
           style={{
             borderRadius: 8,
             borderTop: '3px solid #1677ff',
             height: '100%',
+            cursor: onNavigateToTasks ? 'pointer' : undefined,
           }}
         >
           <Statistic
@@ -46,11 +48,12 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
       <Col xs={24} sm={12} lg={8} xl={4}>
         <Card
           hoverable
-          onClick={() => onNavigateToTasks?.('TODO')}
+          onClick={() => onNavigateToTasks?.(DASHBOARD_STAT_CARD_PATCHES.todo)}
           style={{
             borderRadius: 8,
             borderTop: '3px solid #faad14',
             height: '100%',
+            cursor: onNavigateToTasks ? 'pointer' : undefined,
           }}
         >
           <Statistic
@@ -69,11 +72,12 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
       <Col xs={24} sm={12} lg={8} xl={4}>
         <Card
           hoverable
-          onClick={() => onNavigateToTasks?.('IN_PROGRESS')}
+          onClick={() => onNavigateToTasks?.(DASHBOARD_STAT_CARD_PATCHES.inProgress)}
           style={{
             borderRadius: 8,
             borderTop: '3px solid #13c2c2',
             height: '100%',
+            cursor: onNavigateToTasks ? 'pointer' : undefined,
           }}
         >
           <Statistic
@@ -92,11 +96,12 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
       <Col xs={24} sm={12} lg={8} xl={4}>
         <Card
           hoverable
-          onClick={() => onNavigateToTasks?.('DONE')}
+          onClick={() => onNavigateToTasks?.(DASHBOARD_STAT_CARD_PATCHES.done)}
           style={{
             borderRadius: 8,
             borderTop: '3px solid #52c41a',
             height: '100%',
+            cursor: onNavigateToTasks ? 'pointer' : undefined,
           }}
         >
           <Statistic
@@ -115,12 +120,13 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
       <Col xs={24} sm={12} lg={8} xl={4}>
         <Card
           hoverable
-          onClick={() => onNavigateToTasks?.()}
+          onClick={() => onNavigateToTasks?.(DASHBOARD_STAT_CARD_PATCHES.overdue)}
           style={{
             borderRadius: 8,
             borderTop: stats.overdue > 0 ? '3px solid #ff4d4f' : '3px solid #d9d9d9',
             backgroundColor: stats.overdue > 0 ? '#fff2f0' : '#ffffff',
             height: '100%',
+            cursor: onNavigateToTasks ? 'pointer' : undefined,
           }}
         >
           <Statistic
@@ -139,12 +145,13 @@ export function DashboardStatCards({ stats, onNavigateToTasks }: DashboardStatCa
       <Col xs={24} sm={12} lg={8} xl={4}>
         <Card
           hoverable
-          onClick={() => onNavigateToTasks?.()}
+          onClick={() => onNavigateToTasks?.(DASHBOARD_STAT_CARD_PATCHES.dueSoon)}
           style={{
             borderRadius: 8,
             borderTop: stats.dueSoon > 0 ? '3px solid #fa8c16' : '3px solid #d9d9d9',
             backgroundColor: stats.dueSoon > 0 ? '#fffbe6' : '#ffffff',
             height: '100%',
+            cursor: onNavigateToTasks ? 'pointer' : undefined,
           }}
         >
           <Statistic

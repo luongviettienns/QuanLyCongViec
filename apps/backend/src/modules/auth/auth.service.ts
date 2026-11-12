@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
@@ -34,39 +35,49 @@ export class AuthService {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(dto.password, salt);
 
-    const user = await this.prisma.$transaction(async (tx) => {
-      const createdUser = await tx.user.create({
-        data: {
-          email: normalizedEmail,
-          name: dto.name.trim(),
-          passwordHash,
-        },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          createdAt: true,
-        },
+    try {
+      const user = await this.prisma.$transaction(async (tx) => {
+        const createdUser = await tx.user.create({
+          data: {
+            email: normalizedEmail,
+            name: dto.name.trim(),
+            passwordHash,
+          },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            createdAt: true,
+          },
+        });
+
+        await tx.category.createMany({
+          data: [
+            { name: 'Công việc', color: '#1890ff', userId: createdUser.id },
+            { name: 'Học tập', color: '#52c41a', userId: createdUser.id },
+            { name: 'Cá nhân', color: '#fa8c16', userId: createdUser.id },
+          ],
+          skipDuplicates: true,
+        });
+
+        return createdUser;
       });
 
-      await tx.category.createMany({
-        data: [
-          { name: 'Công việc', color: '#1890ff', userId: createdUser.id },
-          { name: 'Học tập', color: '#52c41a', userId: createdUser.id },
-          { name: 'Cá nhân', color: '#fa8c16', userId: createdUser.id },
-        ],
-        skipDuplicates: true,
-      });
+      const accessToken = this.generateToken(user.id, user.email);
 
-      return createdUser;
-    });
-
-    const accessToken = this.generateToken(user.id, user.email);
-
-    return {
-      user,
-      accessToken,
-    };
+      return {
+        user,
+        accessToken,
+      };
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('Email này đã được sử dụng, vui lòng chọn email khác');
+      }
+      throw error;
+    }
   }
 
   async login(dto: LoginDto): Promise<AuthResponseDto> {

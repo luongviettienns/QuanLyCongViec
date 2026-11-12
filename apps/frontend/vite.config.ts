@@ -6,11 +6,14 @@ export default defineConfig({
 
   server: {
     proxy: {
-      '/tasks': 'http://localhost:3000',
-      '/categories': 'http://localhost:3000',
-      '/teams': 'http://localhost:3000',
-      '/auth': 'http://localhost:3000',
-      '/notifications': 'http://localhost:3000',
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+      '/docs': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
     },
   },
 

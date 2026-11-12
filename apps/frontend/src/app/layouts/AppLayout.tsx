@@ -8,9 +8,9 @@ import {
   Typography,
   Dropdown,
   Drawer,
-  Grid,
   type MenuProps,
 } from 'antd';
+import { useResponsive } from '../../shared/hooks';
 import {
   CheckSquareOutlined,
   DashboardOutlined,
@@ -24,7 +24,7 @@ import {
   TeamOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../features/auth/hooks/useAuth';
-import { NotificationBell } from '../../features/notifications';
+import { NotificationBell, type NotificationDestination } from '../../features/notifications';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -38,7 +38,7 @@ interface AppLayoutProps {
   loading?: boolean;
   currentNav?: 'dashboard' | 'tasks' | 'teams' | 'categories';
   onNavChange?: (key: 'dashboard' | 'tasks' | 'teams' | 'categories') => void;
-  onNavigateNotification?: (dest: { type: 'task' | 'team'; id: number }) => void;
+  onNavigateNotification?: (dest: NotificationDestination) => void;
 }
 
 export default function AppLayout({
@@ -53,7 +53,7 @@ export default function AppLayout({
 }: AppLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const screens = Grid.useBreakpoint();
+  const screens = useResponsive();
   const isMobile = !screens.md;
   const { user, logout } = useAuth();
 

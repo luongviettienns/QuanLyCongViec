@@ -3,9 +3,10 @@ import { Badge, Button, Popover } from 'antd';
 import { BellOutlined } from '@ant-design/icons';
 import { useNotifications } from '../hooks/useNotifications';
 import { NotificationPopover } from './NotificationPopover';
+import type { NotificationDestination } from '../utils/notification-state.utils';
 
 interface NotificationBellProps {
-  onNavigate?: (dest: { type: 'task' | 'team'; id: number }) => void;
+  onNavigate?: (dest: NotificationDestination) => void;
 }
 
 export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigate }) => {
@@ -15,6 +16,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigate }
     unreadCount,
     loading,
     loadingMore,
+    error,
     hasMore,
     activeTab,
     setActiveTab,
@@ -27,7 +29,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigate }
   const handleOpenChange = (newOpen: boolean) => {
     setOpen(newOpen);
     if (newOpen) {
-      fetchNotifications();
+      void fetchNotifications({ silent: notifications.length > 0 });
     }
   };
 
@@ -39,12 +41,14 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigate }
           unreadCount={unreadCount}
           loading={loading}
           loadingMore={loadingMore}
+          error={error}
           hasMore={hasMore}
           activeTab={activeTab}
           onTabChange={setActiveTab}
           onMarkRead={markRead}
           onMarkAllRead={markAllRead}
           onLoadMore={loadMore}
+          onRetry={() => void fetchNotifications()}
           onNavigate={onNavigate}
           onClose={() => setOpen(false)}
         />

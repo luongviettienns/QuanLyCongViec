@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Row,
   Col,
@@ -22,6 +22,7 @@ import {
   removeTeamMember,
   transferOwnership,
 } from '../api/teams.api';
+import { ApiError } from '../../../shared/api';
 import { useAuth } from '../../auth/hooks/useAuth';
 import type {
   Team,
@@ -33,6 +34,12 @@ import type {
 import { TeamListCard } from '../components/TeamListCard';
 import { TeamDetailCard } from '../components/TeamDetailCard';
 import { TeamModals } from '../components/TeamModals';
+import { useRealtimeEvent, useRealtimeReconnect } from '../../realtime';
+import type { RealtimeEventData } from '../../realtime/types/realtime.types';
+import {
+  shouldRefreshTeamPageOnEvent,
+  createDebouncedCallback,
+} from '../utils/team-realtime.utils';
 
 const { Title, Paragraph } = Typography;
 
@@ -58,7 +65,7 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
 
   const [actionSubmitting, setActionSubmitting] = useState(false);
 
-  const loadTeams = useCallback(async (selectId?: number) => {
+  const loadTeams = useCallback(async (selectId?: number): Promise<Team[]> => {
     try {
       const data = await getTeams();
       setTeams(data);
@@ -69,9 +76,11 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
         setSelectedTeamId(null);
         setSelectedTeam(null);
       }
+      return data;
     } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'UnauthorizedError') return;
+      if (err instanceof Error && err.name === 'UnauthorizedError') return [];
       message.error(err instanceof Error ? err.message : 'Không thể tải danh sách nhóm');
+      return [];
     } finally {
       setLoading(false);
     }
@@ -115,6 +124,115 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
     };
   }, [selectedTeamId, loadTeamDetail]);
 
+  const selectedTeamIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    selectedTeamIdRef.current = selectedTeamId;
+  }, [selectedTeamId]);
+
+  const pendingRealtimeSyncRef = useRef<{
+    reloadList: boolean;
+    reloadDetailTeamId: number | null;
+    removedTeamId: number | null;
+    deletedTeamId: number | null;
+  }>({
+    reloadList: false,
+    reloadDetailTeamId: null,
+    removedTeamId: null,
+    deletedTeamId: null,
+  });
+
+  const debouncedRealtimeSyncRef = useRef<ReturnType<typeof createDebouncedCallback> | null>(null);
+
+  useEffect(() => {
+    const debounced = createDebouncedCallback(() => {
+      const pending = pendingRealtimeSyncRef.current;
+      pendingRealtimeSyncRef.current = {
+        reloadList: false,
+        reloadDetailTeamId: null,
+        removedTeamId: null,
+        deletedTeamId: null,
+      };
+
+      const activeId = selectedTeamIdRef.current;
+      if (pending.removedTeamId !== null && pending.removedTeamId === activeId) {
+        message.info('Bạn không còn là thành viên của nhóm đang xem');
+      } else if (pending.deletedTeamId !== null && pending.deletedTeamId === activeId) {
+        message.info('Nhóm đang xem đã bị giải tán');
+      }
+
+      if (pending.reloadList) {
+        void loadTeams(activeId ?? undefined);
+      }
+
+      const isActiveInvalidated =
+        activeId !== null &&
+        (pending.removedTeamId === activeId || pending.deletedTeamId === activeId);
+
+      if (
+        !isActiveInvalidated &&
+        pending.reloadDetailTeamId !== null &&
+        pending.reloadDetailTeamId === activeId
+      ) {
+        void loadTeamDetail(activeId);
+      }
+
+      onTeamChanged?.();
+    }, 300);
+
+    debouncedRealtimeSyncRef.current = debounced;
+    return () => {
+      debounced.cancel();
+      debouncedRealtimeSyncRef.current = null;
+    };
+  }, [loadTeams, loadTeamDetail, onTeamChanged]);
+
+  const handleRealtimeTeamEvent = useCallback(
+    (event: RealtimeEventData) => {
+      const decision = shouldRefreshTeamPageOnEvent({
+        eventType: event.type,
+        actorId: event.actorId,
+        currentUserId: user?.id,
+        event,
+        selectedTeamId: selectedTeamIdRef.current,
+      });
+
+      if (!decision.shouldReloadList && !decision.shouldReloadDetail) {
+        return;
+      }
+
+      const pending = pendingRealtimeSyncRef.current;
+      pending.reloadList = pending.reloadList || decision.shouldReloadList;
+      if (decision.wasCurrentUserRemoved && decision.targetTeamId !== null) {
+        pending.removedTeamId = decision.targetTeamId;
+        if (pending.reloadDetailTeamId === decision.targetTeamId) {
+          pending.reloadDetailTeamId = null;
+        }
+      } else if (decision.wasSelectedTeamDeleted && decision.targetTeamId !== null) {
+        pending.deletedTeamId = decision.targetTeamId;
+        if (pending.reloadDetailTeamId === decision.targetTeamId) {
+          pending.reloadDetailTeamId = null;
+        }
+      } else if (decision.shouldReloadDetail && decision.targetTeamId !== null) {
+        pending.reloadDetailTeamId = decision.targetTeamId;
+      }
+
+      debouncedRealtimeSyncRef.current?.trigger();
+    },
+    [user?.id],
+  );
+
+  useRealtimeEvent('TEAM_UPDATED', handleRealtimeTeamEvent);
+  useRealtimeEvent('TEAM_DELETED', handleRealtimeTeamEvent);
+
+  useRealtimeReconnect(() => {
+    const previousActiveId = selectedTeamIdRef.current;
+    void loadTeams(previousActiveId ?? undefined).then((data) => {
+      if (previousActiveId && data.some((t) => t.id === previousActiveId)) {
+        void loadTeamDetail(previousActiveId);
+      }
+    });
+  });
+
   async function handleCreateTeam(values: CreateTeamPayload) {
     try {
       setActionSubmitting(true);
@@ -157,6 +275,24 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       await loadTeams();
       onTeamChanged?.();
     } catch (err: unknown) {
+      if (err instanceof ApiError && err.status === 409) {
+        const errData = err.data as
+          | { code?: string; taskCount?: number; categoryCount?: number }
+          | undefined;
+        if (
+          errData?.code === 'TEAM_HAS_DEPENDENT_DATA' ||
+          errData?.taskCount !== undefined ||
+          errData?.categoryCount !== undefined
+        ) {
+          const taskCount = errData?.taskCount ?? 0;
+          const categoryCount = errData?.categoryCount ?? 0;
+          message.error(
+            `Không thể giải tán nhóm vì nhóm đang có ${taskCount} công việc và ${categoryCount} danh mục. Dữ liệu công việc cần được bảo toàn. Vui lòng xử lý dữ liệu liên quan trước khi xóa nhóm.`,
+            8,
+          );
+          return;
+        }
+      }
       message.error(err instanceof Error ? err.message : 'Không thể xóa nhóm');
     } finally {
       setActionSubmitting(false);

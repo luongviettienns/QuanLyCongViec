@@ -1,17 +1,21 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import dayjs from 'dayjs';
 import {
   Modal,
   Form,
-  Input,
-  Select,
-  DatePicker,
-  Tag,
   Alert,
+  Button,
   message,
-  Grid,
+  Tabs,
 } from 'antd';
+import {
+  InfoCircleOutlined,
+  TeamOutlined,
+  UnorderedListOutlined,
+} from '@ant-design/icons';
+import { useResponsive } from '../../../shared/hooks';
 import type { Task, TaskFormValues } from '../types/task.types';
+import { TASK_STATUS_CONFIG } from '../types/task.types';
 import type { Category } from '../../categories/types/category.types';
 import type { Team } from '../../teams/types/team.types';
 import {
@@ -21,19 +25,46 @@ import {
 } from '../api/tasks.api';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { getTaskPermissions } from '../utils/task-permission.utils';
+import { TaskCollaboratorsSection } from './TaskCollaboratorsSection';
+import { TaskSubtasksSection } from './TaskSubtasksSection';
+import { TaskInfoForm } from './TaskInfoForm';
+import { TaskReturnAction } from './TaskReturnAction';
 
-interface TaskFormModalProps {
+export interface TaskFormModalProps {
   open: boolean;
   task: Task | null;
+  defaultTeamId?: number | null;
+  initialTab?: 'info' | 'collaborators' | 'subtasks';
+  highlightSubtaskId?: number | null;
   categories: Category[];
   teams?: Team[];
   onClose: () => void;
   onSuccess: () => Promise<void> | void;
 }
 
+function getTaskVersion(task: Task | null): string {
+  if (!task) return '';
+  return [
+    task.id,
+    task.updatedAt ?? '',
+    task.title,
+    task.description ?? '',
+    task.status,
+    task.priority ?? 'MEDIUM',
+    task.categoryId ?? '',
+    task.teamId ?? '',
+    task.assigneeId ?? '',
+    task.startDate ?? '',
+    task.dueDate ?? '',
+  ].join('|');
+}
+
 export default function TaskFormModal({
   open,
   task,
+  defaultTeamId,
+  initialTab = 'info',
+  highlightSubtaskId = null,
   categories,
   teams = [],
   onClose,
@@ -42,31 +73,148 @@ export default function TaskFormModal({
   const { user } = useAuth();
   const [form] = Form.useForm<TaskFormValues>();
   const [saving, setSaving] = useState(false);
-  const screens = Grid.useBreakpoint();
+  const [activeTab, setActiveTab] = useState<'info' | 'collaborators' | 'subtasks'>(
+    () => initialTab,
+  );
+  const [baseVersion, setBaseVersion] = useState<string>(() => getTaskVersion(task));
+  const [isFormDirty, setIsFormDirty] = useState(false);
+  const syncedVersionRef = useRef<string>('');
 
-  const selectedTeamId = Form.useWatch('teamId', form);
-  const currentTeam = teams.find((t) => t.id === selectedTeamId);
-  const assigneeOptions = currentTeam?.members?.map((m) => ({
-    value: m.userId,
-    label: `${m.user?.name} (${m.user?.email})`,
-  })) ?? [];
+  const screens = useResponsive();
+  const watchedStatus = Form.useWatch('status', form);
+
+  const applyTaskValues = useCallback(
+    (target: Task) => {
+      form.setFieldsValue({
+        title: target.title,
+        description: target.description,
+        status: target.status,
+        priority: target.priority || 'MEDIUM',
+        categoryId: target.categoryId ?? null,
+        teamId: target.teamId ?? null,
+        assigneeId: target.assigneeId ?? null,
+        startDate: target.startDate ? dayjs(target.startDate) : null,
+        dueDate: target.dueDate ? dayjs(target.dueDate) : null,
+      });
+    },
+    [form],
+  );
+
+  const currentVersion = getTaskVersion(task);
+  const hasRemoteConflict = Boolean(
+    open && task && isFormDirty && currentVersion !== baseVersion,
+  );
+
+  useEffect(() => {
+    if (!open || !task) {
+      return;
+    }
+    if (currentVersion === syncedVersionRef.current) {
+      return;
+    }
+    if (!isFormDirty) {
+      applyTaskValues(task);
+      syncedVersionRef.current = currentVersion;
+      let cancelled = false;
+      void Promise.resolve().then(() => {
+        if (!cancelled) {
+          setBaseVersion(currentVersion);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+  }, [open, task, currentVersion, isFormDirty, applyTaskValues]);
+
+  useEffect(() => {
+    if (open && !task && !isFormDirty) {
+      form.setFieldsValue({
+        teamId: defaultTeamId ?? null,
+      });
+    }
+  }, [open, task, defaultTeamId, isFormDirty, form]);
 
   const taskTeam = task?.teamId ? teams.find((t) => t.id === task.teamId) : null;
   const permissions = task ? getTaskPermissions(user, task, taskTeam) : null;
 
   const canEditContent = !task ? true : (permissions?.canEditContent ?? true);
-  const canChangeAssignee = !task ? true : (permissions?.canChangeAssignee ?? true);
   const canChangeStatus = !task ? true : (permissions?.canChangeStatus ?? true);
-  const isAssigneeOnly = Boolean(
-    task &&
-      task.teamId &&
-      permissions?.roles.includes('ASSIGNEE') &&
-      !permissions?.roles.includes('CREATOR') &&
-      !permissions?.roles.includes('ADMIN') &&
-      !permissions?.roles.includes('OWNER'),
-  );
-  const isReopenBlocked = isAssigneeOnly && task?.status === 'DONE';
   const isReadOnly = Boolean(task && !canEditContent && !canChangeStatus);
+  const canManage = Boolean(
+    permissions?.roles.some((r) =>
+      ['OWNER', 'ADMIN', 'CREATOR', 'ASSIGNEE'].includes(r),
+    ),
+  );
+
+  const isSaveDisabled = Boolean(
+    task && !canEditContent && canChangeStatus && watchedStatus === task.status,
+  );
+
+  const isParentDone = task?.status === 'DONE';
+  const canReopenTask = Boolean(
+    isParentDone &&
+      permissions?.allowedNextStatuses.some(
+        (status) => status === 'TODO' || status === 'IN_PROGRESS',
+      ),
+  );
+
+  const statusOptions = useMemo(
+    () =>
+      (['TODO', 'IN_PROGRESS', 'DONE'] as const).map((status) => ({
+        value: status,
+        label: TASK_STATUS_CONFIG[status].label,
+        disabled: Boolean(
+          task &&
+            task.status !== status &&
+            !permissions?.allowedNextStatuses.includes(status),
+        ),
+      })),
+    [task, permissions],
+  );
+
+  const handleTeamChange = useCallback(
+    (teamId: number | null) => {
+      form.setFieldValue('teamId', teamId);
+      form.setFieldValue('assigneeId', null);
+      form.setFieldValue('categoryId', null);
+    },
+    [form],
+  );
+
+  const handleReturned = useCallback(async () => {
+    setIsFormDirty(false);
+    onClose();
+    await onSuccess();
+  }, [onClose, onSuccess]);
+
+  // Consolidated single alert for task info form according to role and status
+  let alertConfig: { type: 'warning' | 'info'; message: string; description?: string } | null = null;
+  if (task) {
+    if (isParentDone) {
+      if (canReopenTask) {
+        alertConfig = {
+          type: 'warning',
+          message: 'Công việc đã hoàn thành',
+          description:
+            'Bạn có thể chuyển về Cần làm hoặc Đang làm để tiếp tục thực hiện các thao tác được phép.',
+        };
+      } else {
+        alertConfig = {
+          type: 'info',
+          message: 'Công việc này đã hoàn thành. Bạn không có quyền mở lại công việc.',
+        };
+      }
+    } else if (!canEditContent) {
+      if (!canChangeStatus) {
+        alertConfig = {
+          type: 'info',
+          message:
+            'Bạn đang xem thông tin công việc chính ở chế độ chỉ đọc. Bạn không có quyền chỉnh sửa nội dung hoặc thay đổi trạng thái công việc này.',
+        };
+      }
+    }
+  }
 
   async function handleSubmit(values: TaskFormValues) {
     try {
@@ -113,6 +261,7 @@ export default function TaskFormModal({
       }
 
       form.resetFields();
+      setIsFormDirty(false);
       onClose();
       await onSuccess();
     } catch (error) {
@@ -121,6 +270,84 @@ export default function TaskFormModal({
       setSaving(false);
     }
   }
+
+  const formContent = (
+    <>
+      {hasRemoteConflict && task && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="Công việc vừa được cập nhật từ người khác"
+          description="Bạn đang có thay đổi chưa lưu. Hãy tải lại dữ liệu mới nhất để tránh ghi đè nhầm."
+          action={
+            <Button
+              size="small"
+              type="primary"
+              onClick={() => {
+                applyTaskValues(task);
+                setIsFormDirty(false);
+                setBaseVersion(currentVersion);
+                syncedVersionRef.current = currentVersion;
+              }}
+            >
+              Tải dữ liệu mới nhất
+            </Button>
+          }
+        />
+      )}
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={(values) => void handleSubmit(values)}
+        onValuesChange={() => {
+          if (!isFormDirty) {
+            setIsFormDirty(true);
+          }
+        }}
+        initialValues={{
+          status: 'TODO',
+          priority: 'MEDIUM',
+          teamId: defaultTeamId ?? null,
+        }}
+      >
+        {alertConfig && (
+          <Alert
+            message={alertConfig.message}
+            description={alertConfig.description}
+            type={alertConfig.type}
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+        )}
+        <TaskInfoForm
+          form={form}
+          task={task}
+          teams={teams}
+          categories={categories}
+          isFormDisabled={!canEditContent}
+          canEditStatus={canChangeStatus}
+          statusOptions={statusOptions}
+          onTeamChange={handleTeamChange}
+        />
+      </Form>
+      {task && permissions?.canReturnTask ? (
+        <div
+          style={{
+            marginTop: 16,
+            display: 'flex',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <TaskReturnAction
+            taskId={task.id}
+            taskTitle={task.title}
+            onReturned={handleReturned}
+          />
+        </div>
+      ) : null}
+    </>
+  );
 
   return (
     <Modal
@@ -136,205 +363,109 @@ export default function TaskFormModal({
       onCancel={onClose}
       afterOpenChange={(visible) => {
         if (visible) {
-          if (task) {
-            form.setFieldsValue({
-              title: task.title,
-              description: task.description,
-              status: task.status,
-              priority: task.priority || 'MEDIUM',
-              categoryId: task.categoryId ?? null,
-              teamId: task.teamId ?? null,
-              assigneeId: task.assigneeId ?? null,
-              startDate: task.startDate ? dayjs(task.startDate) : null,
-              dueDate: task.dueDate ? dayjs(task.dueDate) : null,
-            });
-          } else {
-            form.resetFields();
-            form.setFieldsValue({
-              status: 'TODO',
-              priority: 'MEDIUM',
-              categoryId: null,
-              teamId: null,
-              assigneeId: null,
-              startDate: null,
-              dueDate: null,
-            });
+          setActiveTab(initialTab ?? 'info');
+          if (!isFormDirty) {
+            if (task) {
+              const version = getTaskVersion(task);
+              syncedVersionRef.current = version;
+              setBaseVersion(version);
+              applyTaskValues(task);
+            } else {
+              syncedVersionRef.current = '';
+              setBaseVersion('');
+              form.resetFields();
+              form.setFieldsValue({
+                status: 'TODO',
+                priority: 'MEDIUM',
+                categoryId: null,
+                teamId: defaultTeamId ?? null,
+                assigneeId: null,
+                startDate: null,
+                dueDate: null,
+              });
+            }
           }
         }
       }}
       confirmLoading={saving}
-      okButtonProps={isReadOnly ? { style: { display: 'none' } } : undefined}
+      okButtonProps={
+        isReadOnly || (task && activeTab !== 'info')
+          ? { style: { display: 'none' } }
+          : { disabled: isSaveDisabled }
+      }
       okText={task ? 'Lưu thay đổi' : 'Tạo mới'}
-      cancelText={isReadOnly ? 'Đóng' : 'Huỷ'}
+      cancelText={isReadOnly || (task && activeTab !== 'info') ? 'Đóng' : 'Huỷ'}
       destroyOnHidden
-      width={screens.sm ? 560 : '95%'}
-      style={{ maxWidth: 560 }}
+      width={screens.sm ? 640 : '95%'}
+      style={{ maxWidth: 640 }}
     >
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={(values) => void handleSubmit(values)}
-        initialValues={{ status: 'TODO', priority: 'MEDIUM' }}
-      >
-        {isReadOnly && (
-          <Alert
-            message="Bạn đang xem công việc này ở chế độ chỉ đọc. Chỉ người tạo, người được giao hoặc quản trị viên mới có thể chỉnh sửa."
-            type="info"
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
-        )}
-        <Form.Item
-          name="title"
-          label="Tiêu đề"
-          rules={[
-            { required: true, message: 'Vui lòng nhập tiêu đề công việc' },
-            { min: 3, message: 'Tiêu đề phải có ít nhất 3 ký tự' },
-            { max: 100, message: 'Tiêu đề không được vượt quá 100 ký tự' },
+      {task ? (
+        <Tabs
+          activeKey={activeTab}
+          onChange={(key) => {
+            if (key === 'info' || key === 'collaborators' || key === 'subtasks') {
+              setActiveTab(key);
+            }
+          }}
+          items={[
             {
-              validator: (_, value: string) => {
-                if (value && value.trim().length < 3) {
-                  return Promise.reject(new Error('Tiêu đề không được chỉ chứa khoảng trắng'));
-                }
-                return Promise.resolve();
-              },
+              key: 'info',
+              label: (
+                <span>
+                  <InfoCircleOutlined /> Thông tin chung
+                </span>
+              ),
+              children: formContent,
+            },
+            ...(task.teamId
+              ? [
+                  {
+                    key: 'collaborators',
+                    label: (
+                      <span>
+                        <TeamOutlined /> Người phối hợp{' '}
+                        {task.collaborators && task.collaborators.length > 0
+                          ? `(${task.collaborators.length})`
+                          : ''}
+                      </span>
+                    ),
+                    children: (
+                      <TaskCollaboratorsSection
+                        task={task}
+                        team={taskTeam}
+                        currentUser={user}
+                        canManage={canManage}
+                        onChanged={onSuccess}
+                      />
+                    ),
+                  },
+                ]
+              : []),
+            {
+              key: 'subtasks',
+              label: (
+                <span>
+                  <UnorderedListOutlined /> Công việc con{' '}
+                  {task.subtasks && task.subtasks.length > 0
+                    ? `(${task.subtasks.length})`
+                    : ''}
+                </span>
+              ),
+              children: (
+                <TaskSubtasksSection
+                  task={task}
+                  currentUser={user}
+                  canManage={canManage}
+                  highlightSubtaskId={highlightSubtaskId}
+                  onChanged={onSuccess}
+                />
+              ),
             },
           ]}
-        >
-          <Input
-            disabled={!canEditContent}
-            placeholder="Nhập tiêu đề công việc (từ 3 đến 100 ký tự)..."
-            maxLength={100}
-            showCount
-          />
-        </Form.Item>
-
-        <Form.Item
-          name="description"
-          label="Mô tả"
-          rules={[{ max: 1000, message: 'Mô tả không được vượt quá 1000 ký tự' }]}
-        >
-          <Input.TextArea
-            disabled={!canEditContent}
-            rows={3}
-            placeholder="Nhập mô tả chi tiết (tuỳ chọn, tối đa 1000 ký tự)..."
-            maxLength={1000}
-            showCount
-          />
-        </Form.Item>
-
-        <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', gap: screens.xs ? 0 : 16 }}>
-          <Form.Item name="teamId" label="Nhóm làm việc" style={{ flex: 1 }}>
-            <Select
-              allowClear
-              disabled={!canEditContent}
-              placeholder="Chọn nhóm (hoặc để trống nếu cá nhân)"
-              onChange={() => form.setFieldValue('assigneeId', null)}
-              options={teams.map((t) => ({
-                value: t.id,
-                label: t.name,
-              }))}
-            />
-          </Form.Item>
-
-          <Form.Item name="assigneeId" label="Người thực hiện (Assignee)" style={{ flex: 1 }}>
-            <Select
-              allowClear
-              disabled={!canChangeAssignee || !selectedTeamId}
-              placeholder={selectedTeamId ? 'Chọn thành viên thực hiện' : 'Chọn nhóm trước để giao việc'}
-              options={assigneeOptions}
-            />
-          </Form.Item>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', gap: screens.xs ? 0 : 16 }}>
-          <Form.Item name="startDate" label="Ngày bắt đầu" style={{ flex: 1 }}>
-            <DatePicker
-              disabled={!canEditContent}
-              format="DD/MM/YYYY"
-              placeholder="Chọn ngày bắt đầu"
-              style={{ width: '100%' }}
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="dueDate"
-            label="Hạn chót (Deadline)"
-            style={{ flex: 1 }}
-            dependencies={['startDate']}
-            rules={[
-              ({ getFieldValue }) => ({
-                validator(_, value) {
-                  const start = getFieldValue('startDate');
-                  if (start && value && value.isBefore(start, 'day')) {
-                    return Promise.reject(new Error('Hạn chót phải sau hoặc cùng ngày bắt đầu'));
-                  }
-                  return Promise.resolve();
-                },
-              }),
-            ]}
-          >
-            <DatePicker
-              disabled={!canEditContent}
-              format="DD/MM/YYYY"
-              placeholder="Chọn hạn chót"
-              style={{ width: '100%' }}
-            />
-          </Form.Item>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', gap: screens.xs ? 0 : 16 }}>
-          <Form.Item name="status" label="Trạng thái" style={{ flex: 1 }}>
-            <Select
-              disabled={!canChangeStatus || isReopenBlocked}
-              options={[
-                {
-                  value: 'TODO',
-                  label: 'TODO',
-                  disabled: isAssigneeOnly && task?.status !== 'TODO',
-                },
-                {
-                  value: 'IN_PROGRESS',
-                  label: 'IN_PROGRESS',
-                  disabled: isAssigneeOnly && task?.status === 'DONE',
-                },
-                {
-                  value: 'DONE',
-                  label: 'DONE',
-                  disabled: isAssigneeOnly && task?.status === 'TODO',
-                },
-              ]}
-            />
-          </Form.Item>
-
-          <Form.Item name="priority" label="Độ ưu tiên" style={{ flex: 1 }}>
-            <Select
-              disabled={!canEditContent}
-              options={[
-                { value: 'LOW', label: 'Thấp (LOW)' },
-                { value: 'MEDIUM', label: 'Trung bình (MEDIUM)' },
-                { value: 'HIGH', label: 'Cao (HIGH)' },
-              ]}
-            />
-          </Form.Item>
-        </div>
-
-        <Form.Item name="categoryId" label="Danh mục">
-          <Select
-            allowClear
-            disabled={!canEditContent}
-            placeholder="Chọn danh mục (tuỳ chọn)"
-            options={categories.map((c) => ({
-              value: c.id,
-              label: (
-                <Tag color={c.color} style={{ margin: 0 }}>
-                  {c.name}
-                </Tag>
-              ),
-            }))}
-          />
-        </Form.Item>
-      </Form>
+        />
+      ) : (
+        formContent
+      )}
     </Modal>
   );
 }

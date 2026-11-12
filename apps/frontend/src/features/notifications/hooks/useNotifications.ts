@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { message } from 'antd';
 import type { Notification } from '../types/notification.types';
 import {
   getNotifications,
@@ -7,6 +8,13 @@ import {
   markAllNotificationsAsRead,
 } from '../api/notifications.api';
 import { useAuth } from '../../auth/hooks/useAuth';
+import { useRealtimeEvent, useRealtimeReconnect } from '../../realtime';
+import type { RealtimeEventData } from '../../realtime/types/realtime.types';
+import {
+  appendPaginatedNotifications,
+  mergeRealtimeNotificationState,
+  type RealtimeNotificationPayload,
+} from '../utils/notification-state.utils';
 
 const POLL_INTERVAL_MS = 45000;
 const PAGE_SIZE = 15;
@@ -17,6 +25,7 @@ export function useNotifications() {
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState<boolean>(false);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'unread'>('all');
@@ -24,7 +33,12 @@ export function useNotifications() {
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const nextCursorRef = useRef<number | null>(null);
+  const notificationsRef = useRef<Notification[]>([]);
   const inFlightMarkReadRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    notificationsRef.current = notifications;
+  }, [notifications]);
 
   const fetchUnreadCount = useCallback(async () => {
     if (!user) return;
@@ -32,25 +46,30 @@ export function useNotifications() {
       const count = await getUnreadNotificationCount();
       setUnreadCount(count);
     } catch {
-      // Ignore background poll errors
+      // Ignore transient background poll errors
     }
   }, [user]);
 
   const loadNotifications = useCallback(
-    async (reset = true) => {
+    async (reset = true, silent = false) => {
       if (!user) {
+        notificationsRef.current = [];
         setNotifications([]);
         setUnreadCount(0);
+        setError(null);
         return;
       }
 
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-      abortControllerRef.current = new AbortController();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
       if (reset) {
-        setLoading(true);
+        if (!silent) {
+          setLoading(true);
+        }
       } else {
         setLoadingMore(true);
       }
@@ -63,13 +82,23 @@ export function useNotifications() {
             cursor,
             filter: activeTab,
           },
-          abortControllerRef.current.signal,
+          controller.signal,
         );
 
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setError(null);
         if (reset) {
+          notificationsRef.current = res.items;
           setNotifications(res.items);
         } else {
-          setNotifications((prev) => [...prev, ...res.items]);
+          setNotifications((prev) => {
+            const merged = appendPaginatedNotifications(prev, res.items);
+            notificationsRef.current = merged;
+            return merged;
+          });
         }
 
         nextCursorRef.current = res.nextCursor;
@@ -77,16 +106,54 @@ export function useNotifications() {
         setHasMore(res.nextCursor !== null);
         setUnreadCount(res.unreadCount);
       } catch (err: unknown) {
-        if (err instanceof Error && err.name !== 'AbortError') {
-          // Ignore abort errors
+        if (err instanceof Error && err.name === 'AbortError') {
+          return;
         }
+        setError(err instanceof Error ? err.message : 'Không thể tải danh sách thông báo');
       } finally {
-        setLoading(false);
-        setLoadingMore(false);
+        if (abortControllerRef.current === controller) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
       }
     },
     [user, activeTab],
   );
+
+  const handleRealtimeNotification = useCallback(
+    (event: RealtimeEventData) => {
+      if (!user) return;
+      const payload = (event.payload ?? null) as RealtimeNotificationPayload | null;
+      const merged = mergeRealtimeNotificationState(
+        notificationsRef.current,
+        payload,
+        user.id,
+        activeTab,
+      );
+
+      if (merged.needsServerFetch) {
+        void loadNotifications(true, true);
+        return;
+      }
+
+      if (merged.items !== notificationsRef.current) {
+        notificationsRef.current = merged.items;
+        setNotifications(merged.items);
+      }
+      if (merged.unreadDelta !== 0) {
+        setUnreadCount((prev) => Math.max(0, prev + merged.unreadDelta));
+      }
+    },
+    [user, activeTab, loadNotifications],
+  );
+
+  useRealtimeEvent('NOTIFICATION_NEW', handleRealtimeNotification);
+
+  const handleReconnectResync = useCallback(() => {
+    void loadNotifications(true, true);
+  }, [loadNotifications]);
+
+  useRealtimeReconnect(handleReconnectResync);
 
   const loadMore = useCallback(async () => {
     if (loading || loadingMore || !hasMore || nextCursor === null) return;
@@ -95,23 +162,18 @@ export function useNotifications() {
 
   const markRead = useCallback(
     async (id: number) => {
-      // 1. Vô hiệu hóa thao tác lặp trên cùng ID khi request còn đang chạy
       if (inFlightMarkReadRef.current.has(id)) {
         return;
       }
 
-      // 2. Kiểm tra trạng thái: nếu notification đã đọc trước đó, không làm gì
-      const target = notifications.find((item) => item.id === id);
+      const target = notificationsRef.current.find((item) => item.id === id);
       if (target && target.isRead) {
         return;
       }
 
       inFlightMarkReadRef.current.add(id);
-
-      // Chỉ giảm unreadCount khi xác định notification thực sự đang chưa đọc
       const wasActuallyUnread = target ? !target.isRead : false;
 
-      // 3. Optimistic update: chỉ cập nhật item tương ứng
       setNotifications((current) =>
         current.map((item) => (item.id === id ? { ...item, isRead: true } : item)),
       );
@@ -121,39 +183,34 @@ export function useNotifications() {
 
       try {
         await markNotificationAsRead(id);
-      } catch {
-        // 4. Targeted rollback: chỉ hoàn nguyên nếu trước đó thực sự chưa đọc
+      } catch (err: unknown) {
         if (wasActuallyUnread) {
           setNotifications((current) =>
             current.map((item) => (item.id === id ? { ...item, isRead: false } : item)),
           );
           setUnreadCount((current) => current + 1);
         }
-        // 5. Refetch fresh source of truth from server
-        void fetchUnreadCount();
-        void loadNotifications(true);
+        message.error(err instanceof Error ? err.message : 'Không thể đánh dấu đã đọc');
+        void loadNotifications(true, true);
       } finally {
         inFlightMarkReadRef.current.delete(id);
       }
     },
-    [notifications, fetchUnreadCount, loadNotifications],
+    [loadNotifications],
   );
 
   const markAllRead = useCallback(async () => {
-    // 1. Optimistic update: mark all items as read
     setNotifications((current) => current.map((item) => ({ ...item, isRead: true })));
     setUnreadCount(0);
 
     try {
       await markAllNotificationsAsRead();
-    } catch {
-      // 2. On failure, refetch fresh source of truth from server
-      void fetchUnreadCount();
-      void loadNotifications(true);
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : 'Không thể đánh dấu đọc tất cả');
+      void loadNotifications(true, true);
     }
-  }, [fetchUnreadCount, loadNotifications]);
+  }, [loadNotifications]);
 
-  // Initial load & when activeTab changes
   useEffect(() => {
     let active = true;
 
@@ -164,10 +221,12 @@ export function useNotifications() {
         void loadNotifications(true);
       } else {
         nextCursorRef.current = null;
+        notificationsRef.current = [];
         setNotifications([]);
         setUnreadCount(0);
         setNextCursor(null);
         setHasMore(false);
+        setError(null);
       }
     }
 
@@ -178,14 +237,13 @@ export function useNotifications() {
     };
   }, [user, activeTab, loadNotifications]);
 
-  // Controlled polling with Page Visibility API
   useEffect(() => {
     if (!user) return;
 
     const startPolling = () => {
       stopPolling();
       pollTimerRef.current = setInterval(() => {
-        fetchUnreadCount();
+        void fetchUnreadCount();
       }, POLL_INTERVAL_MS);
     };
 
@@ -200,8 +258,7 @@ export function useNotifications() {
       if (document.hidden) {
         stopPolling();
       } else {
-        // Resume immediately on tab focus
-        fetchUnreadCount();
+        void fetchUnreadCount();
         startPolling();
       }
     };
@@ -223,10 +280,12 @@ export function useNotifications() {
     unreadCount,
     loading,
     loadingMore,
+    error,
     hasMore,
     activeTab,
     setActiveTab,
-    fetchNotifications: () => loadNotifications(true),
+    fetchNotifications: (opts?: { silent?: boolean }) =>
+      loadNotifications(true, Boolean(opts?.silent)),
     loadMore,
     markRead,
     markAllRead,

@@ -11,7 +11,10 @@ import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { TaskQueryService } from './task-query.service.js';
 import { TaskReorderService } from './task-reorder.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
-import { type Task, Prisma } from '@prisma/client';
+import { RealtimeService } from '../../realtime/realtime.service.js';
+import { TaskAssignmentService } from './task-assignment.service.js';
+import { TeamActivityService } from '../../team-activity/team-activity.service.js';
+import { type Task, Prisma, TeamActivityAction } from '@prisma/client';
 
 @Injectable()
 export class TaskTransferService {
@@ -21,6 +24,9 @@ export class TaskTransferService {
     private readonly queryService: TaskQueryService,
     private readonly reorderService: TaskReorderService,
     private readonly notificationEventService: NotificationEventService,
+    private readonly realtimeService: RealtimeService,
+    private readonly assignmentService: TaskAssignmentService,
+    private readonly teamActivityService: TeamActivityService,
   ) {}
 
   private executeInTransaction<T>(
@@ -47,7 +53,7 @@ export class TaskTransferService {
     }
 
     try {
-      return await this.executeInTransaction(externalTx, async (tx) => {
+      const result = await this.executeInTransaction(externalTx, async (tx) => {
         const initialTask = await this.queryService.findOne(id, userId, tx);
         const targetTeamId = hasTeamId ? (dto.teamId ?? null) : initialTask.teamId;
 
@@ -66,18 +72,28 @@ export class TaskTransferService {
           throw new ForbiddenException('Bạn không có quyền phân công công việc này');
         }
 
+        if (
+          currentTask.status === 'DONE' &&
+          hasAssigneeId &&
+          (dto.assigneeId ?? null) !== currentTask.assigneeId
+        ) {
+          throw new BadRequestException('Không thể thay đổi người thực hiện khi công việc đã hoàn thành');
+        }
+
         const effectiveTeamId = hasTeamId ? (dto.teamId ?? null) : currentTask.teamId;
         const isTeamChanged = effectiveTeamId !== currentTask.teamId;
         let effectiveAssigneeId = hasAssigneeId ? (dto.assigneeId ?? null) : currentTask.assigneeId;
+        let targetTeamMemberIds: number[] = [];
 
         if (effectiveTeamId !== null) {
           const targetTeam = await tx.team.findUnique({
             where: { id: effectiveTeamId },
             include: { members: true },
           });
-          if (!this.policy.isTeamMember(userId, targetTeam)) {
+          if (!targetTeam || !this.policy.isTeamMember(userId, targetTeam)) {
             throw new NotFoundException('Không tìm thấy nhóm');
           }
+          targetTeamMemberIds = targetTeam.members.map((m) => m.userId);
 
           if (hasAssigneeId) {
             if (effectiveAssigneeId && !this.policy.isTeamMember(effectiveAssigneeId, targetTeam)) {
@@ -106,14 +122,16 @@ export class TaskTransferService {
 
         if (isTeamChanged) {
           const duplicateScopeWhere: Prisma.TaskWhereInput = effectiveTeamId
-            ? { teamId: effectiveTeamId }
-            : { userId: currentTask.userId, teamId: null };
+            ? { teamId: effectiveTeamId, deletedAt: null }
+            : { userId: currentTask.userId, teamId: null, deletedAt: null };
+
+          const targetTitle = (dto.title && dto.title.trim()) ? dto.title.trim() : currentTask.title;
 
           const duplicateTask = await tx.task.findFirst({
             where: {
               ...duplicateScopeWhere,
               title: {
-                equals: currentTask.title,
+                equals: targetTitle,
                 mode: 'insensitive',
               },
               NOT: { id },
@@ -121,7 +139,7 @@ export class TaskTransferService {
           });
 
           if (duplicateTask) {
-            throw new ConflictException(`Tiêu đề '${currentTask.title}' đã được sử dụng bởi một công việc khác`);
+            throw new ConflictException(`Tiêu đề '${targetTitle}' đã được sử dụng bởi một công việc khác`);
           }
         }
 
@@ -131,16 +149,43 @@ export class TaskTransferService {
             : { disconnect: true };
         }
 
+        if (isTeamChanged && currentTask.categoryId) {
+          if (effectiveTeamId !== null) {
+            const validTeamCat = await tx.category.findFirst({
+              where: {
+                id: currentTask.categoryId,
+                teamId: effectiveTeamId,
+              },
+            });
+            if (!validTeamCat) {
+              updateData.category = { disconnect: true };
+            }
+          } else {
+            const validPersonalCat = await tx.category.findFirst({
+              where: {
+                id: currentTask.categoryId,
+                userId: currentTask.userId,
+                teamId: null,
+              },
+            });
+            if (!validPersonalCat) {
+              updateData.category = { disconnect: true };
+            }
+          }
+        }
+
         if (hasAssigneeId || (isTeamChanged && effectiveAssigneeId !== currentTask.assigneeId)) {
           updateData.assignee = effectiveAssigneeId
             ? { connect: { id: effectiveAssigneeId } }
             : { disconnect: true };
         }
 
+        let revokedCollaboratorCount = 0;
+
         if (isTeamChanged) {
           const destScope: Prisma.TaskWhereInput = effectiveTeamId
-            ? { teamId: effectiveTeamId }
-            : { userId: currentTask.userId, teamId: null };
+            ? { teamId: effectiveTeamId, deletedAt: null }
+            : { userId: currentTask.userId, teamId: null, deletedAt: null };
 
           const newPosition = await this.reorderService.getNextPosition(
             tx,
@@ -148,6 +193,28 @@ export class TaskTransferService {
             currentTask.status,
           );
           updateData.position = newPosition;
+
+          // When moving across teams or to personal space, revoke invalid collaborators first
+          if (effectiveTeamId === null) {
+            const res = await tx.taskCollaborator.updateMany({
+              where: {
+                taskId: id,
+                status: { in: ['PENDING', 'ACCEPTED'] },
+              },
+              data: { status: 'REVOKED' },
+            });
+            revokedCollaboratorCount = res.count;
+          } else {
+            const res = await tx.taskCollaborator.updateMany({
+              where: {
+                taskId: id,
+                status: { in: ['PENDING', 'ACCEPTED'] },
+                userId: { notIn: targetTeamMemberIds },
+              },
+              data: { status: 'REVOKED' },
+            });
+            revokedCollaboratorCount = res.count;
+          }
         }
 
         const updatedTask = await tx.task.update({
@@ -164,10 +231,29 @@ export class TaskTransferService {
           },
         });
 
+        let transferHandover = { affectedSubtaskIds: [] as number[], revokedCollaboratorUserId: null as number | null };
+        // Unified business logic: handle Main Assignee transition & subtask handover/invalidation.
+        // Runs whenever assignee is explicitly set, changed, or when team is transferred.
+        if (hasAssigneeId || isTeamChanged || currentTask.assigneeId !== effectiveAssigneeId) {
+          transferHandover = await this.assignmentService.handleMainAssigneeChange(
+            tx,
+            id,
+            currentTask.assigneeId,
+            effectiveAssigneeId,
+            effectiveTeamId !== null ? targetTeamMemberIds : [currentTask.userId],
+            {
+              actorId: userId,
+              taskTitle: updatedTask.title,
+              teamId: updatedTask.teamId,
+              mutationTime: updatedTask.updatedAt,
+            },
+          );
+        }
+
         if (isTeamChanged) {
           const sourceScope: Prisma.TaskWhereInput = currentTask.teamId
-            ? { teamId: currentTask.teamId }
-            : { userId: currentTask.userId, teamId: null };
+            ? { teamId: currentTask.teamId, deletedAt: null }
+            : { userId: currentTask.userId, teamId: null, deletedAt: null };
 
           await this.reorderService.reindexColumn(tx, sourceScope, currentTask.status, [id]);
 
@@ -185,9 +271,40 @@ export class TaskTransferService {
                 targetTeamId: effectiveTeamId,
                 targetTeamName: targetTeam?.name || 'Nhóm',
                 assigneeId: effectiveAssigneeId,
+                timestamp: updatedTask.updatedAt.getTime(),
               },
               tx,
             );
+          }
+
+          if (currentTask.teamId) {
+            await this.teamActivityService.logActivity(tx, {
+              teamId: currentTask.teamId,
+              actorId: userId,
+              action: TeamActivityAction.TASK_MOVED_OUT,
+              metadata: {
+                taskId: id,
+                taskTitle: currentTask.title,
+                fromTeamId: currentTask.teamId,
+                toTeamId: effectiveTeamId,
+                revokedCollaboratorCount,
+              },
+            });
+          }
+
+          if (effectiveTeamId) {
+            await this.teamActivityService.logActivity(tx, {
+              teamId: effectiveTeamId,
+              actorId: userId,
+              action: TeamActivityAction.TASK_MOVED_IN,
+              metadata: {
+                taskId: id,
+                taskTitle: currentTask.title,
+                fromTeamId: currentTask.teamId,
+                toTeamId: effectiveTeamId,
+                revokedCollaboratorCount,
+              },
+            });
           }
         }
 
@@ -201,6 +318,7 @@ export class TaskTransferService {
                 taskTitle: currentTask.title,
                 previousAssigneeId: currentTask.assigneeId,
                 teamId: currentTask.teamId,
+                timestamp: updatedTask.updatedAt.getTime(),
               },
               tx,
             );
@@ -214,17 +332,74 @@ export class TaskTransferService {
                 taskTitle: currentTask.title,
                 assigneeId: effectiveAssigneeId,
                 teamId: effectiveTeamId,
+                timestamp: updatedTask.updatedAt.getTime(),
               },
               tx,
             );
           }
         }
 
-        return updatedTask;
+        return {
+          updatedTask,
+          sourceTeamId: currentTask.teamId,
+          sourceOwnerId: currentTask.userId,
+          affectedSubtaskIds: transferHandover.affectedSubtaskIds,
+        };
       });
+
+      if (!externalTx) {
+        void this.realtimeService.emit({
+          type: 'TASK_UPDATED',
+          actorId: userId,
+          teamId: result.updatedTask.teamId,
+          targetUserIds: result.updatedTask.teamId
+            ? undefined
+            : [result.updatedTask.userId, ...(result.updatedTask.assigneeId ? [result.updatedTask.assigneeId] : [])],
+          payload: {
+            taskId: result.updatedTask.id,
+            teamId: result.updatedTask.teamId,
+            status: result.updatedTask.status,
+          },
+        });
+
+        // Notify source team with minimal signal (NO new team/task details leaked) so their board drops the moved card
+        if (result.sourceTeamId && result.sourceTeamId !== result.updatedTask.teamId) {
+          void this.realtimeService.emit({
+            type: 'TASK_UPDATED',
+            actorId: userId,
+            teamId: result.sourceTeamId,
+            payload: {
+              taskId: result.updatedTask.id,
+              movedOut: true,
+            },
+          });
+        }
+
+        for (const subId of result.affectedSubtaskIds) {
+          void this.realtimeService.emit({
+            type: 'SUBTASK_UPDATED',
+            actorId: userId,
+            teamId: result.updatedTask.teamId,
+            targetUserIds: result.updatedTask.teamId
+              ? undefined
+              : [result.updatedTask.userId, ...(result.updatedTask.assigneeId ? [result.updatedTask.assigneeId] : [])],
+            payload: {
+              taskId: result.updatedTask.id,
+              subtaskId: subId,
+            },
+          });
+        }
+      }
+
+      return result.updatedTask;
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException('Tiêu đề công việc đã được sử dụng bởi một công việc khác trong phạm vi này');
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new ConflictException('Tiêu đề công việc đã được sử dụng bởi một công việc khác trong phạm vi này');
+        }
+        if (error.code === 'P2025') {
+          throw new NotFoundException('Không tìm thấy công việc (có thể đã bị xoá bởi người khác)');
+        }
       }
       throw error;
     }

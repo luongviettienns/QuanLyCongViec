@@ -1,11 +1,18 @@
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Spin } from 'antd';
 import AppLayout from '../layouts/AppLayout';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import { useTasks } from '../../features/tasks/hooks/useTasks';
-import { getTaskById } from '../../features/tasks/api/tasks.api';
-import type { Task, TaskStatus } from '../../features/tasks/types/task.types';
+import type { TaskStatus, TaskFilterPatch } from '../../features/tasks/types/task.types';
+import type { NotificationDestination } from '../../features/notifications';
+import {
+  createDefaultTaskFilters,
+  applyFilterPatch,
+  loadSavedViewMode,
+} from '../../features/tasks/utils/task-filter.utils';
+import { useTaskModalController } from '../hooks/useTaskModalController';
+import { useAppRealtimeSync } from '../hooks/useAppRealtimeSync';
 
 import TasksPage from '../../features/tasks/pages/TasksPage';
 import CategoryPage from '../../features/categories/pages/CategoryPage';
@@ -13,6 +20,7 @@ import TeamPage from '../../features/teams/pages/TeamPage';
 import DashboardPage from '../../features/dashboard/pages/DashboardPage';
 import TaskFormModal from '../../features/tasks/components/TaskFormModal';
 import AuthScreen from '../../features/auth/components/AuthScreen';
+import { NotFoundPage, ForbiddenPage, UnauthorizedPage } from '../pages/errors';
 
 function FullScreenSpinner() {
   return (
@@ -68,108 +76,144 @@ function TaskAppShell() {
       ? rawPath
       : 'dashboard';
 
+  const { user } = useAuth();
+  const [dashboardReloadCounter, setDashboardReloadCounter] = useState(0);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+
   const {
     tasks,
+    trashTasks,
+    trashLoading,
     categories,
     teams,
     loading,
-    searchText,
-    statusFilter,
-    categoryFilter,
-    priorityFilter,
-    teamFilter,
-    scopeFilter,
+    filters,
     isFiltering,
-    setSearchText,
-    handleSearch,
-    handleStatusChange,
-    handleCategoryChange,
-    handlePriorityChange,
-    handleTeamChange,
-    handleScopeChange,
+    viewMode,
+    setViewMode,
+    applyFilters,
     handleReset,
     refetch,
     handleDelete,
+    handleRestore,
+    handlePermanentDelete,
     handleReorder,
     handleStatusMove,
     fetchCategories,
     fetchTeams,
-  } = useTasks();
+  } = useTasks({ enabled: currentNav === 'tasks' });
 
-  const [modalState, setModalState] = useState<{ open: boolean; task: Task | null }>({
-    open: false,
-    task: null,
-  });
-
-  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
-
-  function ensureModalMetadataLoaded() {
+  const ensureMetadataLoaded = useCallback(() => {
     if (categories.length === 0) {
       void fetchCategories();
     }
     if (teams.length === 0) {
       void fetchTeams();
     }
-  }
+  }, [categories.length, teams.length, fetchCategories, fetchTeams]);
 
-  function handleOpenCreate() {
-    ensureModalMetadataLoaded();
-    setModalState({ open: true, task: null });
-  }
-
-  function handleOpenEdit(task: Task) {
-    ensureModalMetadataLoaded();
-    setModalState({ open: true, task });
-  }
-
-  function handleCloseModal() {
-    setModalState({ open: false, task: null });
-  }
-
-  function handleNavigateFromDashboard(status?: TaskStatus) {
-    if (status) {
-      handleStatusChange(status);
+  useEffect(() => {
+    if (currentNav === 'dashboard') {
+      ensureMetadataLoaded();
     }
-    navigate('/tasks');
-  }
+  }, [currentNav, ensureMetadataLoaded]);
 
-  async function handleNotificationNavigate(dest: { type: 'task' | 'team'; id: number }) {
-    if (dest.type === 'task') {
+  const {
+    modalState,
+    activeModalTask,
+    openCreateModal,
+    openEditModal,
+    openTaskFromNotification,
+    closeModal,
+    refreshActiveModalTask,
+  } = useTaskModalController({
+    tasks,
+    onRefetch: refetch,
+    ensureMetadataLoaded,
+  });
+
+  const activeModalTaskId = modalState.open && modalState.task ? modalState.task.id : null;
+
+  const handleDashboardReload = useCallback(() => {
+    setDashboardReloadCounter((c) => c + 1);
+  }, []);
+
+  useAppRealtimeSync({
+    userId: user?.id,
+    currentNav,
+    activeModalTaskId,
+    activeModalTab: modalState.defaultTab,
+    onRefetchTasks: refetch,
+    onRefetchCategories: fetchCategories,
+    onRefetchTeams: fetchTeams,
+    onRefreshModalTask: refreshActiveModalTask,
+    onCloseModalIfDeleted: closeModal,
+    onDashboardReload: handleDashboardReload,
+  });
+
+  const handleGlobalReload = useCallback(() => {
+    if (currentNav === 'dashboard') {
+      handleDashboardReload();
+    } else {
+      void refetch();
+    }
+  }, [currentNav, handleDashboardReload, refetch]);
+
+  const handleNavigateFromDashboard = useCallback(
+    (patchOrStatus?: TaskFilterPatch | TaskStatus) => {
+      if (viewMode === 'trash') {
+        setViewMode(loadSavedViewMode());
+      }
+      let patch: TaskFilterPatch = {};
+      if (typeof patchOrStatus === 'string') {
+        patch = { statusFilter: patchOrStatus };
+      } else if (patchOrStatus) {
+        patch = patchOrStatus;
+      }
+      applyFilters(applyFilterPatch(createDefaultTaskFilters(), patch));
       navigate('/tasks');
-      let targetTask = tasks.find((t) => t.id === dest.id);
-      if (!targetTask) {
-        try {
-          targetTask = await getTaskById(dest.id);
-        } catch {
-          // Gracefully fallback: stays on tasks list if task was deleted or inaccessible
+    },
+    [viewMode, setViewMode, applyFilters, navigate],
+  );
+
+  const handleNotificationNavigate = useCallback(
+    async (dest: NotificationDestination) => {
+      if (dest.type === 'task') {
+        if (viewMode === 'trash') {
+          setViewMode(loadSavedViewMode());
         }
+        navigate('/tasks');
+        await openTaskFromNotification(dest);
+      } else if (dest.type === 'team') {
+        navigate('/teams');
       }
-      if (targetTask) {
-        handleOpenEdit(targetTask);
-      }
-    } else if (dest.type === 'team') {
-      navigate('/teams');
-    }
-  }
+    },
+    [viewMode, setViewMode, navigate, openTaskFromNotification],
+  );
 
   return (
     <AppLayout
-      onReload={() => void refetch()}
-      onCreateTask={handleOpenCreate}
+      onReload={handleGlobalReload}
+      onCreateTask={() => openCreateModal(filters.teamFilter !== 'ALL' ? filters.teamFilter : null)}
       onOpenCategories={() => setCategoryModalOpen(true)}
-      loading={loading}
+      loading={currentNav === 'dashboard' ? dashboardLoading : loading}
       currentNav={currentNav}
       onNavChange={(key) => navigate('/' + key)}
       onNavigateNotification={handleNotificationNavigate}
     >
       <Routes>
+        <Route index element={<Navigate to="/dashboard" replace />} />
         <Route
           path="dashboard"
           element={
             <DashboardPage
+              teams={teams}
               active={currentNav === 'dashboard'}
+              refreshTrigger={dashboardReloadCounter}
+              onLoadingChange={setDashboardLoading}
               onNavigateToTasks={handleNavigateFromDashboard}
-              onOpenCreateTask={handleOpenCreate}
+              onOpenCreateTask={openCreateModal}
             />
           }
         />
@@ -178,31 +222,28 @@ function TaskAppShell() {
           element={
             <TasksPage
               tasks={tasks}
+              trashTasks={trashTasks}
+              trashLoading={trashLoading}
               categories={categories}
               teams={teams}
               loading={loading}
-              searchText={searchText}
-              statusFilter={statusFilter}
-              categoryFilter={categoryFilter}
-              priorityFilter={priorityFilter}
-              teamFilter={teamFilter}
-              scopeFilter={scopeFilter}
+              filters={filters}
               isFiltering={isFiltering}
-              categoryModalOpen={categoryModalOpen}
-              onSearchChange={setSearchText}
-              onSearch={handleSearch}
-              onStatusChange={handleStatusChange}
-              onCategoryChange={handleCategoryChange}
-              onPriorityChange={handlePriorityChange}
-              onTeamChange={handleTeamChange}
-              onScopeChange={handleScopeChange}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              onFiltersChange={applyFilters}
               onReset={handleReset}
+              onCreate={openCreateModal}
+              onEdit={openEditModal}
+              onDelete={(id) => void handleDelete(id)}
+              onRestore={handleRestore}
+              onPermanentDelete={handlePermanentDelete}
               onReorder={handleReorder}
               onStatusMove={handleStatusMove}
-              onEdit={handleOpenEdit}
-              onDelete={(id) => void handleDelete(id)}
+              categoryModalOpen={categoryModalOpen}
               onCloseCategoryModal={() => setCategoryModalOpen(false)}
               onCategoryChanged={() => void refetch()}
+              currentUserId={user?.id}
             />
           }
         />
@@ -214,16 +255,20 @@ function TaskAppShell() {
           path="categories"
           element={<CategoryPage onChanged={() => void refetch()} />}
         />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
 
       {modalState.open && (
         <TaskFormModal
+          key={`${modalState.task?.id ?? 'new'}-${modalState.defaultTab ?? 'info'}-${modalState.highlightSubtaskId ?? ''}`}
           open={modalState.open}
-          task={modalState.task}
+          task={activeModalTask}
+          defaultTeamId={modalState.defaultTeamId}
+          initialTab={modalState.defaultTab}
+          highlightSubtaskId={modalState.highlightSubtaskId}
           categories={categories}
           teams={teams}
-          onClose={handleCloseModal}
+          onClose={closeModal}
           onSuccess={refetch}
         />
       )}
@@ -242,6 +287,9 @@ export function AppRouter() {
           </PublicRoute>
         }
       />
+      <Route path="/unauthorized" element={<UnauthorizedPage />} />
+      <Route path="/forbidden" element={<ForbiddenPage />} />
+      <Route path="/404" element={<NotFoundPage />} />
       <Route
         path="/*"
         element={

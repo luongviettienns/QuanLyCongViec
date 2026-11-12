@@ -6,16 +6,18 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   ParseIntPipe,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiOkResponse } from '@nestjs/swagger';
 import { TeamsService } from './teams.service.js';
 import { CreateTeamDto } from './dto/create-team.dto.js';
 import { UpdateTeamDto } from './dto/update-team.dto.js';
 import { AddMemberDto } from './dto/add-member.dto.js';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto.js';
 import { TransferOwnershipDto } from './dto/transfer-ownership.dto.js';
+import { GetTeamActivityLogsDto, PaginatedTeamActivityLogsResponseDto } from '../team-activity/dto/get-activity-logs.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js';
 
@@ -48,6 +50,17 @@ export class TeamsController {
     @Param('id', ParseIntPipe) id: number,
   ) {
     return this.teamsService.findOne(user.id, id);
+  }
+
+  @ApiOperation({ summary: 'Lấy lịch sử hoạt động thành viên của nhóm (chỉ OWNER và ADMIN)' })
+  @ApiOkResponse({ type: PaginatedTeamActivityLogsResponseDto })
+  @Get(':id/activity-logs')
+  getActivityLogs(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Query() query?: GetTeamActivityLogsDto,
+  ) {
+    return this.teamsService.getActivityLogs(user.id, id, query);
   }
 
   @ApiOperation({ summary: 'Cập nhật thông tin nhóm' })

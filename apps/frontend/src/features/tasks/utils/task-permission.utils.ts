@@ -158,7 +158,7 @@ export function canReorderTask(
     return task.userId === userId;
   }
 
-  // Team task: Any team member can reorder
+  // Team task: Only Team Owner or Admin can reorder the shared priority board
   const resolvedTeam = team ?? (task.team ? ({
     id: task.team.id,
     ownerId: (task.team as { ownerId?: number }).ownerId ?? -1,
@@ -169,11 +169,13 @@ export function canReorderTask(
     resolvedTeam && (resolvedTeam.ownerId === userId || (resolvedTeam.owner && resolvedTeam.owner.id === userId)),
   );
 
-  return Boolean(
+  const isAdmin = Boolean(
     isOwner ||
-    resolvedTeam?.currentUserRole !== undefined ||
-    resolvedTeam?.members?.some((m) => m.userId === userId),
+    resolvedTeam?.currentUserRole === 'ADMIN' ||
+    resolvedTeam?.members?.some((m) => m.userId === userId && m.role === 'ADMIN'),
   );
+
+  return isOwner || isAdmin;
 }
 
 /**
@@ -266,8 +268,8 @@ export function getTaskPermissions(
     (status) => status !== task.status && canTransitionTask(user, task, status, team),
   );
 
-  const canEditContent = !isTeamTask ? isCreator : isManager;
-  const canChangeAssignee = !isTeamTask ? isCreator : isManager;
+  const canEditContent = (!isTeamTask ? isCreator : isManager) && task.status !== 'DONE';
+  const canChangeAssignee = (!isTeamTask ? isCreator : isManager) && task.status !== 'DONE';
   const canDelete = !isTeamTask ? isCreator : isManager;
   const canChangeStatus = allowedNextStatuses.length > 0;
   const canReorder = canReorderTask(user, task, team);
@@ -324,4 +326,26 @@ export function getTaskPermissions(
     allowedNextStatuses,
     roleBadge,
   };
+}
+
+/**
+ * Checks whether a user has permission to restore or permanently delete a trashed task.
+ * - Personal task: Only creator.
+ * - Team task: Only Team Owner or Admin (not regular members, even if creator).
+ */
+export function canManageTrashTask(
+  user: User | null | undefined,
+  task: Task,
+  team?: Team | null,
+): boolean {
+  if (!user) {
+    return false;
+  }
+  const roles = getTaskActorRoles(user, task, team);
+  const isOwner = roles.includes('OWNER');
+  const isAdmin = roles.includes('ADMIN');
+  const isCreator = roles.includes('CREATOR');
+  const isTeamTask = Boolean(task.teamId || team);
+
+  return !isTeamTask ? isCreator : isOwner || isAdmin;
 }
