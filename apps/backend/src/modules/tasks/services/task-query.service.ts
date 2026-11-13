@@ -23,8 +23,12 @@ export class TaskQueryService {
   async buildTeamAccessWhere(
     userId: number,
     teamId?: number,
-    options?: { includePendingCollaboratorAccess?: boolean },
+    options?: { includePendingCollaboratorAccess?: boolean; personalOnly?: boolean },
   ): Promise<Prisma.TaskWhereInput> {
+    if (teamId && options?.personalOnly) {
+      throw new BadRequestException('Không thể đồng thời lọc theo nhóm và chỉ công việc cá nhân');
+    }
+
     if (teamId) {
       const team = await this.prisma.team.findUnique({
         where: { id: teamId },
@@ -34,6 +38,29 @@ export class TaskQueryService {
         throw new NotFoundException('Không tìm thấy nhóm');
       }
       return { teamId };
+    }
+
+    if (options?.personalOnly) {
+      const personalClauses: Prisma.TaskWhereInput[] = [
+        { userId },
+        { assigneeId: userId },
+      ];
+
+      if (options.includePendingCollaboratorAccess) {
+        personalClauses.push({
+          collaborators: {
+            some: {
+              userId,
+              status: 'PENDING',
+            },
+          },
+        });
+      }
+
+      return {
+        teamId: null,
+        OR: personalClauses,
+      };
     }
 
     const userTeamAccessWhere: Prisma.TeamWhereInput = {
@@ -144,6 +171,7 @@ export class TaskQueryService {
   async findAll(query: FilterTasksDto | undefined, userId: number): Promise<Task[]> {
     const teamAccessWhere = await this.buildTeamAccessWhere(userId, query?.teamId, {
       includePendingCollaboratorAccess: query?.scope === 'pending_invites',
+      personalOnly: query?.personalOnly,
     });
 
     let scopeWhere: Prisma.TaskWhereInput = {};
@@ -256,7 +284,9 @@ export class TaskQueryService {
   }
 
   async findTrash(query: FilterTasksDto | undefined, userId: number): Promise<Task[]> {
-    const accessWhere = await this.buildTeamAccessWhere(userId, query?.teamId);
+    const accessWhere = await this.buildTeamAccessWhere(userId, query?.teamId, {
+      personalOnly: query?.personalOnly,
+    });
     const andClauses: Prisma.TaskWhereInput[] = [accessWhere];
     this.applyAttributeFilters(andClauses, query);
 
