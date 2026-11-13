@@ -25,6 +25,8 @@ import {
   updateTask,
   updateTaskStatus,
 } from '../api/tasks.api';
+import { getFriendlyErrorMessage } from '../../../shared/api';
+import { shouldIgnoreTaskApiError } from '../utils/task-error.utils';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { getTaskPermissions } from '../utils/task-permission.utils';
 import { TaskCollaboratorsSection } from './TaskCollaboratorsSection';
@@ -289,7 +291,10 @@ export default function TaskFormModal({
       onClose();
       await onSuccess();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : 'Thao tác thất bại');
+      if (shouldIgnoreTaskApiError(error)) {
+        return;
+      }
+      message.error(getFriendlyErrorMessage(error, 'Thao tác thất bại'));
     } finally {
       setSaving(false);
     }

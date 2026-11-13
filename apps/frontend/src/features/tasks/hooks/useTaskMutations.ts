@@ -11,7 +11,8 @@ import {
   emptyTaskTrash,
 } from '../api/tasks.api';
 import type { BulkTaskResult, TaskStatus } from '../types/task.types';
-import { UnauthorizedError } from '../../../shared/api';
+import { getFriendlyErrorMessage } from '../../../shared/api';
+import { shouldIgnoreTaskApiError } from '../utils/task-error.utils';
 
 export function useTaskMutations(isAuthenticated: boolean) {
   const handleDeleteTask = useCallback(
@@ -27,15 +28,10 @@ export function useTaskMutations(isAuthenticated: boolean) {
         }
         return true;
       } catch (error) {
-        if (
-          error instanceof UnauthorizedError ||
-          (error instanceof Error && error.name === 'UnauthorizedError')
-        ) {
+        if (shouldIgnoreTaskApiError(error)) {
           return false;
         }
-        message.error(
-          error instanceof Error ? error.message : 'Xoá công việc thất bại',
-        );
+        message.error(getFriendlyErrorMessage(error, 'Xoá công việc thất bại'));
         return false;
       }
     },
@@ -54,15 +50,10 @@ export function useTaskMutations(isAuthenticated: boolean) {
           await onSuccess();
         }
       } catch (error) {
-        if (
-          error instanceof UnauthorizedError ||
-          (error instanceof Error && error.name === 'UnauthorizedError')
-        ) {
+        if (shouldIgnoreTaskApiError(error)) {
           return;
         }
-        message.error(
-          error instanceof Error ? error.message : 'Khôi phục công việc thất bại',
-        );
+        message.error(getFriendlyErrorMessage(error, 'Khôi phục công việc thất bại'));
       }
     },
     [isAuthenticated],
@@ -80,14 +71,11 @@ export function useTaskMutations(isAuthenticated: boolean) {
           await onSuccess();
         }
       } catch (error) {
-        if (
-          error instanceof UnauthorizedError ||
-          (error instanceof Error && error.name === 'UnauthorizedError')
-        ) {
+        if (shouldIgnoreTaskApiError(error)) {
           return;
         }
         message.error(
-          error instanceof Error ? error.message : 'Xoá vĩnh viễn công việc thất bại',
+          getFriendlyErrorMessage(error, 'Xoá vĩnh viễn công việc thất bại'),
         );
       }
     },
@@ -124,15 +112,10 @@ export function useTaskMutations(isAuthenticated: boolean) {
         }
         return result;
       } catch (error) {
-        if (
-          error instanceof UnauthorizedError ||
-          (error instanceof Error && error.name === 'UnauthorizedError')
-        ) {
+        if (shouldIgnoreTaskApiError(error)) {
           return null;
         }
-        message.error(
-          error instanceof Error ? error.message : options.fallbackError,
-        );
+        message.error(getFriendlyErrorMessage(error, options.fallbackError));
         return null;
       }
     },
