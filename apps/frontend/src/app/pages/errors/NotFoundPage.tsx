@@ -6,6 +6,10 @@ import { classifyRuntimeError } from './error-pages.utils.ts';
 
 const { Text } = Typography;
 
+export interface NotFoundPageProps {
+  fullScreen?: boolean;
+}
+
 function UnrecognizedPathBadge() {
   const location = useLocation();
   const fullPath = `${location.pathname}${location.search}`;
@@ -32,12 +36,13 @@ function UnrecognizedPathBadge() {
   );
 }
 
-export default function NotFoundPage() {
+export default function NotFoundPage({ fullScreen = false }: NotFoundPageProps) {
   const inRouter = useInRouterContext();
   const display = classifyRuntimeError({ status: 404 });
 
   return (
     <ErrorPageLayout
+      fullScreen={fullScreen}
       status={display.status}
       title={display.title}
       subTitle={display.subTitle}
