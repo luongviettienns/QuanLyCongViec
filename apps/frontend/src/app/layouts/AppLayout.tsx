@@ -228,7 +228,7 @@ export default function AppLayout({
         </Drawer>
       )}
 
-      <Layout>
+      <Layout style={{ minWidth: 0 }}>
         <Header
           style={{
             height: 64,
@@ -337,9 +337,10 @@ export default function AppLayout({
             background: '#f5f7fa',
             padding: screens.md ? 24 : '16px 12px',
             minHeight: 'calc(100vh - 64px)',
+            minWidth: 0,
           }}
         >
-          <div style={{ maxWidth: 1200, margin: '0 auto' }}>{children}</div>
+          <div style={{ maxWidth: 1200, minWidth: 0, margin: '0 auto' }}>{children}</div>
         </Content>
       </Layout>
 
