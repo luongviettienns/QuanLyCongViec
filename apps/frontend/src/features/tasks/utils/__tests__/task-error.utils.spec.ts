@@ -7,6 +7,7 @@ import {
 } from '../../../../shared/api/index.ts';
 import {
   shouldIgnoreTaskApiError,
+  shouldClearTaskListOnError,
   resolveErrorFallbackVariant,
   resolveSectionRenderPlan,
   getTaskQueryMessageKey,
@@ -31,6 +32,23 @@ describe('task-error.utils', () => {
       assert.equal(shouldIgnoreTaskApiError(new TypeError('Failed to fetch')), false);
       assert.equal(shouldIgnoreTaskApiError(null), false);
       assert.equal(shouldIgnoreTaskApiError(undefined), false);
+    });
+  });
+
+  describe('shouldClearTaskListOnError', () => {
+    it('returns true for 403 Forbidden and 404 Not Found errors', () => {
+      assert.equal(shouldClearTaskListOnError(new ApiError('Forbidden', 403)), true);
+      assert.equal(shouldClearTaskListOnError(new ApiError('Not Found', 404)), true);
+      assert.equal(shouldClearTaskListOnError({ status: 403 }), true);
+      assert.equal(shouldClearTaskListOnError({ status: 404 }), true);
+    });
+
+    it('returns false for transient 5xx, network errors, and non-permission values', () => {
+      assert.equal(shouldClearTaskListOnError(new NetworkError()), false);
+      assert.equal(shouldClearTaskListOnError(new TypeError('Failed to fetch')), false);
+      assert.equal(shouldClearTaskListOnError(new ApiError('Internal Server Error', 500)), false);
+      assert.equal(shouldClearTaskListOnError(new ApiError('Bad Request', 400)), false);
+      assert.equal(shouldClearTaskListOnError(null), false);
     });
   });
 

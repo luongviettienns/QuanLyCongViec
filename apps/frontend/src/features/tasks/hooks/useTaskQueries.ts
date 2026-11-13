@@ -9,6 +9,7 @@ import { getTeams } from '../../teams/api/teams.api';
 import { getFriendlyErrorMessage } from '../../../shared/api';
 import {
   getTaskQueryMessageKey,
+  shouldClearTaskListOnError,
   shouldIgnoreTaskApiError,
 } from '../utils/task-error.utils';
 
@@ -44,7 +45,7 @@ export function useTaskQueries(isAuthenticated: boolean) {
   const teamsAbortControllerRef = useRef<AbortController | null>(null);
   const badgesAbortControllerRef = useRef<AbortController | null>(null);
 
-  const resetState = useCallback(() => {
+  const abortActiveQueries = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -65,17 +66,21 @@ export function useTaskQueries(isAuthenticated: boolean) {
       badgesAbortControllerRef.current.abort();
       badgesAbortControllerRef.current = null;
     }
+    setLoading(false);
+    setTrashLoading(false);
+  }, []);
+
+  const resetState = useCallback(() => {
+    abortActiveQueries();
     setTasks([]);
     setTrashTasks([]);
     setCategories([]);
     setTeams([]);
-    setLoading(false);
-    setTrashLoading(false);
     setTasksError(null);
     setTrashError(null);
     setPendingInvitesCount(0);
     setTrashCount(0);
-  }, []);
+  }, [abortActiveQueries]);
 
   const fetchTasks = useCallback(
     async (filters: TaskFilterState, token?: string | null) => {
@@ -106,6 +111,9 @@ export function useTaskQueries(isAuthenticated: boolean) {
         }
         if (abortControllerRef.current !== controller) {
           return;
+        }
+        if (shouldClearTaskListOnError(error)) {
+          setTasks([]);
         }
         setTasksError(error);
         void message.error({
@@ -149,6 +157,9 @@ export function useTaskQueries(isAuthenticated: boolean) {
         }
         if (trashAbortControllerRef.current !== controller) {
           return;
+        }
+        if (shouldClearTaskListOnError(error)) {
+          setTrashTasks([]);
         }
         setTrashError(error);
         void message.error({
@@ -289,6 +300,7 @@ export function useTaskQueries(isAuthenticated: boolean) {
       fetchCategories,
       fetchTeams,
       fetchTaskBadges,
+      abortActiveQueries,
       resetState,
     }),
     [
@@ -307,6 +319,7 @@ export function useTaskQueries(isAuthenticated: boolean) {
       fetchCategories,
       fetchTeams,
       fetchTaskBadges,
+      abortActiveQueries,
       resetState,
     ],
   );

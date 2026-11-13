@@ -1,6 +1,8 @@
 import {
   isAbortError,
+  isForbiddenError,
   isNetworkError,
+  isNotFoundError,
   isUnauthorizedError,
 } from '../../../shared/api/index.ts';
 
@@ -18,6 +20,15 @@ export interface SectionRenderPlan {
  */
 export function shouldIgnoreTaskApiError(error: unknown): boolean {
   return isAbortError(error) || isUnauthorizedError(error);
+}
+
+/**
+ * Returns true when an authorization or missing-resource failure (403/404)
+ * requires clearing previously loaded list items so stale records from another
+ * filter or team are never shown below the error notice.
+ */
+export function shouldClearTaskListOnError(error: unknown): boolean {
+  return isForbiddenError(error) || isNotFoundError(error);
 }
 
 /**
