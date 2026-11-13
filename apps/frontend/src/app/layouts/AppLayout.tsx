@@ -12,6 +12,7 @@ import {
 } from 'antd';
 import { useResponsive } from '../../shared/hooks';
 import {
+  CalendarOutlined,
   CheckSquareOutlined,
   DashboardOutlined,
   ReloadOutlined,
@@ -30,14 +31,16 @@ import { NotificationBell, type NotificationDestination } from '../../features/n
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
+export type AppNavKey = 'dashboard' | 'tasks' | 'calendar' | 'teams' | 'categories';
+
 interface AppLayoutProps {
   children: ReactNode;
   onReload: () => void;
   onOpenCategories?: () => void;
   onOpenAuth?: () => void;
   loading?: boolean;
-  currentNav?: 'dashboard' | 'tasks' | 'teams' | 'categories';
-  onNavChange?: (key: 'dashboard' | 'tasks' | 'teams' | 'categories') => void;
+  currentNav?: AppNavKey;
+  onNavChange?: (key: AppNavKey) => void;
   onNavigateNotification?: (dest: NotificationDestination) => void;
 }
 
@@ -67,6 +70,11 @@ export default function AppLayout({
       key: 'tasks',
       icon: <CheckSquareOutlined />,
       label: 'Công việc',
+    },
+    {
+      key: 'calendar',
+      icon: <CalendarOutlined />,
+      label: 'Lịch',
     },
     {
       key: 'teams',
@@ -159,7 +167,13 @@ export default function AppLayout({
             if (isMobile) {
               setDrawerOpen(false);
             }
-            if (key === 'dashboard' || key === 'tasks' || key === 'teams' || key === 'categories') {
+            if (
+              key === 'dashboard' ||
+              key === 'tasks' ||
+              key === 'calendar' ||
+              key === 'teams' ||
+              key === 'categories'
+            ) {
               onNavChange?.(key);
             }
           }}
@@ -258,7 +272,9 @@ export default function AppLayout({
                     ? 'Nhóm làm việc'
                     : currentNav === 'dashboard'
                       ? 'Tổng quan hệ thống'
-                      : 'Không gian làm việc'}
+                      : currentNav === 'calendar'
+                        ? 'Lịch công việc'
+                        : 'Không gian làm việc'}
               </span>
             )}
           </Space>

@@ -12,20 +12,7 @@ import {
   shouldClearTaskListOnError,
   shouldIgnoreTaskApiError,
 } from '../utils/task-error.utils';
-
-function buildTaskQueryParams(filters: TaskFilterState) {
-  return {
-    search: filters.searchText,
-    status: filters.statusFilter === 'ALL' ? undefined : filters.statusFilter,
-    categoryId: filters.categoryFilter === 'ALL' ? undefined : filters.categoryFilter,
-    priority: filters.priorityFilter === 'ALL' ? undefined : filters.priorityFilter,
-    teamId: filters.teamFilter === 'ALL' ? undefined : filters.teamFilter,
-    assigneeId: filters.assigneeFilter === 'ALL' ? undefined : filters.assigneeFilter,
-    scope: filters.scopeFilter === 'all' ? undefined : filters.scopeFilter,
-    deadlineFilter: filters.deadlineFilter === 'ALL' ? undefined : filters.deadlineFilter,
-    sortBy: filters.sortBy === 'default' ? undefined : filters.sortBy,
-  };
-}
+import { buildTaskQueryParams } from '../utils/task-filter.utils';
 
 export function useTaskQueries(isAuthenticated: boolean) {
   const [tasks, setTasks] = useState<Task[]>([]);

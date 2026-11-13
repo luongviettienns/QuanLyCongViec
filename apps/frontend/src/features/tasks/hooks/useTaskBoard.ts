@@ -1,6 +1,6 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { message } from 'antd';
-import type { Task, TaskStatus } from '../types/task.types';
+import type { Task, TaskStatus, TeamFilterValue } from '../types/task.types';
 import type { Team } from '../../teams/types/team.types';
 import type { User } from '../../auth/types/auth.types';
 import { updateTaskStatus, reorderTasks } from '../api/tasks.api';
@@ -104,7 +104,7 @@ export function useTaskBoard(
   );
 
   const handleReorder = useCallback(
-    async (taskIds: number[], status?: TaskStatus, teamFilter?: number | 'ALL') => {
+    async (taskIds: number[], status?: TaskStatus, teamFilter?: TeamFilterValue) => {
       if (!isAuthenticated) {
         return;
       }
@@ -141,7 +141,7 @@ export function useTaskBoard(
         await reorderTasks(
           taskIds,
           status,
-          teamFilter !== 'ALL' && teamFilter !== undefined ? teamFilter : undefined,
+          typeof teamFilter === 'number' ? teamFilter : undefined,
         );
         onSynced?.();
       } catch (error) {

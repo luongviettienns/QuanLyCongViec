@@ -16,52 +16,18 @@ import {
   handleVoidApiResponse,
   safeFetch,
 } from '../../../shared/api';
+import {
+  buildTaskListQueryString,
+  type TaskListQueryParams,
+} from '../utils/task-filter.utils';
+
+export type { TaskListQueryParams };
 
 export async function getTasks(
-  params?: {
-    search?: string;
-    status?: string;
-    categoryId?: number;
-    priority?: string;
-    teamId?: number;
-    assigneeId?: number;
-    scope?: string;
-    deadlineFilter?: string;
-    sortBy?: string;
-  },
+  params?: TaskListQueryParams,
   signal?: AbortSignal,
 ): Promise<Task[]> {
-  const searchParams = new URLSearchParams();
-  const cleanSearch = params?.search?.trim();
-  if (cleanSearch) {
-    searchParams.append('search', cleanSearch);
-  }
-  if (params?.status && params.status !== 'ALL') {
-    searchParams.append('status', params.status);
-  }
-  if (params?.priority && params.priority !== 'ALL') {
-    searchParams.append('priority', params.priority);
-  }
-  if (params?.categoryId !== undefined) {
-    searchParams.append('categoryId', String(params.categoryId));
-  }
-  if (params?.teamId !== undefined) {
-    searchParams.append('teamId', String(params.teamId));
-  }
-  if (params?.assigneeId !== undefined) {
-    searchParams.append('assigneeId', String(params.assigneeId));
-  }
-  if (params?.scope) {
-    searchParams.append('scope', params.scope);
-  }
-  if (params?.deadlineFilter && params.deadlineFilter !== 'ALL') {
-    searchParams.append('deadlineFilter', params.deadlineFilter);
-  }
-  if (params?.sortBy && params.sortBy !== 'default') {
-    searchParams.append('sortBy', params.sortBy);
-  }
-
-  const queryString = searchParams.toString();
+  const queryString = buildTaskListQueryString(params);
   const url = queryString ? `/api/tasks?${queryString}` : '/api/tasks';
   const response = await safeFetch(url, {
     headers: {
@@ -174,50 +140,10 @@ export async function deleteTask(id: number): Promise<void> {
 }
 
 export async function getTrashTasks(
-  params?: {
-    search?: string;
-    status?: string;
-    categoryId?: number;
-    priority?: string;
-    teamId?: number;
-    assigneeId?: number;
-    scope?: string;
-    deadlineFilter?: string;
-    sortBy?: string;
-  },
+  params?: TaskListQueryParams,
   signal?: AbortSignal,
 ): Promise<TrashTask[]> {
-  const searchParams = new URLSearchParams();
-  const cleanSearch = params?.search?.trim();
-  if (cleanSearch) {
-    searchParams.append('search', cleanSearch);
-  }
-  if (params?.status && params.status !== 'ALL') {
-    searchParams.append('status', params.status);
-  }
-  if (params?.priority && params.priority !== 'ALL') {
-    searchParams.append('priority', params.priority);
-  }
-  if (params?.categoryId !== undefined) {
-    searchParams.append('categoryId', String(params.categoryId));
-  }
-  if (params?.teamId !== undefined) {
-    searchParams.append('teamId', String(params.teamId));
-  }
-  if (params?.assigneeId !== undefined) {
-    searchParams.append('assigneeId', String(params.assigneeId));
-  }
-  if (params?.scope) {
-    searchParams.append('scope', params.scope);
-  }
-  if (params?.deadlineFilter && params.deadlineFilter !== 'ALL') {
-    searchParams.append('deadlineFilter', params.deadlineFilter);
-  }
-  if (params?.sortBy && params.sortBy !== 'default') {
-    searchParams.append('sortBy', params.sortBy);
-  }
-
-  const queryString = searchParams.toString();
+  const queryString = buildTaskListQueryString(params);
   const url = queryString ? `/api/tasks/trash?${queryString}` : '/api/tasks/trash';
   const response = await safeFetch(url, {
     headers: {

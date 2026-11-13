@@ -20,6 +20,7 @@ export interface TaskModalState {
   defaultTab?: TaskModalTab;
   initialTab?: TaskModalTab;
   defaultTeamId?: number | null;
+  defaultDate?: string | null;
   highlightSubtaskId?: number | null;
 }
 
@@ -38,6 +39,7 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
     defaultTab: 'info',
     initialTab: 'info',
     defaultTeamId: null,
+    defaultDate: null,
     highlightSubtaskId: null,
   });
 
@@ -72,12 +74,13 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
       defaultTab: 'info',
       initialTab: 'info',
       defaultTeamId: null,
+      defaultDate: null,
       highlightSubtaskId: null,
     });
   }, []);
 
   const openCreateModal = useCallback(
-    (defaultTeamId?: number | null) => {
+    (defaultTeamId?: number | null, defaultDate?: string | null) => {
       ensureMetadataLoaded?.();
       modalTaskIdRef.current = null;
       setModalTaskOverride(null);
@@ -87,6 +90,7 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
         defaultTab: 'info',
         initialTab: 'info',
         defaultTeamId: defaultTeamId ?? null,
+        defaultDate: defaultDate ?? null,
         highlightSubtaskId: null,
       });
     },
@@ -104,6 +108,7 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
         defaultTab,
         initialTab: defaultTab,
         defaultTeamId: task.teamId ?? null,
+        defaultDate: null,
         highlightSubtaskId: null,
       });
     },

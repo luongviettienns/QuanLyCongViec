@@ -3,7 +3,9 @@ import type {
   TaskFilterPatch,
   TaskFilterState,
   TaskViewMode,
+  TeamFilterValue,
 } from '../types/task.types.ts';
+import type { Category } from '../../categories/types/category.types.ts';
 import type { Team } from '../../teams/types/team.types.ts';
 
 const VIEW_MODE_STORAGE_KEY = 'taskflow.tasksViewMode';
@@ -115,7 +117,18 @@ export function shouldShowPendingInvitesShortcut(
 export function loadSavedViewMode(): Exclude<TaskViewMode, 'trash'> {
   if (typeof window === 'undefined') return 'both';
   const saved = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
-  return saved === 'kanban' || saved === 'table' || saved === 'both' ? saved : 'both';
+  return saved === 'kanban' ||
+    saved === 'table' ||
+    saved === 'both' ||
+    saved === 'calendar'
+    ? saved
+    : 'both';
+}
+
+export function resolveTasksRouteViewMode(
+  mode: TaskViewMode,
+): Exclude<TaskViewMode, 'calendar'> {
+  return mode === 'calendar' ? 'both' : mode;
 }
 
 export function saveViewMode(mode: TaskViewMode): void {
@@ -130,17 +143,24 @@ export interface AssigneeOption {
 
 export function buildAssigneeOptions(
   teams: Team[],
-  teamFilter: number | 'ALL',
+  teamFilter: TeamFilterValue,
   currentUserId?: number,
 ): AssigneeOption[] {
   const options: AssigneeOption[] = [
     { value: 'ALL', label: 'Tất cả người phụ trách' },
   ];
 
+  if (teamFilter === 'PERSONAL') {
+    if (currentUserId !== undefined) {
+      options.push({ value: currentUserId, label: 'Tôi' });
+    }
+    return options;
+  }
+
   const userMap = new Map<number, string>();
 
   const targetTeams =
-    teamFilter !== 'ALL'
+    typeof teamFilter === 'number'
       ? teams.filter((t) => t.id === teamFilter)
       : teams;
 
@@ -172,4 +192,80 @@ export function buildAssigneeOptions(
   }
 
   return options;
+}
+
+export function filterCategoriesByTeamFilter(
+  categories: Category[],
+  teamFilter: TeamFilterValue,
+): Category[] {
+  if (teamFilter === 'PERSONAL') {
+    return categories.filter((c) => c.teamId == null);
+  }
+  if (typeof teamFilter === 'number') {
+    return categories.filter((c) => c.teamId === teamFilter);
+  }
+  return categories;
+}
+
+export interface TaskListQueryParams {
+  search?: string;
+  status?: string;
+  categoryId?: number;
+  priority?: string;
+  teamId?: number;
+  personalOnly?: boolean;
+  assigneeId?: number;
+  scope?: string;
+  deadlineFilter?: string;
+  sortBy?: string;
+}
+
+export function buildTaskQueryParams(filters: TaskFilterState): TaskListQueryParams {
+  return {
+    search: filters.searchText,
+    status: filters.statusFilter === 'ALL' ? undefined : filters.statusFilter,
+    categoryId: filters.categoryFilter === 'ALL' ? undefined : filters.categoryFilter,
+    priority: filters.priorityFilter === 'ALL' ? undefined : filters.priorityFilter,
+    teamId: typeof filters.teamFilter === 'number' ? filters.teamFilter : undefined,
+    personalOnly: filters.teamFilter === 'PERSONAL' ? true : undefined,
+    assigneeId: filters.assigneeFilter === 'ALL' ? undefined : filters.assigneeFilter,
+    scope: filters.scopeFilter === 'all' ? undefined : filters.scopeFilter,
+    deadlineFilter: filters.deadlineFilter === 'ALL' ? undefined : filters.deadlineFilter,
+    sortBy: filters.sortBy === 'default' ? undefined : filters.sortBy,
+  };
+}
+
+export function buildTaskListQueryString(params?: TaskListQueryParams): string {
+  const searchParams = new URLSearchParams();
+  const cleanSearch = params?.search?.trim();
+  if (cleanSearch) {
+    searchParams.append('search', cleanSearch);
+  }
+  if (params?.status && params.status !== 'ALL') {
+    searchParams.append('status', params.status);
+  }
+  if (params?.priority && params.priority !== 'ALL') {
+    searchParams.append('priority', params.priority);
+  }
+  if (params?.categoryId !== undefined) {
+    searchParams.append('categoryId', String(params.categoryId));
+  }
+  if (params?.personalOnly) {
+    searchParams.append('personalOnly', 'true');
+  } else if (params?.teamId !== undefined) {
+    searchParams.append('teamId', String(params.teamId));
+  }
+  if (params?.assigneeId !== undefined) {
+    searchParams.append('assigneeId', String(params.assigneeId));
+  }
+  if (params?.scope) {
+    searchParams.append('scope', params.scope);
+  }
+  if (params?.deadlineFilter && params.deadlineFilter !== 'ALL') {
+    searchParams.append('deadlineFilter', params.deadlineFilter);
+  }
+  if (params?.sortBy && params.sortBy !== 'default') {
+    searchParams.append('sortBy', params.sortBy);
+  }
+  return searchParams.toString();
 }

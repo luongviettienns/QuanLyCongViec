@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { message } from 'antd';
 import {
   deleteTask,
@@ -9,10 +9,18 @@ import {
   bulkRestoreTasks,
   bulkPermanentDeleteTasks,
   emptyTaskTrash,
+  updateTaskContent,
 } from '../api/tasks.api';
-import type { BulkTaskResult, TaskStatus } from '../types/task.types';
+import type { BulkTaskResult, Task, TaskStatus } from '../types/task.types';
+import type { Team } from '../../teams/types/team.types';
+import type { User } from '../../auth/types/auth.types';
 import { getFriendlyErrorMessage } from '../../../shared/api';
 import { shouldIgnoreTaskApiError } from '../utils/task-error.utils';
+import {
+  canDragCalendarTask,
+  computeShiftedTaskDates,
+  toDateKey,
+} from '../utils/calendar-date.utils';
 
 export function useTaskMutations(isAuthenticated: boolean) {
   const handleDeleteTask = useCallback(
@@ -173,6 +181,100 @@ export function useTaskMutations(isAuthenticated: boolean) {
     [runBulkTaskMutation],
   );
 
+  const handleUpdateTaskDate = useCallback(
+    async (
+      task: Task,
+      targetDateKey: string,
+      options: {
+        user?: User | null;
+        teams?: Team[];
+        setTasks: Dispatch<SetStateAction<Task[]>>;
+        onSuccess?: () => Promise<void> | void;
+      },
+    ): Promise<boolean> => {
+      if (!isAuthenticated) {
+        return false;
+      }
+      if (!canDragCalendarTask(options.user, task, options.teams)) {
+        message.warning(
+          task.status === 'DONE'
+            ? 'Không thể thay đổi ngày của công việc đã hoàn thành.'
+            : 'Bạn không có quyền thay đổi ngày của công việc này.',
+        );
+        return false;
+      }
+
+      let nextDates: { startDate: string | null; dueDate: string | null };
+      try {
+        nextDates = computeShiftedTaskDates(task, targetDateKey);
+      } catch {
+        message.error('Ngày mục tiêu không hợp lệ.');
+        return false;
+      }
+
+      const currentStartKey = toDateKey(task.startDate);
+      const currentDueKey = toDateKey(task.dueDate);
+      if (
+        nextDates.startDate === currentStartKey &&
+        nextDates.dueDate === currentDueKey
+      ) {
+        return true;
+      }
+
+      const previousStartDate = task.startDate ?? null;
+      const previousDueDate = task.dueDate ?? null;
+
+      options.setTasks((prev) =>
+        prev.map((item) =>
+          item.id === task.id
+            ? {
+                ...item,
+                startDate: nextDates.startDate,
+                dueDate: nextDates.dueDate,
+              }
+            : item,
+        ),
+      );
+
+      try {
+        const updated = await updateTaskContent(task.id, {
+          startDate: nextDates.startDate,
+          dueDate: nextDates.dueDate,
+        });
+        options.setTasks((prev) =>
+          prev.map((item) =>
+            item.id === task.id ? { ...item, ...updated } : item,
+          ),
+        );
+        message.success('Đã cập nhật ngày công việc');
+        if (options.onSuccess) {
+          await options.onSuccess();
+        }
+        return true;
+      } catch (error) {
+        options.setTasks((prev) =>
+          prev.map((item) =>
+            item.id === task.id
+              ? {
+                  ...item,
+                  startDate: previousStartDate,
+                  dueDate: previousDueDate,
+                }
+              : item,
+          ),
+        );
+        if (shouldIgnoreTaskApiError(error)) {
+          return false;
+        }
+        message.error(
+          getFriendlyErrorMessage(error, 'Không thể cập nhật ngày công việc'),
+        );
+        return false;
+      }
+    },
+    [isAuthenticated],
+  );
+
   return {
     handleDeleteTask,
     handleRestoreTask,
@@ -182,5 +284,6 @@ export function useTaskMutations(isAuthenticated: boolean) {
     handleBulkRestoreTasks,
     handleBulkPermanentDeleteTasks,
     handleEmptyTrash,
+    handleUpdateTaskDate,
   };
 }

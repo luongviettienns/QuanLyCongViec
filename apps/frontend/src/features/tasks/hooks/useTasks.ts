@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type {
+  Task,
   TaskStatus,
   TaskViewMode,
   TaskFilterState,
@@ -15,6 +16,7 @@ import {
   createDefaultTaskFilters,
   applyFilterPatch,
   loadSavedViewMode,
+  resolveTasksRouteViewMode,
   saveViewMode,
 } from '../utils/task-filter.utils';
 
@@ -35,7 +37,9 @@ export function useTasks(options?: { enabled?: boolean }) {
     filtersRef.current = filters;
   }, [filters]);
 
-  const [viewMode, setViewModeState] = useState<TaskViewMode>(loadSavedViewMode);
+  const [viewMode, setViewModeState] = useState<TaskViewMode>(() =>
+    resolveTasksRouteViewMode(loadSavedViewMode()),
+  );
   const viewModeRef = useRef<TaskViewMode>(viewMode);
   useEffect(() => {
     viewModeRef.current = viewMode;
@@ -357,6 +361,18 @@ export function useTasks(options?: { enabled?: boolean }) {
     [board],
   );
 
+  const handleUpdateTaskDate = useCallback(
+    (task: Task, targetDateKey: string): Promise<boolean> => {
+      return mutations.handleUpdateTaskDate(task, targetDateKey, {
+        user,
+        teams,
+        setTasks,
+        onSuccess: () => fetchTasks(filtersRef.current),
+      });
+    },
+    [mutations, user, teams, setTasks, fetchTasks],
+  );
+
   return {
     tasks,
     trashTasks,
@@ -385,6 +401,7 @@ export function useTasks(options?: { enabled?: boolean }) {
     handleEmptyTrash,
     handleReorder,
     handleStatusMove: board.handleStatusMove,
+    handleUpdateTaskDate,
     resetState: resetAll,
     fetchCategories,
     fetchTeams,

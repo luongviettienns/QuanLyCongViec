@@ -4,10 +4,12 @@ import {
   type RealtimeEventData,
 } from '../../features/realtime';
 
+import type { AppNavKey } from '../layouts/AppLayout';
+
 export interface UseAppRealtimeSyncOptions {
   token?: string | null;
   userId?: number;
-  currentNav?: 'dashboard' | 'tasks' | 'teams' | 'categories';
+  currentNav?: AppNavKey;
   activeModalTaskId?: number | null;
   activeModalTab?: 'info' | 'collaborators' | 'subtasks';
   onRefetchTasks: () => void | Promise<void>;
@@ -34,7 +36,7 @@ export function useAppRealtimeSync(options: UseAppRealtimeSyncOptions) {
     refetchTimerRef.current = setTimeout(() => {
       refetchTimerRef.current = null;
       const { currentNav, onRefetchTasks, onDashboardReload } = optionsRef.current;
-      if (currentNav === 'tasks') {
+      if (currentNav === 'tasks' || currentNav === 'calendar') {
         void onRefetchTasks();
       } else if (currentNav === 'dashboard') {
         onDashboardReload?.();
@@ -92,7 +94,7 @@ export function useAppRealtimeSync(options: UseAppRealtimeSyncOptions) {
       if (event.actorId && event.actorId === userId) {
         return;
       }
-      if (currentNav === 'tasks') {
+      if (currentNav === 'tasks' || currentNav === 'calendar') {
         void onRefetchTeams();
         scheduleRefetch();
       }
@@ -106,7 +108,7 @@ export function useAppRealtimeSync(options: UseAppRealtimeSyncOptions) {
       if (event.actorId && event.actorId === userId) {
         return;
       }
-      if (currentNav === 'tasks') {
+      if (currentNav === 'tasks' || currentNav === 'calendar') {
         void onRefetchCategories();
         scheduleRefetch();
       }

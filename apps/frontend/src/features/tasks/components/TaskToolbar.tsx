@@ -18,6 +18,7 @@ import type {
   TaskFilterState,
   TaskFilterPatch,
   TaskViewMode,
+  TeamFilterValue,
   StatusFilter,
   PriorityFilter,
   DeadlineFilter,
@@ -33,6 +34,7 @@ import {
   formatCountLabel,
   shouldShowPendingInvitesShortcut,
   buildAssigneeOptions,
+  filterCategoriesByTeamFilter,
 } from '../utils/task-filter.utils.ts';
 
 export interface TaskToolbarProps {
@@ -85,13 +87,10 @@ export default function TaskToolbar({
     pendingInvitesCount,
   );
 
-  const toolbarCategories = useMemo(() => {
-    if (!categories) return [];
-    if (filters.teamFilter !== 'ALL') {
-      return categories.filter((c) => c.teamId === filters.teamFilter);
-    }
-    return categories;
-  }, [categories, filters.teamFilter]);
+  const toolbarCategories = useMemo(
+    () => filterCategoriesByTeamFilter(categories ?? [], filters.teamFilter),
+    [categories, filters.teamFilter],
+  );
 
   const assigneeOptions = useMemo(() => {
     return buildAssigneeOptions(teams, filters.teamFilter, currentUserId);
@@ -240,33 +239,41 @@ export default function TaskToolbar({
             />
           )}
 
-          {teams.length > 0 && (
-            <Select<number | 'ALL'>
-              value={filters.teamFilter}
-              onChange={(tId) => onFiltersChange({ teamFilter: tId })}
-              style={{ width: isMobile ? '100%' : 175 }}
-              options={[
-                {
-                  value: 'ALL',
-                  label: (
-                    <Space size={6}>
-                      <TeamOutlined style={{ color: '#8c8c8c' }} />
-                      <span>Tất cả nhóm</span>
-                    </Space>
-                  ),
-                },
-                ...teams.map((t) => ({
-                  value: t.id,
-                  label: (
-                    <Space size={6}>
-                      <TeamOutlined style={{ color: '#1677ff' }} />
-                      <span>{t.name}</span>
-                    </Space>
-                  ),
-                })),
-              ]}
-            />
-          )}
+          <Select<TeamFilterValue>
+            value={filters.teamFilter}
+            onChange={(tId) => onFiltersChange({ teamFilter: tId })}
+            aria-label="Lọc phạm vi nhóm hoặc cá nhân"
+            style={{ width: isMobile ? '100%' : 175 }}
+            options={[
+              {
+                value: 'ALL',
+                label: (
+                  <Space size={6}>
+                    <AppstoreOutlined style={{ color: '#8c8c8c' }} />
+                    <span>Tất cả</span>
+                  </Space>
+                ),
+              },
+              {
+                value: 'PERSONAL',
+                label: (
+                  <Space size={6}>
+                    <UserOutlined style={{ color: '#fa8c16' }} />
+                    <span>Cá nhân</span>
+                  </Space>
+                ),
+              },
+              ...teams.map((t) => ({
+                value: t.id,
+                label: (
+                  <Space size={6}>
+                    <TeamOutlined style={{ color: '#1677ff' }} />
+                    <span>{t.name}</span>
+                  </Space>
+                ),
+              })),
+            ]}
+          />
 
           {showPendingShortcut && (
             <Button

@@ -38,6 +38,7 @@ export interface TaskFormModalProps {
   open: boolean;
   task: Task | null;
   defaultTeamId?: number | null;
+  defaultDate?: string | null;
   initialTab?: 'info' | 'collaborators' | 'subtasks';
   highlightSubtaskId?: number | null;
   categories: Category[];
@@ -68,6 +69,7 @@ export default function TaskFormModal({
   open,
   task,
   defaultTeamId,
+  defaultDate,
   initialTab = 'info',
   highlightSubtaskId = null,
   categories,
@@ -89,6 +91,10 @@ export default function TaskFormModal({
 
   const screens = useResponsive();
   const watchedStatus = Form.useWatch('status', form);
+  const defaultDayjs = useMemo(
+    () => (defaultDate && dayjs(defaultDate).isValid() ? dayjs(defaultDate) : null),
+    [defaultDate],
+  );
 
   const applyTaskValues = useCallback(
     (target: Task) => {
@@ -138,9 +144,11 @@ export default function TaskFormModal({
     if (open && !task && !isFormDirty) {
       form.setFieldsValue({
         teamId: defaultTeamId ?? null,
+        startDate: defaultDayjs,
+        dueDate: defaultDayjs,
       });
     }
-  }, [open, task, defaultTeamId, isFormDirty, form]);
+  }, [open, task, defaultTeamId, defaultDayjs, isFormDirty, form]);
 
   const taskTeam = task?.teamId ? teams.find((t) => t.id === task.teamId) : null;
   const permissions = task ? getTaskPermissions(user, task, taskTeam) : null;
@@ -338,6 +346,8 @@ export default function TaskFormModal({
           status: 'TODO',
           priority: 'MEDIUM',
           teamId: defaultTeamId ?? null,
+          startDate: defaultDayjs,
+          dueDate: defaultDayjs,
         }}
       >
         {alertConfig && (
@@ -410,8 +420,8 @@ export default function TaskFormModal({
                 categoryId: null,
                 teamId: defaultTeamId ?? null,
                 assigneeId: null,
-                startDate: null,
-                dueDate: null,
+                startDate: defaultDayjs,
+                dueDate: defaultDayjs,
               });
             }
           }
