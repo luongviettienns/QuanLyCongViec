@@ -21,7 +21,12 @@ import {
   UserOutlined,
 } from '@ant-design/icons';
 import { getTaskStats } from '../../tasks/api/tasks.api';
-import { isAbortError, isUnauthorizedError } from '../../../shared/api';
+import {
+  isAbortError,
+  isForbiddenError,
+  isNotFoundError,
+  isUnauthorizedError,
+} from '../../../shared/api';
 import { ApiErrorFallback, ErrorBoundary } from '../../../app/pages/errors';
 import { useRealtimeReconnect } from '../../realtime';
 import type {
@@ -199,6 +204,9 @@ export default function DashboardPage({
           return;
         }
         if (abortControllerRef.current === controller) {
+          if (isForbiddenError(err) || isNotFoundError(err)) {
+            setStats(null);
+          }
           setError(err);
         }
       } finally {
@@ -215,6 +223,19 @@ export default function DashboardPage({
     setLoading(true);
     void fetchStats();
   }, [fetchStats]);
+
+  const handleFilterChange = useCallback(
+    <T,>(next: T, current: T, apply: (value: T) => void) => {
+      if (next === current) {
+        return;
+      }
+      setStats(null);
+      setError(null);
+      setLoading(true);
+      apply(next);
+    },
+    [],
+  );
 
   useRealtimeReconnect(() => {
     if (active) {
@@ -318,7 +339,7 @@ export default function DashboardPage({
         <div style={{ overflowX: 'auto', maxWidth: '100%' }}>
           <Segmented<ScopeFilter>
             value={scopeFilter}
-            onChange={(val) => setScopeFilter(val)}
+            onChange={(val) => handleFilterChange(val, scopeFilter, setScopeFilter)}
             options={DASHBOARD_SCOPE_OPTIONS}
             style={{ overflowX: 'auto', maxWidth: '100%' }}
           />
@@ -326,7 +347,7 @@ export default function DashboardPage({
 
         <Select<number | 'ALL'>
           value={teamFilter}
-          onChange={(val) => setTeamFilter(val)}
+          onChange={(val) => handleFilterChange(val, teamFilter, setTeamFilter)}
           style={{ minWidth: 200 }}
           options={[
             {
@@ -389,7 +410,12 @@ export default function DashboardPage({
             stats={safeStats}
             onNavigateToTasks={handleNavigateWithDashboardContext}
           />
-          <ErrorBoundary fallbackTitle="Không thể tải biểu đồ" onReset={loadStats}>
+          <ErrorBoundary
+            variant="inline"
+            showHomeAction={false}
+            fallbackTitle="Không thể tải biểu đồ"
+            onReset={loadStats}
+          >
             <Suspense fallback={<ChartsSkeleton />}>
               <DashboardCharts
                 stats={safeStats}

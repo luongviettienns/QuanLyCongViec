@@ -68,7 +68,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
             error={authError}
             onRetry={() => void retryAuth()}
             showNavigation={false}
-            extraActions={<Button onClick={logout}>Đăng nhập lại</Button>}
+            extraActions={<Button onClick={() => logout({ silent: true })}>Đăng nhập lại</Button>}
           />
         </div>
       </div>
@@ -240,7 +240,7 @@ function TaskAppShell() {
       onNavChange={(key) => navigate('/' + key)}
       onNavigateNotification={handleNotificationNavigate}
     >
-      <ErrorBoundary key={location.pathname} onReset={handleGlobalReload}>
+      <ErrorBoundary key={location.pathname} variant="page" onReset={handleGlobalReload}>
         <Routes>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route
@@ -343,8 +343,8 @@ export function AppRouter() {
         }
       />
       <Route path="/unauthorized" element={<UnauthorizedPage />} />
-      <Route path="/forbidden" element={<ForbiddenPage />} />
-      <Route path="/404" element={<NotFoundPage />} />
+      <Route path="/forbidden" element={<ForbiddenPage fullScreen />} />
+      <Route path="/404" element={<NotFoundPage fullScreen />} />
       <Route
         path="/*"
         element={

@@ -15,6 +15,8 @@ import {
 import { useAuth } from '../../auth/hooks/useAuth';
 import {
   isAbortError,
+  isForbiddenError,
+  isNotFoundError,
   isUnauthorizedError,
   getFriendlyErrorMessage,
 } from '../../../shared/api';
@@ -90,6 +92,9 @@ export function useCategories(options?: UseCategoriesOptions) {
           return;
         }
         if (abortControllerRef.current === controller) {
+          if (isForbiddenError(err) || isNotFoundError(err)) {
+            setCategories([]);
+          }
           setError(err);
         }
       } finally {
