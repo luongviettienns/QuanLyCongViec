@@ -1,7 +1,6 @@
 import { useMemo, useState, type DragEvent } from 'react';
 import { Button, Card, Empty, Segmented, Tag, Tooltip } from 'antd';
 import {
-  CalendarOutlined,
   PlusOutlined,
   TeamOutlined,
   UserOutlined,
@@ -101,7 +100,7 @@ export function CalendarAgendaView({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {/* Scope & Unscheduled Summary Bar */}
+      {/* Scope Bar */}
       <div
         style={{
           display: 'flex',
@@ -124,17 +123,6 @@ export function CalendarAgendaView({
             { value: 'all', label: `Tất cả có lịch (${allDateKeys.length} ngày)` },
           ]}
         />
-
-        {unscheduledCount > 0 && (
-          <Button
-            size="small"
-            type="dashed"
-            icon={<CalendarOutlined />}
-            onClick={onOpenUnscheduled}
-          >
-            Chưa xếp ngày ({unscheduledCount})
-          </Button>
-        )}
       </div>
 
       {/* Day Timeline */}
