@@ -526,3 +526,48 @@ const CUSTOM_ICON_CATEGORIES = new Set<ErrorCategory>([
 export function hasCustomCategoryIcon(category: ErrorCategory): boolean {
   return CUSTOM_ICON_CATEGORIES.has(category);
 }
+
+export interface CanNavigateBackOptions {
+  historyState?: unknown;
+}
+
+export function canNavigateBackInApp(options?: CanNavigateBackOptions): boolean {
+  let state: unknown;
+  if (options && 'historyState' in options) {
+    state = options.historyState;
+  } else {
+    try {
+      if (typeof window !== 'undefined' && window.history) {
+        state = window.history.state;
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  if (!isRecord(state)) {
+    return false;
+  }
+
+  const idx = safeReadProp(state, 'idx');
+  return typeof idx === 'number' && Number.isFinite(idx) && idx > 0;
+}
+
+export function normalizeRoutePath(pathname: string): string {
+  const trimmed = pathname.trim();
+  if (!trimmed || trimmed === '/') {
+    return '/';
+  }
+  const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  return withLeadingSlash.replace(/\/+$/, '') || '/';
+}
+
+export function isCurrentRoutePath(
+  targetPath: string,
+  currentPathname?: string | null,
+): boolean {
+  if (!currentPathname) {
+    return false;
+  }
+  return normalizeRoutePath(targetPath) === normalizeRoutePath(currentPathname);
+}

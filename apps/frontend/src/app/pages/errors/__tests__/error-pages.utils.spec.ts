@@ -6,6 +6,9 @@ import {
   formatTechnicalErrorDetail,
   extractHttpStatus,
   hasCustomCategoryIcon,
+  canNavigateBackInApp,
+  normalizeRoutePath,
+  isCurrentRoutePath,
 } from '../error-pages.utils.ts';
 
 function withMockNavigatorOnLine(onLine: boolean | undefined, fn: () => void): void {
@@ -322,6 +325,63 @@ describe('error-pages.utils', () => {
       assert.equal(getApiErrorDisplay({ status: 500 }, { isOnline: false }).category, 'server');
       assert.equal(getApiErrorDisplay({ status: 0 }, { isOnline: false }).category, 'offline');
       assert.equal(getApiErrorDisplay(undefined, { isOnline: true }).category, 'unexpected');
+    });
+  });
+
+  describe('navigation history and route matching helpers', () => {
+    it('canNavigateBackInApp returns true only when history state has numeric idx > 0', () => {
+      assert.equal(canNavigateBackInApp({ historyState: undefined }), false);
+      assert.equal(canNavigateBackInApp({ historyState: null }), false);
+      assert.equal(canNavigateBackInApp({ historyState: {} }), false);
+      assert.equal(canNavigateBackInApp({ historyState: { idx: 0 } }), false);
+      assert.equal(canNavigateBackInApp({ historyState: { idx: -1 } }), false);
+      assert.equal(canNavigateBackInApp({ historyState: { idx: Number.NaN } }), false);
+      assert.equal(canNavigateBackInApp({ historyState: { idx: '1' } }), false);
+      assert.equal(canNavigateBackInApp({ historyState: { idx: 1 } }), true);
+      assert.equal(canNavigateBackInApp({ historyState: { idx: 4, usr: null } }), true);
+    });
+
+    it('canNavigateBackInApp reads window.history.state safely in browser and non-browser environments', () => {
+      assert.equal(canNavigateBackInApp(), false);
+
+      const prevWindow = (globalThis as Record<string, unknown>).window;
+      try {
+        (globalThis as Record<string, unknown>).window = {
+          history: { state: { idx: 0 } },
+        };
+        assert.equal(canNavigateBackInApp(), false);
+
+        (globalThis as Record<string, unknown>).window = {
+          history: { state: { idx: 2 } },
+        };
+        assert.equal(canNavigateBackInApp(), true);
+
+        (globalThis as Record<string, unknown>).window = {
+          get history() {
+            throw new Error('restricted');
+          },
+        };
+        assert.equal(canNavigateBackInApp(), false);
+      } finally {
+        if (prevWindow === undefined) {
+          delete (globalThis as Record<string, unknown>).window;
+        } else {
+          (globalThis as Record<string, unknown>).window = prevWindow;
+        }
+      }
+    });
+
+    it('normalizeRoutePath and isCurrentRoutePath compare route targets accurately', () => {
+      assert.equal(normalizeRoutePath('/'), '/');
+      assert.equal(normalizeRoutePath('/tasks/'), '/tasks');
+      assert.equal(normalizeRoutePath('dashboard/'), '/dashboard');
+
+      assert.equal(isCurrentRoutePath('/tasks', '/tasks'), true);
+      assert.equal(isCurrentRoutePath('/tasks', '/tasks/'), true);
+      assert.equal(isCurrentRoutePath('/dashboard', '/dashboard'), true);
+      assert.equal(isCurrentRoutePath('/tasks', '/tasks/unknown'), false);
+      assert.equal(isCurrentRoutePath('/tasks', '/dashboard'), false);
+      assert.equal(isCurrentRoutePath('/tasks', undefined), false);
     });
   });
 });

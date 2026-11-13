@@ -1,15 +1,13 @@
 import type { ReactNode } from 'react';
-import { Alert, Button, Space, Typography } from 'antd';
+import { Button } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import {
-  ErrorCategoryIcon,
+  ErrorInlineAlert,
   ErrorNavigationButtons,
   ErrorPageLayout,
   ErrorTechnicalDetails,
 } from './ErrorPageLayout';
-import { getApiErrorDisplay, hasCustomCategoryIcon } from './error-pages.utils.ts';
-
-const { Text } = Typography;
+import { getApiErrorDisplay } from './error-pages.utils.ts';
 
 export type ApiErrorFallbackVariant = 'page' | 'inline';
 
@@ -38,8 +36,9 @@ export function ApiErrorFallback({
   const resolvedTitle = title ?? display.title;
   const resolvedSubTitle = subTitle ?? display.subTitle;
   const shouldShowNavigation = showNavigation ?? variant === 'page';
+  const canRetry = Boolean(onRetry && display.isRetryable);
 
-  const retryButton = onRetry ? (
+  const retryButton = canRetry ? (
     <Button
       type="primary"
       size={variant === 'inline' ? 'small' : 'middle'}
@@ -65,28 +64,14 @@ export function ApiErrorFallback({
     ) : null;
 
   if (variant === 'inline') {
-    const alertType = display.status === 'warning' ? 'warning' : 'error';
-
     return (
-      <Alert
-        type={alertType}
-        showIcon
-        icon={
-          hasCustomCategoryIcon(display.category) ? (
-            <ErrorCategoryIcon category={display.category} />
-          ) : undefined
-        }
+      <ErrorInlineAlert
+        status={display.status}
+        category={display.category}
         title={resolvedTitle}
-        style={{ borderRadius: 10 }}
-        description={
-          <Space orientation="vertical" size={10} style={{ width: '100%' }}>
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              {resolvedSubTitle}
-            </Text>
-            {actions}
-            <ErrorTechnicalDetails compact detail={display.technicalDetail} />
-          </Space>
-        }
+        subTitle={resolvedSubTitle}
+        actions={actions}
+        technicalDetail={display.technicalDetail}
       />
     );
   }

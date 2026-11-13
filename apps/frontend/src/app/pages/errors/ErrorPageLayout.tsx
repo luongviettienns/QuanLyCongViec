@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Button, Card, Collapse, Result, Space, Typography, type ResultProps } from 'antd';
+import { Alert, Button, Card, Collapse, Result, Space, Typography, type ResultProps } from 'antd';
 import {
   ArrowLeftOutlined,
   BugOutlined,
@@ -13,9 +13,15 @@ import {
   LoginOutlined,
   WifiOutlined,
 } from '@ant-design/icons';
-import { useInRouterContext, useNavigate } from 'react-router-dom';
+import { useInRouterContext, useLocation, useNavigate } from 'react-router-dom';
 import { useResponsive } from '../../../shared/hooks';
-import { hasCustomCategoryIcon, type ErrorCategory } from './error-pages.utils.ts';
+import {
+  canNavigateBackInApp,
+  hasCustomCategoryIcon,
+  isCurrentRoutePath,
+  type ErrorCategory,
+  type ErrorResultStatus,
+} from './error-pages.utils.ts';
 
 const { Text } = Typography;
 
@@ -102,6 +108,47 @@ export function ErrorPageLayout({
         {children && <div style={{ marginTop: 20 }}>{children}</div>}
       </Card>
     </div>
+  );
+}
+
+export interface ErrorInlineAlertProps {
+  status: ErrorResultStatus;
+  category: ErrorCategory;
+  title: ReactNode;
+  subTitle?: ReactNode;
+  actions?: ReactNode;
+  technicalDetail?: string;
+}
+
+export function ErrorInlineAlert({
+  status,
+  category,
+  title,
+  subTitle,
+  actions,
+  technicalDetail,
+}: ErrorInlineAlertProps) {
+  const alertType = status === 'warning' ? 'warning' : 'error';
+
+  return (
+    <Alert
+      type={alertType}
+      showIcon
+      icon={hasCustomCategoryIcon(category) ? <ErrorCategoryIcon category={category} /> : undefined}
+      title={title}
+      style={{ borderRadius: 10 }}
+      description={
+        <Space orientation="vertical" size={10} style={{ width: '100%' }}>
+          {subTitle && (
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              {subTitle}
+            </Text>
+          )}
+          {actions}
+          <ErrorTechnicalDetails compact detail={technicalDetail} />
+        </Space>
+      }
+    />
   );
 }
 
@@ -221,6 +268,13 @@ function ActionButtonList({
   trailingActions,
   onNavigate,
 }: ActionButtonListProps) {
+  const hasAnyItem = Boolean(
+    leadingActions || showLogin || showDashboard || showTasks || showBack || trailingActions,
+  );
+  if (!hasAnyItem) {
+    return null;
+  }
+
   return (
     <Space wrap size="small" style={{ justifyContent: 'center' }}>
       {leadingActions}
@@ -272,30 +326,63 @@ function ActionButtonList({
   );
 }
 
-function RouterBoundActionButtons(props: ErrorNavigationButtonsProps) {
+function RouterBoundActionButtons({
+  showDashboard = true,
+  showTasks = false,
+  showBack = false,
+  showLogin = false,
+  ...rest
+}: ErrorNavigationButtonsProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const canGoBack = canNavigateBackInApp();
 
   const handleNavigate = (target: ErrorNavigationTarget) => {
-    if (typeof target === 'number') {
-      void navigate(target);
+    if (target === -1) {
+      if (canNavigateBackInApp()) {
+        void navigate(-1);
+        return;
+      }
+      void navigate('/dashboard', { replace: true });
       return;
     }
     void navigate(target);
   };
 
-  return <ActionButtonList {...props} onNavigate={handleNavigate} />;
+  return (
+    <ActionButtonList
+      {...rest}
+      showLogin={showLogin && !isCurrentRoutePath('/login', location.pathname)}
+      showDashboard={showDashboard && !isCurrentRoutePath('/dashboard', location.pathname)}
+      showTasks={showTasks && !isCurrentRoutePath('/tasks', location.pathname)}
+      showBack={showBack && canGoBack}
+      onNavigate={handleNavigate}
+    />
+  );
 }
 
-function WindowBoundActionButtons(props: ErrorNavigationButtonsProps) {
+function WindowBoundActionButtons({ showBack = false, ...rest }: ErrorNavigationButtonsProps) {
+  const canGoBack = canNavigateBackInApp();
+
   const handleNavigate = (target: ErrorNavigationTarget) => {
-    if (typeof target === 'number') {
-      window.history.back();
+    if (target === -1) {
+      if (canNavigateBackInApp()) {
+        window.history.back();
+        return;
+      }
+      window.location.replace('/dashboard');
       return;
     }
     window.location.assign(target);
   };
 
-  return <ActionButtonList {...props} onNavigate={handleNavigate} />;
+  return (
+    <ActionButtonList
+      {...rest}
+      showBack={showBack && canGoBack}
+      onNavigate={handleNavigate}
+    />
+  );
 }
 
 export function ErrorNavigationButtons(props: ErrorNavigationButtonsProps) {
