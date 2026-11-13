@@ -13,6 +13,7 @@ import {
   parseApiError,
   handleApiResponse,
   handleVoidApiResponse,
+  safeFetch,
 } from '../../../shared/api';
 
 export {
@@ -31,7 +32,7 @@ export {
 };
 
 export async function login(payload: LoginPayload): Promise<AuthResponse> {
-  const response = await fetch('/api/auth/login', {
+  const response = await safeFetch('/api/auth/login', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -49,7 +50,7 @@ export async function login(payload: LoginPayload): Promise<AuthResponse> {
 }
 
 export async function register(payload: RegisterPayload): Promise<AuthResponse> {
-  const response = await fetch('/api/auth/register', {
+  const response = await safeFetch('/api/auth/register', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -68,11 +69,11 @@ export async function register(payload: RegisterPayload): Promise<AuthResponse> 
 
 export async function getProfile(signal?: AbortSignal): Promise<User> {
   const token = getAuthToken();
-  if (!token) {
-    throw new Error('Chưa đăng nhập');
+  if (!token || !token.trim()) {
+    throw new UnauthorizedError('Chưa đăng nhập');
   }
 
-  const response = await fetch('/api/auth/me', {
+  const response = await safeFetch('/api/auth/me', {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -85,14 +86,14 @@ export async function getProfile(signal?: AbortSignal): Promise<User> {
   }
 
   if (!response.ok) {
-    throw await parseApiError(response, 'Phiên đăng nhập đã hết hạn');
+    throw await parseApiError(response, 'Không thể xác thực phiên đăng nhập');
   }
 
   return response.json();
 }
 
 export async function updateProfile(payload: { name: string }): Promise<User> {
-  const response = await fetch('/api/auth/profile', {
+  const response = await safeFetch('/api/auth/profile', {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -108,7 +109,7 @@ export async function changePassword(payload: {
   currentPassword: string;
   newPassword: string;
 }): Promise<{ message: string }> {
-  const response = await fetch('/api/auth/password', {
+  const response = await safeFetch('/api/auth/password', {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',

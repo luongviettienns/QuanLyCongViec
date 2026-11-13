@@ -3,6 +3,11 @@ import { Modal, Tabs, Form, Input, Button, message } from 'antd';
 import { UserOutlined, LockOutlined, MailOutlined } from '@ant-design/icons';
 import { useAuth } from '../hooks/useAuth';
 import { changePassword } from '../api/auth.api';
+import {
+  getFriendlyErrorMessage,
+  isAbortError,
+  isUnauthorizedError,
+} from '../../../shared/api';
 
 interface AccountSettingsModalProps {
   open: boolean;
@@ -34,8 +39,11 @@ export default function AccountSettingsModal({ open, onClose }: AccountSettingsM
       message.success('Cập nhật tên hiển thị thành công');
       onClose();
     } catch (error) {
+      if (isAbortError(error) || isUnauthorizedError(error)) {
+        return;
+      }
       message.error(
-        error instanceof Error ? error.message : 'Không thể cập nhật thông tin cá nhân',
+        getFriendlyErrorMessage(error, 'Không thể cập nhật thông tin cá nhân'),
       );
     } finally {
       setSavingProfile(false);
@@ -53,7 +61,10 @@ export default function AccountSettingsModal({ open, onClose }: AccountSettingsM
       passwordForm.resetFields();
       onClose();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : 'Không thể đổi mật khẩu');
+      if (isAbortError(error) || isUnauthorizedError(error)) {
+        return;
+      }
+      message.error(getFriendlyErrorMessage(error, 'Không thể đổi mật khẩu'));
     } finally {
       setSavingPassword(false);
     }

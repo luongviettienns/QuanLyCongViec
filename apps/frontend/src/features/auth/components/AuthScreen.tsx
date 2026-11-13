@@ -3,6 +3,7 @@ import { Card, Form, Input, Button, Typography, message, Space } from 'antd';
 import { MailOutlined, LockOutlined, UserOutlined, CheckSquareOutlined } from '@ant-design/icons';
 import { useAuth } from '../hooks/useAuth';
 import type { LoginPayload, RegisterPayload } from '../types/auth.types';
+import { getFriendlyErrorMessage, isAbortError } from '../../../shared/api';
 import {
   PASSWORD_MAX_LENGTH,
   passwordRules,
@@ -22,7 +23,10 @@ export default function AuthScreen() {
       await login(values);
       message.success('Đăng nhập thành công');
     } catch (error) {
-      message.error(error instanceof Error ? error.message : 'Đăng nhập thất bại');
+      if (isAbortError(error)) {
+        return;
+      }
+      message.error(getFriendlyErrorMessage(error, 'Đăng nhập thất bại'));
     } finally {
       setSubmitting(false);
     }
@@ -34,7 +38,10 @@ export default function AuthScreen() {
       await register(values);
       message.success('Đăng ký tài khoản thành công');
     } catch (error) {
-      message.error(error instanceof Error ? error.message : 'Đăng ký thất bại');
+      if (isAbortError(error)) {
+        return;
+      }
+      message.error(getFriendlyErrorMessage(error, 'Đăng ký thất bại'));
     } finally {
       setSubmitting(false);
     }
