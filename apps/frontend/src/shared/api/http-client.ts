@@ -16,7 +16,8 @@ export async function safeFetch(
   init?: RequestInit,
 ): Promise<Response> {
   try {
-    return await fetch(input, init);
+    const resolvedInput = typeof input === 'string' ? apiUrl(input) : input;
+    return await fetch(resolvedInput, init);
   } catch (error) {
     if (isAbortError(error) || init?.signal?.aborted) {
       throw error;
@@ -62,6 +63,21 @@ export function apiUrl(path: string): string {
     return path;
   }
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
+
+  // If a remote API base URL is provided (e.g. https://taskflow-backend.onrender.com)
+  if (API_BASE_URL && (API_BASE_URL.startsWith('http://') || API_BASE_URL.startsWith('https://'))) {
+    const base = API_BASE_URL.replace(/\/+$/, '');
+    if (base.endsWith('/api')) {
+      const pathWithoutApi = cleanPath.replace(/^\/api(?=\/|$)/, '');
+      return `${base}${pathWithoutApi.startsWith('/') ? pathWithoutApi : '/' + pathWithoutApi}`;
+    }
+    if (cleanPath.startsWith('/api/') || cleanPath === '/api') {
+      return `${base}${cleanPath}`;
+    }
+    return `${base}/api${cleanPath}`;
+  }
+
+  // Relative mode (default: '/api')
   if (cleanPath.startsWith('/api/') || cleanPath === '/api') {
     return cleanPath;
   }

@@ -17,6 +17,7 @@ import {
   getFriendlyErrorMessage,
   safeFetch,
   httpClient,
+  apiUrl,
   subscribeUnauthorized,
 } from '../index.ts';
 
@@ -408,5 +409,17 @@ describe('shared/api error classes and helpers', () => {
     } finally {
       unsubscribe();
     }
+  });
+
+  it('apiUrl resolves relative and absolute paths correctly', () => {
+    // Already full URLs
+    assert.equal(apiUrl('https://example.com/api/tasks'), 'https://example.com/api/tasks');
+    assert.equal(apiUrl('http://localhost:3000/api'), 'http://localhost:3000/api');
+
+    // Default relative paths
+    assert.equal(apiUrl('/api/tasks'), '/api/tasks');
+    assert.equal(apiUrl('tasks'), '/api/tasks');
+    assert.equal(apiUrl('/tasks'), '/api/tasks');
+    assert.equal(apiUrl('/api/realtime/stream'), '/api/realtime/stream');
   });
 });
