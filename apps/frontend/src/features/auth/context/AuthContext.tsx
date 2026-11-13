@@ -20,7 +20,7 @@ import {
   markManualLogout,
 } from '../api/auth.api';
 import { isAbortError, isUnauthorizedError } from '../../../shared/api';
-import { AuthContext } from './auth-context.base';
+import { AuthContext, type LogoutOptions } from './auth-context.base';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -192,7 +192,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return updatedUser;
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback((options?: LogoutOptions) => {
     authAbortRef.current?.abort();
     authRequestIdRef.current += 1;
     markManualLogout();
@@ -201,7 +201,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setLoading(false);
     void message.destroy('session-expired');
-    message.success('Đăng xuất thành công');
+    if (options?.silent !== true) {
+      message.success('Đăng xuất thành công');
+    }
   }, []);
 
   return (
