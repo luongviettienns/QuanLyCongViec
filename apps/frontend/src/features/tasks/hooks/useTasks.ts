@@ -63,6 +63,7 @@ export function useTasks(options?: { enabled?: boolean }) {
     fetchCategories,
     fetchTeams,
     fetchTaskBadges,
+    abortActiveQueries,
     resetState: resetQueriesState,
   } = queries;
 
@@ -215,12 +216,14 @@ export function useTasks(options?: { enabled?: boolean }) {
 
     return () => {
       active = false;
+      abortActiveQueries();
     };
   }, [
     enabled,
     isAuthenticated,
     authLoading,
     resetAll,
+    abortActiveQueries,
     fetchCategories,
     fetchTeams,
     fetchTasks,
