@@ -1,6 +1,7 @@
 import { Segmented, Button } from 'antd';
 import {
   AppstoreOutlined,
+  CalendarOutlined,
   ProjectOutlined,
   TableOutlined,
   DeleteOutlined,
@@ -9,6 +10,7 @@ import {
 import TaskToolbar from '../components/TaskToolbar';
 import KanbanBoard from '../components/kanban/KanbanBoard';
 import TaskTable from '../components/table/TaskTable';
+import { TaskCalendarView } from '../components/calendar';
 import TaskTrashView from '../components/trash/TaskTrashView';
 import CategoryManagerModal from '../../categories/components/CategoryManagerModal';
 import { ApiErrorFallback } from '../../../app/pages/errors';
@@ -40,11 +42,12 @@ export interface TasksPageProps {
   filters: TaskFilterState;
   isFiltering: boolean;
   viewMode: TaskViewMode;
-  setViewMode: (mode: TaskViewMode) => void;
+  setViewMode?: (mode: TaskViewMode) => void;
+  onViewModeChange?: (mode: TaskViewMode) => void;
   onFiltersChange: (patch: TaskFilterPatch) => void;
   onReset: () => void;
   onRetry?: () => void;
-  onCreate?: (defaultTeamId?: number | null) => void;
+  onCreate?: (defaultTeamId?: number | null, defaultDate?: string | null) => void;
   onEdit: (task: Task) => void;
   onDelete: (id: number) => void;
   onRestore: (id: number) => Promise<void>;
@@ -56,6 +59,7 @@ export interface TasksPageProps {
   onEmptyTrash?: () => Promise<BulkTaskResult | null | void>;
   onReorder: (taskIds: number[], status?: TaskStatus) => Promise<void>;
   onStatusMove: (taskId: number, newStatus: TaskStatus, newPosition?: number) => Promise<void>;
+  onMoveTaskDate?: (task: Task, targetDateKey: string) => Promise<boolean | void>;
   categoryModalOpen?: boolean;
   onCloseCategoryModal?: () => void;
   onCategoryChanged?: () => void;
@@ -77,6 +81,7 @@ export default function TasksPage({
   isFiltering,
   viewMode,
   setViewMode,
+  onViewModeChange,
   onFiltersChange,
   onReset,
   onRetry,
@@ -92,12 +97,16 @@ export default function TasksPage({
   onEmptyTrash,
   onReorder,
   onStatusMove,
+  onMoveTaskDate,
   categoryModalOpen = false,
   onCloseCategoryModal,
   onCategoryChanged,
   currentUserId,
 }: TasksPageProps) {
   const handleRetry = onRetry ?? onReset;
+  const handleViewModeChange = onViewModeChange ?? setViewMode;
+  const defaultCreateTeamId =
+    typeof filters.teamFilter === 'number' ? filters.teamFilter : null;
   const trashFallbackVariant = resolveErrorFallbackVariant(trashError, trashTasks.length);
   const tasksFallbackVariant = resolveErrorFallbackVariant(tasksError, tasks.length);
 
@@ -115,11 +124,12 @@ export default function TasksPage({
       >
         <Segmented<TaskViewMode>
           value={viewMode}
-          onChange={setViewMode}
+          onChange={(mode) => handleViewModeChange?.(mode)}
           options={[
             { value: 'both', label: 'Cả hai', icon: <AppstoreOutlined /> },
             { value: 'kanban', label: 'Kanban', icon: <ProjectOutlined /> },
             { value: 'table', label: 'Bảng', icon: <TableOutlined /> },
+            { value: 'calendar', label: 'Lịch', icon: <CalendarOutlined /> },
             {
               value: 'trash',
               label: formatCountLabel('Thùng rác', trashCount),
@@ -132,9 +142,7 @@ export default function TasksPage({
           <Button
             type="primary"
             icon={<PlusOutlined />}
-            onClick={() =>
-              onCreate(filters.teamFilter !== 'ALL' ? filters.teamFilter : null)
-            }
+            onClick={() => onCreate(defaultCreateTeamId)}
           >
             Thêm công việc
           </Button>
@@ -230,6 +238,21 @@ export default function TasksPage({
               onDelete={onDelete}
               onBulkDelete={onBulkDelete}
               onBulkStatusMove={onBulkStatusMove}
+            />
+          )}
+
+          {viewMode === 'calendar' && (
+            <TaskCalendarView
+              tasks={tasks}
+              teams={teams}
+              loading={loading}
+              onEditTask={onEdit}
+              onCreateTaskForDate={
+                onCreate
+                  ? (dateKey) => onCreate(defaultCreateTeamId, dateKey)
+                  : undefined
+              }
+              onMoveTaskDate={onMoveTaskDate}
             />
           )}
         </>

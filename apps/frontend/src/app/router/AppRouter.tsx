@@ -1,15 +1,20 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Button, Spin } from 'antd';
-import AppLayout from '../layouts/AppLayout';
+import AppLayout, { type AppNavKey } from '../layouts/AppLayout';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import { useTasks } from '../../features/tasks/hooks/useTasks';
-import type { TaskStatus, TaskFilterPatch } from '../../features/tasks/types/task.types';
+import type {
+  TaskStatus,
+  TaskFilterPatch,
+  TaskViewMode,
+} from '../../features/tasks/types/task.types';
 import type { NotificationDestination } from '../../features/notifications';
 import {
   createDefaultTaskFilters,
   applyFilterPatch,
   loadSavedViewMode,
+  resolveTasksRouteViewMode,
 } from '../../features/tasks/utils/task-filter.utils';
 import { useTaskModalController } from '../hooks/useTaskModalController';
 import { useAppRealtimeSync } from '../hooks/useAppRealtimeSync';
@@ -101,8 +106,11 @@ function TaskAppShell() {
   const navigate = useNavigate();
 
   const rawPath = location.pathname.replace(/^\//, '').split('/')[0];
-  const currentNav: 'dashboard' | 'tasks' | 'teams' | 'categories' =
-    rawPath === 'tasks' || rawPath === 'teams' || rawPath === 'categories'
+  const currentNav: AppNavKey =
+    rawPath === 'tasks' ||
+    rawPath === 'calendar' ||
+    rawPath === 'teams' ||
+    rawPath === 'categories'
       ? rawPath
       : 'dashboard';
 
@@ -139,9 +147,10 @@ function TaskAppShell() {
     handleEmptyTrash,
     handleReorder,
     handleStatusMove,
+    handleUpdateTaskDate,
     fetchCategories,
     fetchTeams,
-  } = useTasks({ enabled: currentNav === 'tasks' });
+  } = useTasks({ enabled: currentNav === 'tasks' || currentNav === 'calendar' });
 
   const ensureMetadataLoaded = useCallback(() => {
     if (categories.length === 0) {
@@ -157,6 +166,29 @@ function TaskAppShell() {
       ensureMetadataLoaded();
     }
   }, [currentNav, ensureMetadataLoaded]);
+
+  useEffect(() => {
+    if (currentNav === 'calendar' && viewMode === 'trash') {
+      setViewMode(resolveTasksRouteViewMode(loadSavedViewMode()));
+    }
+  }, [currentNav, viewMode, setViewMode]);
+
+  const handleViewModeChange = useCallback(
+    (nextMode: TaskViewMode) => {
+      if (nextMode === 'calendar') {
+        if (viewMode === 'trash') {
+          setViewMode(resolveTasksRouteViewMode(loadSavedViewMode()));
+        }
+        navigate('/calendar');
+        return;
+      }
+      setViewMode(nextMode);
+      if (currentNav === 'calendar') {
+        navigate('/tasks');
+      }
+    },
+    [currentNav, viewMode, setViewMode, navigate],
+  );
 
   const {
     modalState,
@@ -202,7 +234,7 @@ function TaskAppShell() {
   const handleNavigateFromDashboard = useCallback(
     (patchOrStatus?: TaskFilterPatch | TaskStatus) => {
       if (viewMode === 'trash') {
-        setViewMode(loadSavedViewMode());
+        setViewMode(resolveTasksRouteViewMode(loadSavedViewMode()));
       }
       let patch: TaskFilterPatch = {};
       if (typeof patchOrStatus === 'string') {
@@ -220,7 +252,7 @@ function TaskAppShell() {
     async (dest: NotificationDestination) => {
       if (dest.type === 'task') {
         if (viewMode === 'trash') {
-          setViewMode(loadSavedViewMode());
+          setViewMode(resolveTasksRouteViewMode(loadSavedViewMode()));
         }
         navigate('/tasks');
         await openTaskFromNotification(dest);
@@ -229,6 +261,52 @@ function TaskAppShell() {
       }
     },
     [viewMode, setViewMode, navigate, openTaskFromNotification],
+  );
+
+  const tasksRouteViewMode = resolveTasksRouteViewMode(viewMode);
+
+  const renderTasksWorkspace = (activeViewMode: TaskViewMode) => (
+    <TasksPage
+      tasks={tasks}
+      trashTasks={trashTasks}
+      trashLoading={trashLoading}
+      tasksError={tasksError}
+      trashError={trashError}
+      pendingInvitesCount={pendingInvitesCount}
+      trashCount={trashCount}
+      categories={categories}
+      teams={teams}
+      loading={loading}
+      filters={filters}
+      isFiltering={isFiltering}
+      viewMode={activeViewMode}
+      setViewMode={handleViewModeChange}
+      onViewModeChange={handleViewModeChange}
+      onFiltersChange={applyFilters}
+      onReset={handleReset}
+      onRetry={() => void refetch()}
+      onCreate={openCreateModal}
+      onEdit={openEditModal}
+      onDelete={(id) => void handleDelete(id)}
+      onRestore={handleRestore}
+      onPermanentDelete={handlePermanentDelete}
+      onBulkDelete={handleBulkDelete}
+      onBulkStatusMove={handleBulkStatusMove}
+      onBulkRestore={handleBulkRestore}
+      onBulkPermanentDelete={handleBulkPermanentDelete}
+      onEmptyTrash={() =>
+        handleEmptyTrash(
+          typeof filters.teamFilter === 'number' ? filters.teamFilter : undefined,
+        )
+      }
+      onReorder={handleReorder}
+      onStatusMove={handleStatusMove}
+      onMoveTaskDate={handleUpdateTaskDate}
+      categoryModalOpen={categoryModalOpen}
+      onCloseCategoryModal={() => setCategoryModalOpen(false)}
+      onCategoryChanged={() => void refetch()}
+      currentUserId={user?.id}
+    />
   );
 
   return (
@@ -256,50 +334,8 @@ function TaskAppShell() {
               />
             }
           />
-          <Route
-            path="tasks"
-            element={
-              <TasksPage
-                tasks={tasks}
-                trashTasks={trashTasks}
-                trashLoading={trashLoading}
-                tasksError={tasksError}
-                trashError={trashError}
-                pendingInvitesCount={pendingInvitesCount}
-                trashCount={trashCount}
-                categories={categories}
-                teams={teams}
-                loading={loading}
-                filters={filters}
-                isFiltering={isFiltering}
-                viewMode={viewMode}
-                setViewMode={setViewMode}
-                onFiltersChange={applyFilters}
-                onReset={handleReset}
-                onRetry={() => void refetch()}
-                onCreate={openCreateModal}
-                onEdit={openEditModal}
-                onDelete={(id) => void handleDelete(id)}
-                onRestore={handleRestore}
-                onPermanentDelete={handlePermanentDelete}
-                onBulkDelete={handleBulkDelete}
-                onBulkStatusMove={handleBulkStatusMove}
-                onBulkRestore={handleBulkRestore}
-                onBulkPermanentDelete={handleBulkPermanentDelete}
-                onEmptyTrash={() =>
-                  handleEmptyTrash(
-                    typeof filters.teamFilter === 'number' ? filters.teamFilter : undefined,
-                  )
-                }
-                onReorder={handleReorder}
-                onStatusMove={handleStatusMove}
-                categoryModalOpen={categoryModalOpen}
-                onCloseCategoryModal={() => setCategoryModalOpen(false)}
-                onCategoryChanged={() => void refetch()}
-                currentUserId={user?.id}
-              />
-            }
-          />
+          <Route path="tasks" element={renderTasksWorkspace(tasksRouteViewMode)} />
+          <Route path="calendar" element={renderTasksWorkspace('calendar')} />
           <Route
             path="teams"
             element={<TeamPage onTeamChanged={() => void refetch()} />}
@@ -314,10 +350,11 @@ function TaskAppShell() {
 
       {modalState.open && (
         <TaskFormModal
-          key={`${modalState.task?.id ?? 'new'}-${modalState.defaultTab ?? 'info'}-${modalState.highlightSubtaskId ?? ''}`}
+          key={`${modalState.task?.id ?? 'new'}-${modalState.defaultTab ?? 'info'}-${modalState.highlightSubtaskId ?? ''}-${modalState.defaultDate ?? ''}`}
           open={modalState.open}
           task={activeModalTask}
           defaultTeamId={modalState.defaultTeamId}
+          defaultDate={modalState.defaultDate}
           initialTab={modalState.defaultTab}
           highlightSubtaskId={modalState.highlightSubtaskId}
           categories={categories}
