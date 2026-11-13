@@ -11,6 +11,7 @@ import KanbanBoard from '../components/kanban/KanbanBoard';
 import TaskTable from '../components/table/TaskTable';
 import TaskTrashView from '../components/trash/TaskTrashView';
 import CategoryManagerModal from '../../categories/components/CategoryManagerModal';
+import { ApiErrorFallback } from '../../../app/pages/errors';
 import type {
   Task,
   TrashTask,
@@ -23,11 +24,14 @@ import type {
 import type { Category } from '../../categories/types/category.types.ts';
 import type { Team } from '../../teams/types/team.types.ts';
 import { formatCountLabel } from '../utils/task-filter.utils.ts';
+import { resolveErrorFallbackVariant } from '../utils/task-error.utils.ts';
 
 export interface TasksPageProps {
   tasks: Task[];
   trashTasks: TrashTask[];
   trashLoading: boolean;
+  tasksError?: unknown;
+  trashError?: unknown;
   pendingInvitesCount?: number;
   trashCount?: number;
   categories: Category[];
@@ -39,6 +43,7 @@ export interface TasksPageProps {
   setViewMode: (mode: TaskViewMode) => void;
   onFiltersChange: (patch: TaskFilterPatch) => void;
   onReset: () => void;
+  onRetry?: () => void;
   onCreate?: (defaultTeamId?: number | null) => void;
   onEdit: (task: Task) => void;
   onDelete: (id: number) => void;
@@ -61,6 +66,8 @@ export default function TasksPage({
   tasks,
   trashTasks,
   trashLoading,
+  tasksError,
+  trashError,
   pendingInvitesCount = 0,
   trashCount = 0,
   categories,
@@ -72,6 +79,7 @@ export default function TasksPage({
   setViewMode,
   onFiltersChange,
   onReset,
+  onRetry,
   onCreate,
   onEdit,
   onDelete,
@@ -89,6 +97,10 @@ export default function TasksPage({
   onCategoryChanged,
   currentUserId,
 }: TasksPageProps) {
+  const handleRetry = onRetry ?? onReset;
+  const trashFallbackVariant = resolveErrorFallbackVariant(trashError, trashTasks.length);
+  const tasksFallbackVariant = resolveErrorFallbackVariant(tasksError, tasks.length);
+
   return (
     <>
       <div
@@ -141,18 +153,61 @@ export default function TasksPage({
       />
 
       {viewMode === 'trash' ? (
-        <TaskTrashView
-          tasks={trashTasks}
-          teams={teams}
-          loading={trashLoading}
-          onRestore={onRestore}
-          onPermanentDelete={onPermanentDelete}
-          onBulkRestore={onBulkRestore}
-          onBulkPermanentDelete={onBulkPermanentDelete}
-          onEmptyTrash={onEmptyTrash}
+        trashFallbackVariant === 'page' ? (
+          <ApiErrorFallback
+            variant="page"
+            error={trashError}
+            onRetry={handleRetry}
+            retrying={trashLoading}
+            showNavigation
+          />
+        ) : (
+          <>
+            {trashFallbackVariant === 'inline' && (
+              <div style={{ marginBottom: 16 }}>
+                <ApiErrorFallback
+                  variant="inline"
+                  error={trashError}
+                  onRetry={handleRetry}
+                  retrying={trashLoading}
+                  showNavigation={false}
+                />
+              </div>
+            )}
+            <TaskTrashView
+              tasks={trashTasks}
+              teams={teams}
+              loading={trashLoading}
+              onRestore={onRestore}
+              onPermanentDelete={onPermanentDelete}
+              onBulkRestore={onBulkRestore}
+              onBulkPermanentDelete={onBulkPermanentDelete}
+              onEmptyTrash={onEmptyTrash}
+            />
+          </>
+        )
+      ) : tasksFallbackVariant === 'page' ? (
+        <ApiErrorFallback
+          variant="page"
+          error={tasksError}
+          onRetry={handleRetry}
+          retrying={loading}
+          showNavigation
         />
       ) : (
         <>
+          {tasksFallbackVariant === 'inline' && (
+            <div style={{ marginBottom: 16 }}>
+              <ApiErrorFallback
+                variant="inline"
+                error={tasksError}
+                onRetry={handleRetry}
+                retrying={loading}
+                showNavigation={false}
+              />
+            </div>
+          )}
+
           {(viewMode === 'both' || viewMode === 'kanban') && (
             <div style={{ marginBottom: viewMode === 'both' ? 30 : 0 }}>
               <KanbanBoard
