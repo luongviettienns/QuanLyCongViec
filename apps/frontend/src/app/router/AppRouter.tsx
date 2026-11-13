@@ -115,6 +115,8 @@ function TaskAppShell() {
     tasks,
     trashTasks,
     trashLoading,
+    tasksError,
+    trashError,
     pendingInvitesCount,
     trashCount,
     categories,
@@ -261,6 +263,8 @@ function TaskAppShell() {
                 tasks={tasks}
                 trashTasks={trashTasks}
                 trashLoading={trashLoading}
+                tasksError={tasksError}
+                trashError={trashError}
                 pendingInvitesCount={pendingInvitesCount}
                 trashCount={trashCount}
                 categories={categories}
@@ -272,6 +276,7 @@ function TaskAppShell() {
                 setViewMode={setViewMode}
                 onFiltersChange={applyFilters}
                 onReset={handleReset}
+                onRetry={() => void refetch()}
                 onCreate={openCreateModal}
                 onEdit={openEditModal}
                 onDelete={(id) => void handleDelete(id)}
