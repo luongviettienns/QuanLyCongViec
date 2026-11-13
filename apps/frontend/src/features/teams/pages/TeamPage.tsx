@@ -22,7 +22,15 @@ import {
   removeTeamMember,
   transferOwnership,
 } from '../api/teams.api';
-import { ApiError } from '../../../shared/api';
+import {
+  ApiError,
+  isAbortError,
+  isUnauthorizedError,
+  isForbiddenError,
+  isNotFoundError,
+  getFriendlyErrorMessage,
+} from '../../../shared/api';
+import { ApiErrorFallback } from '../../../app/pages/errors';
 import { useAuth } from '../../auth/hooks/useAuth';
 import type {
   Team,
@@ -53,7 +61,9 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
+  const [teamsError, setTeamsError] = useState<unknown>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<unknown>(null);
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -65,36 +75,79 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
 
   const [actionSubmitting, setActionSubmitting] = useState(false);
 
+  const teamsAbortRef = useRef<AbortController | null>(null);
+  const detailAbortRef = useRef<AbortController | null>(null);
+  const selectedTeamRef = useRef<Team | null>(null);
+  useEffect(() => {
+    selectedTeamRef.current = selectedTeam;
+  }, [selectedTeam]);
+
   const loadTeams = useCallback(async (selectId?: number): Promise<Team[]> => {
+    teamsAbortRef.current?.abort();
+    const controller = new AbortController();
+    teamsAbortRef.current = controller;
+    setLoading(true);
     try {
-      const data = await getTeams();
+      const data = await getTeams(controller.signal);
+      if (controller.signal.aborted || teamsAbortRef.current !== controller) {
+        return [];
+      }
       setTeams(data);
+      setTeamsError(null);
       if (data.length > 0) {
         const nextId = selectId && data.some((t) => t.id === selectId) ? selectId : data[0].id;
         setSelectedTeamId(nextId);
       } else {
         setSelectedTeamId(null);
         setSelectedTeam(null);
+        setDetailError(null);
       }
       return data;
     } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'UnauthorizedError') return [];
-      message.error(err instanceof Error ? err.message : 'Không thể tải danh sách nhóm');
+      if (controller.signal.aborted || isAbortError(err) || isUnauthorizedError(err)) {
+        return [];
+      }
+      if (teamsAbortRef.current === controller) {
+        setTeamsError(err);
+      }
       return [];
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted && teamsAbortRef.current === controller) {
+        setLoading(false);
+      }
     }
   }, []);
 
   const loadTeamDetail = useCallback(async (id: number) => {
+    detailAbortRef.current?.abort();
+    const controller = new AbortController();
+    detailAbortRef.current = controller;
+    if (selectedTeamRef.current && selectedTeamRef.current.id !== id) {
+      setSelectedTeam(null);
+      setDetailError(null);
+    }
+    setDetailLoading(true);
     try {
-      const data = await getTeamById(id);
+      const data = await getTeamById(id, controller.signal);
+      if (controller.signal.aborted || detailAbortRef.current !== controller) {
+        return;
+      }
       setSelectedTeam(data);
+      setDetailError(null);
     } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'UnauthorizedError') return;
-      message.error(err instanceof Error ? err.message : 'Không thể tải chi tiết nhóm');
+      if (controller.signal.aborted || isAbortError(err) || isUnauthorizedError(err)) {
+        return;
+      }
+      if (detailAbortRef.current === controller) {
+        if (isForbiddenError(err) || isNotFoundError(err)) {
+          setSelectedTeam(null);
+        }
+        setDetailError(err);
+      }
     } finally {
-      setDetailLoading(false);
+      if (!controller.signal.aborted && detailAbortRef.current === controller) {
+        setDetailLoading(false);
+      }
     }
   }, []);
 
@@ -108,6 +161,7 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
     void init();
     return () => {
       active = false;
+      teamsAbortRef.current?.abort();
     };
   }, [loadTeams]);
 
@@ -115,12 +169,17 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
     let active = true;
     async function load() {
       await Promise.resolve();
-      if (!active || !selectedTeamId) return;
+      if (!active) return;
+      if (!selectedTeamId) {
+        detailAbortRef.current?.abort();
+        return;
+      }
       void loadTeamDetail(selectedTeamId);
     }
     void load();
     return () => {
       active = false;
+      detailAbortRef.current?.abort();
     };
   }, [selectedTeamId, loadTeamDetail]);
 
@@ -233,6 +292,14 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
     });
   });
 
+  const handleSelectTeam = useCallback((id: number) => {
+    if (id !== selectedTeamIdRef.current) {
+      setDetailError(null);
+      setSelectedTeam(null);
+    }
+    setSelectedTeamId(id);
+  }, []);
+
   async function handleCreateTeam(values: CreateTeamPayload) {
     try {
       setActionSubmitting(true);
@@ -243,7 +310,8 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       await loadTeams(newTeam.id);
       onTeamChanged?.();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Không thể tạo nhóm');
+      if (isAbortError(err) || isUnauthorizedError(err)) return;
+      message.error(getFriendlyErrorMessage(err, 'Không thể tạo nhóm'));
     } finally {
       setActionSubmitting(false);
     }
@@ -260,7 +328,8 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       await loadTeamDetail(selectedTeamId);
       onTeamChanged?.();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Không thể cập nhật nhóm');
+      if (isAbortError(err) || isUnauthorizedError(err)) return;
+      message.error(getFriendlyErrorMessage(err, 'Không thể cập nhật nhóm'));
     } finally {
       setActionSubmitting(false);
     }
@@ -275,6 +344,7 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       await loadTeams();
       onTeamChanged?.();
     } catch (err: unknown) {
+      if (isAbortError(err) || isUnauthorizedError(err)) return;
       if (err instanceof ApiError && err.status === 409) {
         const errData = err.data as
           | { code?: string; taskCount?: number; categoryCount?: number }
@@ -293,7 +363,7 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
           return;
         }
       }
-      message.error(err instanceof Error ? err.message : 'Không thể xóa nhóm');
+      message.error(getFriendlyErrorMessage(err, 'Không thể xóa nhóm'));
     } finally {
       setActionSubmitting(false);
     }
@@ -311,7 +381,8 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       await loadTeams(selectedTeamId);
       onTeamChanged?.();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Không thể thêm thành viên');
+      if (isAbortError(err) || isUnauthorizedError(err)) return;
+      message.error(getFriendlyErrorMessage(err, 'Không thể thêm thành viên'));
     } finally {
       setActionSubmitting(false);
     }
@@ -324,7 +395,8 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       message.success('Đã thay đổi vai trò thành viên');
       await loadTeamDetail(selectedTeamId);
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Không thể cập nhật vai trò');
+      if (isAbortError(err) || isUnauthorizedError(err)) return;
+      message.error(getFriendlyErrorMessage(err, 'Không thể cập nhật vai trò'));
     }
   }
 
@@ -337,7 +409,8 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       await loadTeams(selectedTeamId);
       onTeamChanged?.();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Không thể xóa thành viên');
+      if (isAbortError(err) || isUnauthorizedError(err)) return;
+      message.error(getFriendlyErrorMessage(err, 'Không thể xóa thành viên'));
     }
   }
 
@@ -349,7 +422,8 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       await loadTeams();
       onTeamChanged?.();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Không thể rời nhóm');
+      if (isAbortError(err) || isUnauthorizedError(err)) return;
+      message.error(getFriendlyErrorMessage(err, 'Không thể rời nhóm'));
     }
   }
 
@@ -363,7 +437,8 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       await loadTeams(selectedTeamId);
       onTeamChanged?.();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Không thể chuyển quyền sở hữu');
+      if (isAbortError(err) || isUnauthorizedError(err)) return;
+      message.error(getFriendlyErrorMessage(err, 'Không thể chuyển quyền sở hữu'));
     } finally {
       setActionSubmitting(false);
     }
@@ -405,10 +480,18 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
         </Button>
       </div>
 
-      {loading ? (
+      {loading && teams.length === 0 && !teamsError ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
           <Spin size="large" />
         </div>
+      ) : Boolean(teamsError) && teams.length === 0 ? (
+        <ApiErrorFallback
+          variant="page"
+          error={teamsError}
+          onRetry={() => void loadTeams()}
+          retrying={loading}
+          showNavigation
+        />
       ) : teams.length === 0 ? (
         <Card style={{ borderRadius: 8, textAlign: 'center', padding: '40px 0' }}>
           <Empty
@@ -428,44 +511,64 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
           </Empty>
         </Card>
       ) : (
-        <Row gutter={[16, 16]}>
-          <Col xs={24} md={8}>
-            <TeamListCard
-              teams={teams}
-              selectedTeamId={selectedTeamId}
-              currentUserId={user?.id}
-              onSelectTeam={setSelectedTeamId}
-            />
-          </Col>
+        <>
+          {Boolean(teamsError) && teams.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <ApiErrorFallback
+                variant="inline"
+                error={teamsError}
+                onRetry={() => void loadTeams(selectedTeamId ?? undefined)}
+                retrying={loading}
+                showNavigation={false}
+              />
+            </div>
+          )}
 
-          <Col xs={24} md={16}>
-            <TeamDetailCard
-              selectedTeam={selectedTeam}
-              detailLoading={detailLoading}
-              currentUserId={user?.id}
-              isOwner={isOwner}
-              isAdmin={isAdmin}
-              canManageMembers={canManageMembers}
-              onOpenEdit={() => {
-                if (!selectedTeam) return;
-                editForm.setFieldsValue({
-                  name: selectedTeam.name,
-                  description: selectedTeam.description || '',
-                });
-                setEditModalOpen(true);
-              }}
-              onDeleteTeam={handleDeleteTeam}
-              onLeaveTeam={handleLeaveTeam}
-              onOpenAddMember={() => {
-                addMemberForm.resetFields();
-                setAddMemberModalOpen(true);
-              }}
-              onUpdateMemberRole={handleUpdateMemberRole}
-              onTransferOwnership={handleTransferOwnership}
-              onRemoveMember={handleRemoveMember}
-            />
-          </Col>
-        </Row>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} md={8}>
+              <TeamListCard
+                teams={teams}
+                selectedTeamId={selectedTeamId}
+                currentUserId={user?.id}
+                onSelectTeam={handleSelectTeam}
+              />
+            </Col>
+
+            <Col xs={24} md={16}>
+              <TeamDetailCard
+                selectedTeam={selectedTeam}
+                detailLoading={detailLoading}
+                detailError={detailError}
+                onRetryDetail={() => {
+                  if (selectedTeamId) {
+                    void loadTeamDetail(selectedTeamId);
+                  }
+                }}
+                currentUserId={user?.id}
+                isOwner={isOwner}
+                isAdmin={isAdmin}
+                canManageMembers={canManageMembers}
+                onOpenEdit={() => {
+                  if (!selectedTeam) return;
+                  editForm.setFieldsValue({
+                    name: selectedTeam.name,
+                    description: selectedTeam.description || '',
+                  });
+                  setEditModalOpen(true);
+                }}
+                onDeleteTeam={handleDeleteTeam}
+                onLeaveTeam={handleLeaveTeam}
+                onOpenAddMember={() => {
+                  addMemberForm.resetFields();
+                  setAddMemberModalOpen(true);
+                }}
+                onUpdateMemberRole={handleUpdateMemberRole}
+                onTransferOwnership={handleTransferOwnership}
+                onRemoveMember={handleRemoveMember}
+              />
+            </Col>
+          </Row>
+        </>
       )}
 
       <TeamModals

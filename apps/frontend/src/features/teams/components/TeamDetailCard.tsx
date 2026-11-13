@@ -25,12 +25,15 @@ import {
 import type { Team, TeamMember, TeamRole } from '../types/team.types';
 import { TeamCategorySection } from './TeamCategorySection';
 import { TeamActivitySection } from './TeamActivitySection';
+import { ApiErrorFallback } from '../../../app/pages/errors';
 
 const { Title, Text } = Typography;
 
 interface TeamDetailCardProps {
   selectedTeam: Team | null;
   detailLoading: boolean;
+  detailError?: unknown;
+  onRetryDetail?: () => void;
   currentUserId?: number;
   isOwner: boolean;
   isAdmin: boolean;
@@ -47,6 +50,8 @@ interface TeamDetailCardProps {
 export function TeamDetailCard({
   selectedTeam,
   detailLoading,
+  detailError,
+  onRetryDetail,
   currentUserId,
   isOwner,
   isAdmin,
@@ -59,11 +64,23 @@ export function TeamDetailCard({
   onTransferOwnership,
   onRemoveMember,
 }: TeamDetailCardProps) {
-  if (detailLoading) {
+  if (detailLoading && !selectedTeam && !detailError) {
     return (
       <Card style={{ borderRadius: 8, display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
         <Spin />
       </Card>
+    );
+  }
+
+  if (Boolean(detailError) && !selectedTeam) {
+    return (
+      <ApiErrorFallback
+        variant="inline"
+        error={detailError}
+        onRetry={onRetryDetail}
+        retrying={detailLoading}
+        showNavigation={false}
+      />
     );
   }
 
@@ -191,154 +208,167 @@ export function TeamDetailCard({
   ];
 
   return (
-    <Card
-      title={
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-          <div>
+    <>
+      {Boolean(detailError) && (
+        <div style={{ marginBottom: 16 }}>
+          <ApiErrorFallback
+            variant="inline"
+            error={detailError}
+            onRetry={onRetryDetail}
+            retrying={detailLoading}
+            showNavigation={false}
+          />
+        </div>
+      )}
+      <Card
+        title={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <div>
+              <Space>
+                <Title level={4} style={{ margin: 0 }}>
+                  {selectedTeam.name}
+                </Title>
+                <Tag color={isOwner ? 'gold' : isAdmin ? 'blue' : 'green'}>
+                  {isOwner ? 'Chủ nhóm' : isAdmin ? 'Quản trị viên' : 'Thành viên'}
+                </Tag>
+              </Space>
+              {selectedTeam.description && (
+                <div style={{ fontSize: 13, color: '#8c8c8c', marginTop: 4 }}>
+                  {selectedTeam.description}
+                </div>
+              )}
+            </div>
             <Space>
-              <Title level={4} style={{ margin: 0 }}>
-                {selectedTeam.name}
-              </Title>
-              <Tag color={isOwner ? 'gold' : isAdmin ? 'blue' : 'green'}>
-                {isOwner ? 'Chủ nhóm' : isAdmin ? 'Quản trị viên' : 'Thành viên'}
-              </Tag>
-            </Space>
-            {selectedTeam.description && (
-              <div style={{ fontSize: 13, color: '#8c8c8c', marginTop: 4 }}>
-                {selectedTeam.description}
-              </div>
-            )}
-          </div>
-          <Space>
-            {isOwner && (
-              <>
-                <Button size="small" icon={<EditOutlined />} onClick={onOpenEdit}>
-                  Chỉnh sửa
-                </Button>
+              {isOwner && (
+                <>
+                  <Button size="small" icon={<EditOutlined />} onClick={onOpenEdit}>
+                    Chỉnh sửa
+                  </Button>
+                  <Popconfirm
+                    title="Giải tán nhóm?"
+                    description="Nhóm chỉ có thể giải tán khi không còn công việc hoặc danh mục phụ thuộc!"
+                    onConfirm={onDeleteTeam}
+                    okText="Giải tán"
+                    cancelText="Hủy"
+                    okButtonProps={{ danger: true }}
+                  >
+                    <Button size="small" danger icon={<DeleteOutlined />}>
+                      Giải tán nhóm
+                    </Button>
+                  </Popconfirm>
+                </>
+              )}
+              {!isOwner && (
                 <Popconfirm
-                  title="Giải tán nhóm?"
-                  description="Nhóm chỉ có thể giải tán khi không còn công việc hoặc danh mục phụ thuộc!"
-                  onConfirm={onDeleteTeam}
-                  okText="Giải tán"
+                  title="Rời khỏi nhóm?"
+                  description="Bạn sẽ không còn quyền truy cập các công việc của nhóm này!"
+                  onConfirm={() => {
+                    const selfMember = selectedTeam.members.find((m) => m.userId === currentUserId);
+                    if (selfMember) {
+                      void onLeaveTeam(selfMember.id);
+                    }
+                  }}
+                  okText="Rời nhóm"
                   cancelText="Hủy"
                   okButtonProps={{ danger: true }}
                 >
-                  <Button size="small" danger icon={<DeleteOutlined />}>
-                    Giải tán nhóm
+                  <Button size="small" danger icon={<LogoutOutlined />}>
+                    Rời nhóm
                   </Button>
                 </Popconfirm>
-              </>
-            )}
-            {!isOwner && (
-              <Popconfirm
-                title="Rời khỏi nhóm?"
-                description="Bạn sẽ không còn quyền truy cập các công việc của nhóm này!"
-                onConfirm={() => {
-                  const selfMember = selectedTeam.members.find((m) => m.userId === currentUserId);
-                  if (selfMember) {
-                    void onLeaveTeam(selfMember.id);
-                  }
-                }}
-                okText="Rời nhóm"
-                cancelText="Hủy"
-                okButtonProps={{ danger: true }}
-              >
-                <Button size="small" danger icon={<LogoutOutlined />}>
-                  Rời nhóm
-                </Button>
-              </Popconfirm>
-            )}
-          </Space>
-        </div>
-      }
-      style={{ borderRadius: 8 }}
-    >
-      {isOwner || isAdmin ? (
-        <Tabs
-          defaultActiveKey="members"
-          items={[
-            {
-              key: 'members',
-              label: (
-                <span>
-                  <TeamOutlined /> Thành viên & Danh mục
-                </span>
-              ),
-              children: (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                    <Text strong style={{ fontSize: 15 }}>
-                      Thành viên nhóm ({selectedTeam.members.length})
-                    </Text>
-                    {canManageMembers && (
-                      <Button
-                        type="primary"
-                        size="small"
-                        icon={<UserAddOutlined />}
-                        onClick={onOpenAddMember}
-                      >
-                        Thêm thành viên
-                      </Button>
-                    )}
-                  </div>
-
-                  <Table
-                    dataSource={selectedTeam.members}
-                    columns={memberColumns}
-                    rowKey="id"
-                    pagination={false}
-                    size="small"
-                  />
-
-                  <TeamCategorySection
-                    key={`cat-admin-${selectedTeam.id}`}
-                    teamId={selectedTeam.id}
-                    canManage={canManageMembers}
-                  />
-                </>
-              ),
-            },
-            {
-              key: 'activities',
-              label: (
-                <span>
-                  <HistoryOutlined /> Lịch sử hoạt động
-                </span>
-              ),
-              children: (
-                <TeamActivitySection
-                  key={`activity-${selectedTeam.id}`}
-                  teamId={selectedTeam.id}
-                  members={selectedTeam.members}
-                  owner={selectedTeam.owner}
-                />
-              ),
-            },
-          ]}
-        />
-      ) : (
-        <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <Text strong style={{ fontSize: 15 }}>
-              Thành viên nhóm ({selectedTeam.members.length})
-            </Text>
+              )}
+            </Space>
           </div>
+        }
+        style={{ borderRadius: 8 }}
+      >
+        {isOwner || isAdmin ? (
+          <Tabs
+            defaultActiveKey="members"
+            items={[
+              {
+                key: 'members',
+                label: (
+                  <span>
+                    <TeamOutlined /> Thành viên & Danh mục
+                  </span>
+                ),
+                children: (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                      <Text strong style={{ fontSize: 15 }}>
+                        Thành viên nhóm ({selectedTeam.members.length})
+                      </Text>
+                      {canManageMembers && (
+                        <Button
+                          type="primary"
+                          size="small"
+                          icon={<UserAddOutlined />}
+                          onClick={onOpenAddMember}
+                        >
+                          Thêm thành viên
+                        </Button>
+                      )}
+                    </div>
 
-          <Table
-            dataSource={selectedTeam.members}
-            columns={memberColumns}
-            rowKey="id"
-            pagination={false}
-            size="small"
-          />
+                    <Table
+                      dataSource={selectedTeam.members}
+                      columns={memberColumns}
+                      rowKey="id"
+                      pagination={false}
+                      size="small"
+                    />
 
-          <TeamCategorySection
-            key={`cat-member-${selectedTeam.id}`}
-            teamId={selectedTeam.id}
-            canManage={false}
+                    <TeamCategorySection
+                      key={`cat-admin-${selectedTeam.id}`}
+                      teamId={selectedTeam.id}
+                      canManage={canManageMembers}
+                    />
+                  </>
+                ),
+              },
+              {
+                key: 'activities',
+                label: (
+                  <span>
+                    <HistoryOutlined /> Lịch sử hoạt động
+                  </span>
+                ),
+                children: (
+                  <TeamActivitySection
+                    key={`activity-${selectedTeam.id}`}
+                    teamId={selectedTeam.id}
+                    members={selectedTeam.members}
+                    owner={selectedTeam.owner}
+                  />
+                ),
+              },
+            ]}
           />
-        </>
-      )}
-    </Card>
+        ) : (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text strong style={{ fontSize: 15 }}>
+                Thành viên nhóm ({selectedTeam.members.length})
+              </Text>
+            </div>
+
+            <Table
+              dataSource={selectedTeam.members}
+              columns={memberColumns}
+              rowKey="id"
+              pagination={false}
+              size="small"
+            />
+
+            <TeamCategorySection
+              key={`cat-member-${selectedTeam.id}`}
+              teamId={selectedTeam.id}
+              canManage={false}
+            />
+          </>
+        )}
+      </Card>
+    </>
   );
 }

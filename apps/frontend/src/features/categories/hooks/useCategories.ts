@@ -13,7 +13,11 @@ import {
   deleteCategory,
 } from '../api/categories.api';
 import { useAuth } from '../../auth/hooks/useAuth';
-import { UnauthorizedError } from '../../../shared/api';
+import {
+  isAbortError,
+  isUnauthorizedError,
+  getFriendlyErrorMessage,
+} from '../../../shared/api';
 
 export interface UseCategoriesOptions {
   teamId?: number | null;
@@ -26,12 +30,19 @@ export function useCategories(options?: UseCategoriesOptions) {
   const [scope, setScope] = useState<'all' | 'personal' | 'team' | undefined>(options?.scope);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<unknown>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const lastContextRef = useRef<{
+    teamId: number | null | undefined;
+    scope: 'all' | 'personal' | 'team' | undefined;
+  } | null>(null);
 
   const fetchCategories = useCallback(
     async (overrideParams?: CategoryQueryParams) => {
       if (!user) {
+        lastContextRef.current = null;
         setCategories([]);
+        setError(null);
         setLoading(false);
         return;
       }
@@ -40,6 +51,19 @@ export function useCategories(options?: UseCategoriesOptions) {
         overrideParams?.teamId !== undefined ? overrideParams.teamId : teamId;
       const effectiveScope =
         overrideParams?.scope !== undefined ? overrideParams.scope : scope;
+
+      const contextChanged =
+        lastContextRef.current !== null &&
+        (lastContextRef.current.teamId !== effectiveTeamId ||
+          lastContextRef.current.scope !== effectiveScope);
+      lastContextRef.current = {
+        teamId: effectiveTeamId,
+        scope: effectiveScope,
+      };
+      if (contextChanged) {
+        setCategories([]);
+        setError(null);
+      }
 
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -57,24 +81,19 @@ export function useCategories(options?: UseCategoriesOptions) {
           },
           controller.signal,
         );
-        if (abortControllerRef.current === controller) {
+        if (!controller.signal.aborted && abortControllerRef.current === controller) {
           setCategories(data);
+          setError(null);
         }
-      } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') {
+      } catch (err: unknown) {
+        if (controller.signal.aborted || isAbortError(err) || isUnauthorizedError(err)) {
           return;
         }
-        if (
-          error instanceof UnauthorizedError ||
-          (error instanceof Error && error.name === 'UnauthorizedError')
-        ) {
-          return;
-        }
-        message.error(
-          error instanceof Error ? error.message : 'Không thể tải danh mục',
-        );
-      } finally {
         if (abortControllerRef.current === controller) {
+          setError(err);
+        }
+      } finally {
+        if (!controller.signal.aborted && abortControllerRef.current === controller) {
           setLoading(false);
         }
       }
@@ -94,7 +113,9 @@ export function useCategories(options?: UseCategoriesOptions) {
           abortControllerRef.current.abort();
           abortControllerRef.current = null;
         }
+        lastContextRef.current = null;
         setCategories([]);
+        setError(null);
         setLoading(false);
         return;
       }
@@ -129,16 +150,11 @@ export function useCategories(options?: UseCategoriesOptions) {
       setCategories((prev) => [...prev, newCategory]);
       message.success(`Đã thêm danh mục "${newCategory.name}"`);
       return true;
-    } catch (error) {
-      if (
-        error instanceof UnauthorizedError ||
-        (error instanceof Error && error.name === 'UnauthorizedError')
-      ) {
+    } catch (err: unknown) {
+      if (isAbortError(err) || isUnauthorizedError(err)) {
         return false;
       }
-      message.error(
-        error instanceof Error ? error.message : 'Không thể tạo danh mục',
-      );
+      message.error(getFriendlyErrorMessage(err, 'Không thể tạo danh mục'));
       return false;
     } finally {
       setLoading(false);
@@ -157,16 +173,11 @@ export function useCategories(options?: UseCategoriesOptions) {
       );
       message.success(`Đã cập nhật danh mục "${updatedCategory.name}"`);
       return true;
-    } catch (error) {
-      if (
-        error instanceof UnauthorizedError ||
-        (error instanceof Error && error.name === 'UnauthorizedError')
-      ) {
+    } catch (err: unknown) {
+      if (isAbortError(err) || isUnauthorizedError(err)) {
         return false;
       }
-      message.error(
-        error instanceof Error ? error.message : 'Không thể cập nhật danh mục',
-      );
+      message.error(getFriendlyErrorMessage(err, 'Không thể cập nhật danh mục'));
       return false;
     } finally {
       setLoading(false);
@@ -178,18 +189,13 @@ export function useCategories(options?: UseCategoriesOptions) {
       setLoading(true);
       const res = await deleteCategory(id);
       setCategories((prev) => prev.filter((c) => c.id !== id));
-      message.success(res.message);
+      message.success(res.message || 'Đã xoá danh mục');
       return true;
-    } catch (error) {
-      if (
-        error instanceof UnauthorizedError ||
-        (error instanceof Error && error.name === 'UnauthorizedError')
-      ) {
+    } catch (err: unknown) {
+      if (isAbortError(err) || isUnauthorizedError(err)) {
         return false;
       }
-      message.error(
-        error instanceof Error ? error.message : 'Không thể xoá danh mục',
-      );
+      message.error(getFriendlyErrorMessage(err, 'Không thể xoá danh mục'));
       return false;
     } finally {
       setLoading(false);
@@ -199,6 +205,7 @@ export function useCategories(options?: UseCategoriesOptions) {
   return {
     categories,
     loading,
+    error,
     teamId,
     setTeamId,
     scope,

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { Spin } from 'antd';
+import { Button, Spin } from 'antd';
 import AppLayout from '../layouts/AppLayout';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import { useTasks } from '../../features/tasks/hooks/useTasks';
@@ -20,7 +20,13 @@ import TeamPage from '../../features/teams/pages/TeamPage';
 import DashboardPage from '../../features/dashboard/pages/DashboardPage';
 import TaskFormModal from '../../features/tasks/components/TaskFormModal';
 import AuthScreen from '../../features/auth/components/AuthScreen';
-import { NotFoundPage, ForbiddenPage, UnauthorizedPage } from '../pages/errors';
+import {
+  ApiErrorFallback,
+  ErrorBoundary,
+  NotFoundPage,
+  ForbiddenPage,
+  UnauthorizedPage,
+} from '../pages/errors';
 
 function FullScreenSpinner() {
   return (
@@ -39,10 +45,34 @@ function FullScreenSpinner() {
 }
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, authError, retryAuth, logout } = useAuth();
 
   if (loading) {
     return <FullScreenSpinner />;
+  }
+
+  if (!user && authError) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          backgroundColor: '#f5f7fa',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <div style={{ width: '100%' }}>
+          <ApiErrorFallback
+            variant="page"
+            error={authError}
+            onRetry={() => void retryAuth()}
+            showNavigation={false}
+            extraActions={<Button onClick={logout}>Đăng nhập lại</Button>}
+          />
+        </div>
+      </div>
+    );
   }
 
   if (!user) {
@@ -208,72 +238,74 @@ function TaskAppShell() {
       onNavChange={(key) => navigate('/' + key)}
       onNavigateNotification={handleNotificationNavigate}
     >
-      <Routes>
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route
-          path="dashboard"
-          element={
-            <DashboardPage
-              teams={teams}
-              active={currentNav === 'dashboard'}
-              refreshTrigger={dashboardReloadCounter}
-              onLoadingChange={setDashboardLoading}
-              onNavigateToTasks={handleNavigateFromDashboard}
-              onOpenCreateTask={openCreateModal}
-            />
-          }
-        />
-        <Route
-          path="tasks"
-          element={
-            <TasksPage
-              tasks={tasks}
-              trashTasks={trashTasks}
-              trashLoading={trashLoading}
-              pendingInvitesCount={pendingInvitesCount}
-              trashCount={trashCount}
-              categories={categories}
-              teams={teams}
-              loading={loading}
-              filters={filters}
-              isFiltering={isFiltering}
-              viewMode={viewMode}
-              setViewMode={setViewMode}
-              onFiltersChange={applyFilters}
-              onReset={handleReset}
-              onCreate={openCreateModal}
-              onEdit={openEditModal}
-              onDelete={(id) => void handleDelete(id)}
-              onRestore={handleRestore}
-              onPermanentDelete={handlePermanentDelete}
-              onBulkDelete={handleBulkDelete}
-              onBulkStatusMove={handleBulkStatusMove}
-              onBulkRestore={handleBulkRestore}
-              onBulkPermanentDelete={handleBulkPermanentDelete}
-              onEmptyTrash={() =>
-                handleEmptyTrash(
-                  typeof filters.teamFilter === 'number' ? filters.teamFilter : undefined,
-                )
-              }
-              onReorder={handleReorder}
-              onStatusMove={handleStatusMove}
-              categoryModalOpen={categoryModalOpen}
-              onCloseCategoryModal={() => setCategoryModalOpen(false)}
-              onCategoryChanged={() => void refetch()}
-              currentUserId={user?.id}
-            />
-          }
-        />
-        <Route
-          path="teams"
-          element={<TeamPage onTeamChanged={() => void refetch()} />}
-        />
-        <Route
-          path="categories"
-          element={<CategoryPage onChanged={() => void refetch()} />}
-        />
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
+      <ErrorBoundary key={location.pathname} onReset={handleGlobalReload}>
+        <Routes>
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route
+            path="dashboard"
+            element={
+              <DashboardPage
+                teams={teams}
+                active={currentNav === 'dashboard'}
+                refreshTrigger={dashboardReloadCounter}
+                onLoadingChange={setDashboardLoading}
+                onNavigateToTasks={handleNavigateFromDashboard}
+                onOpenCreateTask={openCreateModal}
+              />
+            }
+          />
+          <Route
+            path="tasks"
+            element={
+              <TasksPage
+                tasks={tasks}
+                trashTasks={trashTasks}
+                trashLoading={trashLoading}
+                pendingInvitesCount={pendingInvitesCount}
+                trashCount={trashCount}
+                categories={categories}
+                teams={teams}
+                loading={loading}
+                filters={filters}
+                isFiltering={isFiltering}
+                viewMode={viewMode}
+                setViewMode={setViewMode}
+                onFiltersChange={applyFilters}
+                onReset={handleReset}
+                onCreate={openCreateModal}
+                onEdit={openEditModal}
+                onDelete={(id) => void handleDelete(id)}
+                onRestore={handleRestore}
+                onPermanentDelete={handlePermanentDelete}
+                onBulkDelete={handleBulkDelete}
+                onBulkStatusMove={handleBulkStatusMove}
+                onBulkRestore={handleBulkRestore}
+                onBulkPermanentDelete={handleBulkPermanentDelete}
+                onEmptyTrash={() =>
+                  handleEmptyTrash(
+                    typeof filters.teamFilter === 'number' ? filters.teamFilter : undefined,
+                  )
+                }
+                onReorder={handleReorder}
+                onStatusMove={handleStatusMove}
+                categoryModalOpen={categoryModalOpen}
+                onCloseCategoryModal={() => setCategoryModalOpen(false)}
+                onCategoryChanged={() => void refetch()}
+                currentUserId={user?.id}
+              />
+            }
+          />
+          <Route
+            path="teams"
+            element={<TeamPage onTeamChanged={() => void refetch()} />}
+          />
+          <Route
+            path="categories"
+            element={<CategoryPage onChanged={() => void refetch()} />}
+          />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </ErrorBoundary>
 
       {modalState.open && (
         <TaskFormModal

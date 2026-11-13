@@ -6,7 +6,6 @@ import {
   Button,
   Space,
   Typography,
-  Alert,
   Skeleton,
   Tag,
   Select,
@@ -22,6 +21,8 @@ import {
   UserOutlined,
 } from '@ant-design/icons';
 import { getTaskStats } from '../../tasks/api/tasks.api';
+import { isAbortError, isUnauthorizedError } from '../../../shared/api';
+import { ApiErrorFallback, ErrorBoundary } from '../../../app/pages/errors';
 import { useRealtimeReconnect } from '../../realtime';
 import type {
   TaskStats,
@@ -151,23 +152,37 @@ export default function DashboardPage({
 }: DashboardPageProps) {
   const [stats, setStats] = useState<TaskStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [teamFilter, setTeamFilter] = useState<number | 'ALL'>('ALL');
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all');
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     onLoadingChange?.(loading);
   }, [loading, onLoadingChange]);
 
   const fetchStats = useCallback(
-    async (signal?: AbortSignal) => {
+    async (externalSignal?: AbortSignal) => {
+      abortControllerRef.current?.abort();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      const onExternalAbort = () => controller.abort();
+      if (externalSignal) {
+        if (externalSignal.aborted) {
+          controller.abort();
+          return;
+        }
+        externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+      }
+
       try {
         const data = await getTaskStats(
           buildDashboardStatsParams(teamFilter, scopeFilter),
-          signal,
+          controller.signal,
         );
-        if (!signal?.aborted) {
+        if (!controller.signal.aborted && abortControllerRef.current === controller) {
           setStats(sanitizeStats(data));
           setError(null);
           const now = new Date();
@@ -180,14 +195,15 @@ export default function DashboardPage({
           );
         }
       } catch (err: unknown) {
-        if (err instanceof Error && (err.name === 'AbortError' || err.name === 'UnauthorizedError')) {
+        if (isAbortError(err) || isUnauthorizedError(err) || controller.signal.aborted) {
           return;
         }
-        if (!signal?.aborted) {
-          setError(err instanceof Error ? err.message : 'Không thể tải số liệu thống kê');
+        if (abortControllerRef.current === controller) {
+          setError(err);
         }
       } finally {
-        if (!signal?.aborted) {
+        externalSignal?.removeEventListener('abort', onExternalAbort);
+        if (!controller.signal.aborted && abortControllerRef.current === controller) {
           setLoading(false);
         }
       }
@@ -195,7 +211,7 @@ export default function DashboardPage({
     [teamFilter, scopeFilter],
   );
 
-  const handleRetry = useCallback(() => {
+  const loadStats = useCallback(() => {
     setLoading(true);
     void fetchStats();
   }, [fetchStats]);
@@ -216,7 +232,10 @@ export default function DashboardPage({
   }, [refreshTrigger, fetchStats]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active) {
+      abortControllerRef.current?.abort();
+      return;
+    }
     const controller = new AbortController();
 
     async function load() {
@@ -230,6 +249,7 @@ export default function DashboardPage({
 
     return () => {
       controller.abort();
+      abortControllerRef.current?.abort();
     };
   }, [active, fetchStats]);
 
@@ -331,22 +351,15 @@ export default function DashboardPage({
         />
       </div>
 
-      {error && (
-        <Alert
-          type="error"
-          showIcon
-          message="Lỗi kết nối dữ liệu thống kê"
-          description={error}
-          action={
-            <Button size="small" danger onClick={handleRetry}>
-              Thử lại
-            </Button>
-          }
-          style={{ marginBottom: 24 }}
+      {error && !stats ? (
+        <ApiErrorFallback
+          variant="page"
+          error={error}
+          onRetry={loadStats}
+          retrying={loading}
+          showNavigation={false}
         />
-      )}
-
-      {loading && !stats ? (
+      ) : loading && !stats ? (
         <>
           <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
             {[1, 2, 3, 4, 5, 6].map((key) => (
@@ -361,16 +374,29 @@ export default function DashboardPage({
         </>
       ) : (
         <>
+          {Boolean(error) && stats && (
+            <div style={{ marginBottom: 24 }}>
+              <ApiErrorFallback
+                variant="inline"
+                error={error}
+                onRetry={loadStats}
+                retrying={loading}
+                showNavigation={false}
+              />
+            </div>
+          )}
           <DashboardStatCards
             stats={safeStats}
             onNavigateToTasks={handleNavigateWithDashboardContext}
           />
-          <Suspense fallback={<ChartsSkeleton />}>
-            <DashboardCharts
-              stats={safeStats}
-              onNavigateToTasks={handleNavigateWithDashboardContext}
-            />
-          </Suspense>
+          <ErrorBoundary fallbackTitle="Không thể tải biểu đồ" onReset={loadStats}>
+            <Suspense fallback={<ChartsSkeleton />}>
+              <DashboardCharts
+                stats={safeStats}
+                onNavigateToTasks={handleNavigateWithDashboardContext}
+              />
+            </Suspense>
+          </ErrorBoundary>
         </>
       )}
     </div>

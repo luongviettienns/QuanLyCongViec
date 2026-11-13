@@ -29,6 +29,12 @@ import {
   shouldRefreshTeamCategoriesOnEvent,
   createDebouncedCallback,
 } from '../utils/team-realtime.utils';
+import {
+  isAbortError,
+  isUnauthorizedError,
+  getFriendlyErrorMessage,
+} from '../../../shared/api';
+import { ApiErrorFallback } from '../../../app/pages/errors';
 
 const { Text } = Typography;
 
@@ -41,22 +47,38 @@ export function TeamCategorySection({ teamId, canManage }: TeamCategorySectionPr
   const { user } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<unknown>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [form] = Form.useForm<{ name: string }>();
   const [color, setColor] = useState('#1677ff');
   const [submitting, setSubmitting] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const loadCategories = useCallback(async () => {
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       setLoading(true);
-      const data = await getCategories({ teamId });
+      const data = await getCategories({ teamId }, controller.signal);
+      if (controller.signal.aborted || abortControllerRef.current !== controller) {
+        return;
+      }
       setCategories(data);
+      setError(null);
     } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'UnauthorizedError') return;
-      message.error('Không thể tải danh mục nhóm');
+      if (controller.signal.aborted || isAbortError(err) || isUnauthorizedError(err)) {
+        return;
+      }
+      if (abortControllerRef.current === controller) {
+        setError(err);
+      }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted && abortControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
   }, [teamId]);
 
@@ -70,6 +92,7 @@ export function TeamCategorySection({ teamId, canManage }: TeamCategorySectionPr
     void init();
     return () => {
       active = false;
+      abortControllerRef.current?.abort();
     };
   }, [loadCategories]);
 
@@ -145,8 +168,8 @@ export function TeamCategorySection({ teamId, canManage }: TeamCategorySectionPr
       setModalOpen(false);
       form.resetFields();
     } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'UnauthorizedError') return;
-      message.error(err instanceof Error ? err.message : 'Thao tác thất bại');
+      if (isAbortError(err) || isUnauthorizedError(err)) return;
+      message.error(getFriendlyErrorMessage(err, 'Thao tác thất bại'));
     } finally {
       setSubmitting(false);
     }
@@ -156,10 +179,10 @@ export function TeamCategorySection({ teamId, canManage }: TeamCategorySectionPr
     try {
       const res = await deleteCategory(id);
       setCategories((prev) => prev.filter((c) => c.id !== id));
-      message.success(res.message);
+      message.success(res.message || 'Đã xoá danh mục');
     } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'UnauthorizedError') return;
-      message.error(err instanceof Error ? err.message : 'Không thể xoá danh mục');
+      if (isAbortError(err) || isUnauthorizedError(err)) return;
+      message.error(getFriendlyErrorMessage(err, 'Không thể xoá danh mục'));
     }
   }
 
@@ -191,7 +214,15 @@ export function TeamCategorySection({ teamId, canManage }: TeamCategorySectionPr
         )}
       </div>
 
-      {loading ? (
+      {Boolean(error) && categories.length === 0 ? (
+        <ApiErrorFallback
+          variant="inline"
+          error={error}
+          onRetry={() => void loadCategories()}
+          retrying={loading}
+          showNavigation={false}
+        />
+      ) : loading && categories.length === 0 ? (
         <div style={{ padding: '16px 0', textAlign: 'center' }}>
           <Spin size="small" />
         </div>
@@ -202,43 +233,56 @@ export function TeamCategorySection({ teamId, canManage }: TeamCategorySectionPr
           style={{ margin: '8px 0' }}
         />
       ) : (
-        <Space size={[8, 8]} wrap align="center">
-          {categories.map((cat) => (
-            <Tag
-              key={cat.id}
-              color={cat.color}
-              style={{
-                fontSize: 13,
-                padding: '4px 10px',
-                borderRadius: 4,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                margin: 0,
-              }}
-            >
-              <span>{cat.name}</span>
-              {canManage && (
-                <Space size={2}>
-                  <EditOutlined
-                    style={{ cursor: 'pointer', fontSize: 11 }}
-                    onClick={() => handleOpenEdit(cat)}
-                  />
-                  <Popconfirm
-                    title="Xoá danh mục nhóm?"
-                    description={`Xoá "${cat.name}" khỏi nhóm này?`}
-                    onConfirm={() => void handleDelete(cat.id)}
-                    okText="Xoá"
-                    cancelText="Huỷ"
-                    okButtonProps={{ danger: true }}
-                  >
-                    <DeleteOutlined style={{ cursor: 'pointer', fontSize: 11 }} />
-                  </Popconfirm>
-                </Space>
-              )}
-            </Tag>
-          ))}
-        </Space>
+        <>
+          {Boolean(error) && (
+            <div style={{ marginBottom: 12 }}>
+              <ApiErrorFallback
+                variant="inline"
+                error={error}
+                onRetry={() => void loadCategories()}
+                retrying={loading}
+                showNavigation={false}
+              />
+            </div>
+          )}
+          <Space size={[8, 8]} wrap align="center">
+            {categories.map((cat) => (
+              <Tag
+                key={cat.id}
+                color={cat.color}
+                style={{
+                  fontSize: 13,
+                  padding: '4px 10px',
+                  borderRadius: 4,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  margin: 0,
+                }}
+              >
+                <span>{cat.name}</span>
+                {canManage && (
+                  <Space size={2}>
+                    <EditOutlined
+                      style={{ cursor: 'pointer', fontSize: 11 }}
+                      onClick={() => handleOpenEdit(cat)}
+                    />
+                    <Popconfirm
+                      title="Xoá danh mục nhóm?"
+                      description={`Xoá "${cat.name}" khỏi nhóm này?`}
+                      onConfirm={() => void handleDelete(cat.id)}
+                      okText="Xoá"
+                      cancelText="Huỷ"
+                      okButtonProps={{ danger: true }}
+                    >
+                      <DeleteOutlined style={{ cursor: 'pointer', fontSize: 11 }} />
+                    </Popconfirm>
+                  </Space>
+                )}
+              </Tag>
+            ))}
+          </Space>
+        </>
       )}
 
       <Modal

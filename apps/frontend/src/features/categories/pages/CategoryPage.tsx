@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Card,
   Table,
@@ -39,6 +39,8 @@ import {
 import { useAuth } from '../../auth/hooks/useAuth';
 import { getTeams } from '../../teams/api/teams.api';
 import type { Team } from '../../teams/types/team.types';
+import { isAbortError, isUnauthorizedError } from '../../../shared/api';
+import { ApiErrorFallback } from '../../../app/pages/errors';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -49,12 +51,17 @@ interface CategoryPageProps {
 export default function CategoryPage({ onChanged }: CategoryPageProps) {
   const { user } = useAuth();
   const [teams, setTeams] = useState<Team[]>([]);
+  const [teamsError, setTeamsError] = useState<unknown>(null);
+  const [teamsLoading, setTeamsLoading] = useState(false);
+  const teamsAbortRef = useRef<AbortController | null>(null);
   const [selectedContext, setSelectedContext] = useState<'personal' | number>('personal');
 
   const {
     categories,
     loading,
+    error,
     setTeamId,
+    fetchCategories,
     handleCreate,
     handleUpdate,
     handleDelete,
@@ -67,21 +74,44 @@ export default function CategoryPage({ onChanged }: CategoryPageProps) {
   const [createColor, setCreateColor] = useState<string>('#1677ff');
   const [editColor, setEditColor] = useState<string>('#1677ff');
 
-  useEffect(() => {
-    let active = true;
-    async function load() {
-      try {
-        const teamList = await getTeams();
-        if (active) setTeams(teamList);
-      } catch {
-        // ignore
+  const loadTeams = useCallback(async () => {
+    teamsAbortRef.current?.abort();
+    const controller = new AbortController();
+    teamsAbortRef.current = controller;
+    setTeamsLoading(true);
+    try {
+      const teamList = await getTeams(controller.signal);
+      if (!controller.signal.aborted && teamsAbortRef.current === controller) {
+        setTeams(teamList);
+        setTeamsError(null);
+      }
+    } catch (err: unknown) {
+      if (controller.signal.aborted || isAbortError(err) || isUnauthorizedError(err)) {
+        return;
+      }
+      if (teamsAbortRef.current === controller) {
+        setTeamsError(err);
+      }
+    } finally {
+      if (!controller.signal.aborted && teamsAbortRef.current === controller) {
+        setTeamsLoading(false);
       }
     }
-    void load();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    async function init() {
+      await Promise.resolve();
+      if (!active) return;
+      void loadTeams();
+    }
+    void init();
     return () => {
       active = false;
+      teamsAbortRef.current?.abort();
     };
-  }, []);
+  }, [loadTeams]);
 
   const currentTeam =
     typeof selectedContext === 'number'
@@ -482,183 +512,225 @@ export default function CategoryPage({ onChanged }: CategoryPageProps) {
         </Space>
       </div>
 
-      {!isOwnerOrAdmin && (
-        <Alert
-          message="Bạn đang xem danh mục của nhóm với quyền Thành viên (chỉ đọc). Chỉ Trưởng nhóm và Quản trị viên mới có thể tạo, chỉnh sửa hoặc xoá danh mục nhóm."
-          type="info"
-          showIcon
-          style={{ marginBottom: 20 }}
+      {Boolean(error) && categories.length === 0 ? (
+        <ApiErrorFallback
+          variant="page"
+          error={error}
+          onRetry={() => {
+            void fetchCategories();
+            if (teamsError) {
+              void loadTeams();
+            }
+          }}
+          retrying={loading}
+          showNavigation
         />
-      )}
-
-      {isOwnerOrAdmin && (
-        <Card
-          title={
-            <Space size={8}>
-              <PlusOutlined style={{ color: '#1677ff' }} />
-              <span>
-                {currentTeam
-                  ? `Thêm danh mục cho nhóm "${currentTeam.name}"`
-                  : 'Thêm danh mục cá nhân mới'}
-              </span>
-            </Space>
-          }
-          style={{ marginBottom: 24, borderRadius: 8 }}
-        >
-          <Form
-            form={createForm}
-            layout="vertical"
-            onFinish={(values) => void onFinishCreate(values)}
-          >
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: screens.sm ? 'row' : 'column',
-                gap: 12,
-                alignItems: screens.sm ? 'flex-end' : 'stretch',
-              }}
-            >
-              <Form.Item
-                name="name"
-                label="Tên danh mục"
-                rules={[
-                  { required: true, message: 'Vui lòng nhập tên danh mục' },
-                  trimmedLengthRule({ label: 'Tên danh mục', min: 2, max: 50 }),
-                ]}
-                style={{ flex: 1, margin: 0 }}
-              >
-                <Input
-                  placeholder={
-                    currentTeam
-                      ? 'Ví dụ: Bug, Feature, Urgent, Frontend...'
-                      : 'Nhập tên danh mục cá nhân (ví dụ: Học tập, Cá nhân...)'
-                  }
-                  size="large"
-                />
-              </Form.Item>
-
-              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
-                <div>
-                  <div style={{ fontSize: 14, marginBottom: 8, color: '#595959' }}>Màu sắc</div>
-                  <ColorPicker
-                    value={createColor}
-                    onChange={(c) => setCreateColor(c.toHexString())}
-                    presets={[{ label: 'Màu gợi ý', colors: CATEGORY_PRESET_COLORS }]}
-                    size="large"
-                  />
-                </div>
-
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  icon={<PlusOutlined />}
-                  loading={loading}
-                  size="large"
-                  style={{ minWidth: 120 }}
-                >
-                  Tạo mới
-                </Button>
-              </div>
+      ) : (
+        <>
+          {Boolean(teamsError) && (
+            <div style={{ marginBottom: 20 }}>
+              <ApiErrorFallback
+                variant="inline"
+                title="Không thể tải danh sách nhóm"
+                error={teamsError}
+                onRetry={() => void loadTeams()}
+                retrying={teamsLoading}
+                showNavigation={false}
+              />
             </div>
-          </Form>
-        </Card>
-      )}
+          )}
 
-      <Card
-        title={
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Space size={8}>
-              <AppstoreOutlined style={{ color: '#1677ff' }} />
-              <span>
-                {currentTeam
-                  ? `Danh sách danh mục nhóm "${currentTeam.name}"`
-                  : 'Danh sách danh mục cá nhân'}
-              </span>
-            </Space>
-            <Tag color="blue" style={{ margin: 0 }}>
-              {categories.length} danh mục
-            </Tag>
-          </div>
-        }
-        style={{ borderRadius: 8 }}
-      >
-        {screens.xs ? (
-          <List
-            loading={loading}
-            dataSource={categories}
-            locale={{ emptyText: 'Chưa có danh mục nào' }}
-            renderItem={(item) => (
-              <Card
-                size="small"
-                style={{
-                  marginBottom: 10,
-                  borderRadius: 8,
-                  border: '1px solid #f0f0f0',
-                }}
+          {!isOwnerOrAdmin && (
+            <Alert
+              message="Bạn đang xem danh mục của nhóm với quyền Thành viên (chỉ đọc). Chỉ Trưởng nhóm và Quản trị viên mới có thể tạo, chỉnh sửa hoặc xoá danh mục nhóm."
+              type="info"
+              showIcon
+              style={{ marginBottom: 20 }}
+            />
+          )}
+
+          {isOwnerOrAdmin && (
+            <Card
+              title={
+                <Space size={8}>
+                  <PlusOutlined style={{ color: '#1677ff' }} />
+                  <span>
+                    {currentTeam
+                      ? `Thêm danh mục cho nhóm "${currentTeam.name}"`
+                      : 'Thêm danh mục cá nhân mới'}
+                  </span>
+                </Space>
+              }
+              style={{ marginBottom: 24, borderRadius: 8 }}
+            >
+              <Form
+                form={createForm}
+                layout="vertical"
+                onFinish={(values) => void onFinishCreate(values)}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Space align="center" size={8}>
-                    <div
-                      style={{
-                        width: 18,
-                        height: 18,
-                        borderRadius: '50%',
-                        backgroundColor: item.color,
-                        border: '1px solid rgba(0,0,0,0.1)',
-                      }}
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: screens.sm ? 'row' : 'column',
+                    gap: 12,
+                    alignItems: screens.sm ? 'flex-end' : 'stretch',
+                  }}
+                >
+                  <Form.Item
+                    name="name"
+                    label="Tên danh mục"
+                    rules={[
+                      { required: true, message: 'Vui lòng nhập tên danh mục' },
+                      trimmedLengthRule({ label: 'Tên danh mục', min: 2, max: 50 }),
+                    ]}
+                    style={{ flex: 1, margin: 0 }}
+                  >
+                    <Input
+                      placeholder={
+                        currentTeam
+                          ? 'Ví dụ: Bug, Feature, Urgent, Frontend...'
+                          : 'Nhập tên danh mục cá nhân (ví dụ: Học tập, Cá nhân...)'
+                      }
+                      size="large"
                     />
-                    <Tag color={item.color} style={{ fontSize: 13, margin: 0 }}>
-                      {item.name}
-                    </Tag>
-                  </Space>
+                  </Form.Item>
 
-                  {isOwnerOrAdmin ? (
-                    <Space size="small">
-                      <Button
-                        size="small"
-                        type="text"
-                        icon={<EditOutlined />}
-                        onClick={() => startEdit(item)}
-                        style={{ color: '#1677ff' }}
-                      >
-                        Sửa
-                      </Button>
-                      <Popconfirm
-                        title="Xoá danh mục"
-                        description={`Bạn có chắc muốn xoá "${item.name}"?`}
-                        onConfirm={() => void confirmDelete(item.id)}
-                        okText="Xoá"
-                        cancelText="Huỷ"
-                        okButtonProps={{ danger: true }}
-                      >
-                        <Button
-                          size="small"
-                          type="text"
-                          danger
-                          icon={<DeleteOutlined />}
-                        >
-                          Xoá
-                        </Button>
-                      </Popconfirm>
-                    </Space>
-                  ) : (
-                    <Tag style={{ margin: 0 }}>Chỉ xem</Tag>
-                  )}
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+                    <div>
+                      <div style={{ fontSize: 14, marginBottom: 8, color: '#595959' }}>Màu sắc</div>
+                      <ColorPicker
+                        value={createColor}
+                        onChange={(c) => setCreateColor(c.toHexString())}
+                        presets={[{ label: 'Màu gợi ý', colors: CATEGORY_PRESET_COLORS }]}
+                        size="large"
+                      />
+                    </div>
+
+                    <Button
+                      type="primary"
+                      htmlType="submit"
+                      icon={<PlusOutlined />}
+                      loading={loading}
+                      size="large"
+                      style={{ minWidth: 120 }}
+                    >
+                      Tạo mới
+                    </Button>
+                  </div>
                 </div>
-              </Card>
+              </Form>
+            </Card>
+          )}
+
+          <Card
+            title={
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Space size={8}>
+                  <AppstoreOutlined style={{ color: '#1677ff' }} />
+                  <span>
+                    {currentTeam
+                      ? `Danh sách danh mục nhóm "${currentTeam.name}"`
+                      : 'Danh sách danh mục cá nhân'}
+                  </span>
+                </Space>
+                <Tag color="blue" style={{ margin: 0 }}>
+                  {categories.length} danh mục
+                </Tag>
+              </div>
+            }
+            style={{ borderRadius: 8 }}
+          >
+            {Boolean(error) && categories.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <ApiErrorFallback
+                  variant="inline"
+                  error={error}
+                  onRetry={() => void fetchCategories()}
+                  retrying={loading}
+                  showNavigation={false}
+                />
+              </div>
             )}
-          />
-        ) : (
-          <Table
-            columns={columns}
-            dataSource={categories}
-            rowKey="id"
-            loading={loading}
-            pagination={false}
-            locale={{ emptyText: 'Chưa có danh mục nào' }}
-          />
-        )}
-      </Card>
+
+            {screens.xs ? (
+              <List
+                loading={loading}
+                dataSource={categories}
+                locale={{ emptyText: 'Chưa có danh mục nào' }}
+                renderItem={(item) => (
+                  <Card
+                    size="small"
+                    style={{
+                      marginBottom: 10,
+                      borderRadius: 8,
+                      border: '1px solid #f0f0f0',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Space align="center" size={8}>
+                        <div
+                          style={{
+                            width: 18,
+                            height: 18,
+                            borderRadius: '50%',
+                            backgroundColor: item.color,
+                            border: '1px solid rgba(0,0,0,0.1)',
+                          }}
+                        />
+                        <Tag color={item.color} style={{ fontSize: 13, margin: 0 }}>
+                          {item.name}
+                        </Tag>
+                      </Space>
+
+                      {isOwnerOrAdmin ? (
+                        <Space size="small">
+                          <Button
+                            size="small"
+                            type="text"
+                            icon={<EditOutlined />}
+                            onClick={() => startEdit(item)}
+                            style={{ color: '#1677ff' }}
+                          >
+                            Sửa
+                          </Button>
+                          <Popconfirm
+                            title="Xoá danh mục"
+                            description={`Bạn có chắc muốn xoá "${item.name}"?`}
+                            onConfirm={() => void confirmDelete(item.id)}
+                            okText="Xoá"
+                            cancelText="Huỷ"
+                            okButtonProps={{ danger: true }}
+                          >
+                            <Button
+                              size="small"
+                              type="text"
+                              danger
+                              icon={<DeleteOutlined />}
+                            >
+                              Xoá
+                            </Button>
+                          </Popconfirm>
+                        </Space>
+                      ) : (
+                        <Tag style={{ margin: 0 }}>Chỉ xem</Tag>
+                      )}
+                    </div>
+                  </Card>
+                )}
+              />
+            ) : (
+              <Table
+                columns={columns}
+                dataSource={categories}
+                rowKey="id"
+                loading={loading}
+                pagination={false}
+                locale={{ emptyText: 'Chưa có danh mục nào' }}
+              />
+            )}
+          </Card>
+        </>
+      )}
 
       <Modal
         title={

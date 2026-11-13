@@ -8,6 +8,11 @@ import {
   markAllNotificationsAsRead,
 } from '../api/notifications.api';
 import { useAuth } from '../../auth/hooks/useAuth';
+import {
+  isAbortError,
+  isUnauthorizedError,
+  getFriendlyErrorMessage,
+} from '../../../shared/api';
 import { useRealtimeEvent, useRealtimeReconnect } from '../../realtime';
 import type { RealtimeEventData } from '../../realtime/types/realtime.types';
 import {
@@ -106,10 +111,14 @@ export function useNotifications() {
         setHasMore(res.nextCursor !== null);
         setUnreadCount(res.unreadCount);
       } catch (err: unknown) {
-        if (err instanceof Error && err.name === 'AbortError') {
+        if (
+          controller.signal.aborted ||
+          isAbortError(err) ||
+          isUnauthorizedError(err)
+        ) {
           return;
         }
-        setError(err instanceof Error ? err.message : 'Không thể tải danh sách thông báo');
+        setError(getFriendlyErrorMessage(err, 'Không thể tải danh sách thông báo'));
       } finally {
         if (abortControllerRef.current === controller) {
           setLoading(false);
@@ -190,7 +199,10 @@ export function useNotifications() {
           );
           setUnreadCount((current) => current + 1);
         }
-        message.error(err instanceof Error ? err.message : 'Không thể đánh dấu đã đọc');
+        if (isAbortError(err) || isUnauthorizedError(err)) {
+          return;
+        }
+        message.error(getFriendlyErrorMessage(err, 'Không thể đánh dấu đã đọc'));
         void loadNotifications(true, true);
       } finally {
         inFlightMarkReadRef.current.delete(id);
@@ -206,7 +218,10 @@ export function useNotifications() {
     try {
       await markAllNotificationsAsRead();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Không thể đánh dấu đọc tất cả');
+      if (isAbortError(err) || isUnauthorizedError(err)) {
+        return;
+      }
+      message.error(getFriendlyErrorMessage(err, 'Không thể đánh dấu đọc tất cả'));
       void loadNotifications(true, true);
     }
   }, [loadNotifications]);
