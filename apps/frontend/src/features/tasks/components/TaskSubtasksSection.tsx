@@ -29,6 +29,12 @@ import type { Task, Subtask, TaskStatus } from '../types/task.types';
 import type { User } from '../../auth/types/auth.types';
 import { useRealtimeEvent, useRealtimeReconnect } from '../../realtime';
 import type { RealtimeEventData } from '../../realtime/types/realtime.types';
+import { ApiErrorFallback } from '../../../app/pages/errors';
+import { getFriendlyErrorMessage } from '../../../shared/api';
+import {
+  resolveSectionRenderPlan,
+  shouldIgnoreTaskApiError,
+} from '../utils/task-error.utils';
 import {
   mergeServerSubtask,
   shouldAcceptRemoteSubtaskFetch,
@@ -62,6 +68,7 @@ export function TaskSubtasksSection({
 }: TaskSubtasksSectionProps) {
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newAssigneeId, setNewAssigneeId] = useState<number | undefined>(undefined);
@@ -75,7 +82,16 @@ export function TaskSubtasksSection({
   const [editConflictWarning, setEditConflictWarning] = useState(false);
   const [remoteLatestSubtask, setRemoteLatestSubtask] = useState<Subtask | null>(null);
   const mutationSeqRef = useRef(0);
+  const fetchSeqRef = useRef(0);
+  const isMountedRef = useRef(true);
   const highlightedRowRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
   const editDraftRef = useRef<{
     editingSubtask: Subtask | null;
     title: string;
@@ -108,14 +124,20 @@ export function TaskSubtasksSection({
   }, [highlightSubtaskId, loading, subtasks.length]);
 
   const fetchSubtasks = useCallback(async () => {
+    const requestSeq = ++fetchSeqRef.current;
     const fetchStartedSeq = mutationSeqRef.current;
     try {
       setLoading(true);
       const data = await getSubtasks(task.id);
-      if (!shouldAcceptRemoteSubtaskFetch(fetchStartedSeq, mutationSeqRef.current)) {
+      if (
+        !isMountedRef.current ||
+        fetchSeqRef.current !== requestSeq ||
+        !shouldAcceptRemoteSubtaskFetch(fetchStartedSeq, mutationSeqRef.current)
+      ) {
         return;
       }
       setSubtasks(data);
+      setLoadError(null);
 
       const draft = editDraftRef.current;
       if (draft.editingSubtask) {
@@ -148,31 +170,33 @@ export function TaskSubtasksSection({
         }
       }
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Không thể tải danh sách công việc con');
+      if (!isMountedRef.current || fetchSeqRef.current !== requestSeq) {
+        return;
+      }
+      if (shouldIgnoreTaskApiError(err)) {
+        return;
+      }
+      setLoadError(err);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current && fetchSeqRef.current === requestSeq) {
+        setLoading(false);
+      }
     }
   }, [task.id]);
 
   useEffect(() => {
-    let cancelled = false;
-    getSubtasks(task.id)
-      .then((data) => {
-        if (!cancelled) {
-          setSubtasks(data);
-          setLoading(false);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          message.error(err instanceof Error ? err.message : 'Không thể tải danh sách công việc con');
-          setLoading(false);
-        }
-      });
+    let active = true;
+    async function init() {
+      await Promise.resolve();
+      if (active) {
+        await fetchSubtasks();
+      }
+    }
+    void init();
     return () => {
-      cancelled = true;
+      active = false;
     };
-  }, [task.id]);
+  }, [fetchSubtasks]);
 
   const handleRealtimeSubtask = useCallback(
     (event: RealtimeEventData) => {
@@ -247,7 +271,10 @@ export function TaskSubtasksSection({
       await fetchSubtasks();
       onChanged?.();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Không thể thêm công việc con');
+      if (shouldIgnoreTaskApiError(err)) {
+        return;
+      }
+      message.error(getFriendlyErrorMessage(err, 'Không thể thêm công việc con'));
     } finally {
       setAdding(false);
     }
@@ -282,7 +309,12 @@ export function TaskSubtasksSection({
     } catch (err: unknown) {
       // Rollback on failure
       setSubtasks(previous);
-      message.error(err instanceof Error ? err.message : 'Không thể cập nhật trạng thái việc con');
+      if (shouldIgnoreTaskApiError(err)) {
+        return;
+      }
+      message.error(
+        getFriendlyErrorMessage(err, 'Không thể cập nhật trạng thái việc con'),
+      );
     }
   };
 
@@ -294,7 +326,10 @@ export function TaskSubtasksSection({
       await fetchSubtasks();
       onChanged?.();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Không thể xoá việc con');
+      if (shouldIgnoreTaskApiError(err)) {
+        return;
+      }
+      message.error(getFriendlyErrorMessage(err, 'Không thể xoá việc con'));
     }
   };
 
@@ -328,7 +363,12 @@ export function TaskSubtasksSection({
       await fetchSubtasks();
       onChanged?.();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Không thể cập nhật công việc con');
+      if (shouldIgnoreTaskApiError(err)) {
+        return;
+      }
+      message.error(
+        getFriendlyErrorMessage(err, 'Không thể cập nhật công việc con'),
+      );
     } finally {
       setUpdating(false);
     }
@@ -354,7 +394,10 @@ export function TaskSubtasksSection({
       onChanged?.();
     } catch (err: unknown) {
       setSubtasks(prev);
-      message.error(err instanceof Error ? err.message : 'Không thể sắp xếp công việc con');
+      if (shouldIgnoreTaskApiError(err)) {
+        return;
+      }
+      message.error(getFriendlyErrorMessage(err, 'Không thể sắp xếp công việc con'));
     }
   };
 
@@ -368,6 +411,8 @@ export function TaskSubtasksSection({
     );
     return isAssigned && Boolean(isAcceptedCollab);
   };
+
+  const renderPlan = resolveSectionRenderPlan(loading, loadError, subtasks.length);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -444,16 +489,26 @@ export function TaskSubtasksSection({
         </div>
       )}
 
-      {loading ? (
+      {renderPlan.showInlineError && (
+        <ApiErrorFallback
+          variant="inline"
+          error={loadError}
+          onRetry={() => void fetchSubtasks()}
+          retrying={loading}
+          showNavigation={false}
+        />
+      )}
+
+      {renderPlan.contentState === 'spinner' ? (
         <div style={{ textAlign: 'center', padding: 24 }}>
           <Spin />
         </div>
-      ) : subtasks.length === 0 ? (
+      ) : renderPlan.contentState === 'empty' ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description="Chưa có công việc con nào"
         />
-      ) : (
+      ) : renderPlan.contentState === 'list' ? (
         <List
           size="small"
           bordered
@@ -604,7 +659,7 @@ export function TaskSubtasksSection({
             );
           }}
         />
-      )}
+      ) : null}
 
       <Modal
         title="Chỉnh sửa công việc con"

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Button, Modal, Form, Input, message } from 'antd';
 import { RollbackOutlined } from '@ant-design/icons';
 import { returnTask } from '../api/tasks.api';
+import { getFriendlyErrorMessage } from '../../../shared/api';
+import { shouldIgnoreTaskApiError } from '../utils/task-error.utils';
 
 export interface TaskReturnActionProps {
   taskId: number;
@@ -43,8 +45,11 @@ export function TaskReturnAction({
       setModalOpen(false);
       await onReturned();
     } catch (error) {
+      if (shouldIgnoreTaskApiError(error)) {
+        return;
+      }
       message.error(
-        error instanceof Error ? error.message : 'Không thể trả lại công việc',
+        getFriendlyErrorMessage(error, 'Không thể trả lại công việc'),
       );
     } finally {
       setSubmitting(false);
