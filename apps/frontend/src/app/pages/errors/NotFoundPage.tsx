@@ -1,34 +1,55 @@
-import { Result, Button } from 'antd';
-import { useNavigate } from 'react-router-dom';
-import { HomeOutlined } from '@ant-design/icons';
+import { Tag, Typography } from 'antd';
+import { CompassOutlined } from '@ant-design/icons';
+import { useInRouterContext, useLocation } from 'react-router-dom';
+import { ErrorNavigationButtons, ErrorPageLayout } from './ErrorPageLayout';
+import { classifyRuntimeError } from './error-pages.utils.ts';
 
-export default function NotFoundPage() {
-  const navigate = useNavigate();
+const { Text } = Typography;
+
+function UnrecognizedPathBadge() {
+  const location = useLocation();
+  const fullPath = `${location.pathname}${location.search}`;
+
+  if (!location.pathname || location.pathname === '/404') {
+    return null;
+  }
 
   return (
-    <div
+    <Tag
+      icon={<CompassOutlined />}
+      color="default"
       style={{
-        minHeight: '70vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
+        maxWidth: '100%',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        padding: '4px 10px',
+        borderRadius: 999,
       }}
     >
-      <Result
-        status="404"
-        title="404"
-        subTitle="Xin lỗi, trang bạn đang tìm kiếm không tồn tại hoặc đã được di chuyển."
-        extra={
-          <Button
-            type="primary"
-            icon={<HomeOutlined />}
-            onClick={() => navigate('/dashboard')}
-          >
-            Về trang chủ
-          </Button>
-        }
-      />
-    </div>
+      Đường dẫn: <Text code>{fullPath}</Text>
+    </Tag>
+  );
+}
+
+export default function NotFoundPage() {
+  const inRouter = useInRouterContext();
+  const display = classifyRuntimeError({ status: 404 });
+
+  return (
+    <ErrorPageLayout
+      status={display.status}
+      title={display.title}
+      subTitle={display.subTitle}
+      badge={inRouter ? <UnrecognizedPathBadge /> : null}
+      extra={
+        <ErrorNavigationButtons
+          primaryAction="dashboard"
+          showDashboard
+          showTasks
+          showBack
+        />
+      }
+    />
   );
 }

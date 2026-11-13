@@ -1,65 +1,89 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
-import { Result, Button } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { Button, Space } from 'antd';
+import { HomeOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
+import { ErrorPageLayout, ErrorTechnicalDetails } from './ErrorPageLayout';
+import { classifyRuntimeError } from './error-pages.utils.ts';
 
-interface Props {
+export interface ErrorBoundaryProps {
   children: ReactNode;
+  onReset?: () => void;
+  fallbackTitle?: string;
+  fallbackSubTitle?: string;
 }
 
-interface State {
+interface ErrorBoundaryState {
   hasError: boolean;
-  error: Error | null;
+  error: unknown;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
-  public override state: State = {
+export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public override state: ErrorBoundaryState = {
     hasError: false,
     error: null,
   };
 
-  public static getDerivedStateFromError(error: Error): State {
+  public static getDerivedStateFromError(error: unknown): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  public override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  public override componentDidCatch(error: unknown, errorInfo: ErrorInfo) {
     console.error('[ErrorBoundary] Uncaught error:', error, errorInfo);
   }
+
+  public handleReset = () => {
+    this.setState({ hasError: false, error: null });
+    this.props.onReset?.();
+  };
 
   public handleReload = () => {
     window.location.reload();
   };
 
+  public handleGoDashboard = () => {
+    window.location.assign('/dashboard');
+  };
+
   public override render() {
     if (this.state.hasError) {
+      const display = classifyRuntimeError(this.state.error, {
+        fallbackTitle: this.props.fallbackTitle,
+        fallbackSubTitle: this.props.fallbackSubTitle,
+      });
+      const isChunkError = display.category === 'chunk';
+
       return (
-        <div
-          style={{
-            minHeight: '100vh',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 24,
-            backgroundColor: '#f5f7fa',
-          }}
-        >
-          <Result
-            status="500"
-            title="Đã có lỗi xảy ra"
-            subTitle={
-              this.state.error?.message ||
-              'Đã xảy ra sự cố không mong muốn trong quá trình kết xuất giao diện.'
-            }
-            extra={
+        <ErrorPageLayout
+          fullScreen
+          status={display.status}
+          category={display.category}
+          title={display.title}
+          subTitle={display.subTitle}
+          extra={
+            <Space wrap size="small" style={{ justifyContent: 'center' }}>
               <Button
-                type="primary"
+                type={isChunkError ? 'default' : 'primary'}
+                icon={<SyncOutlined />}
+                onClick={this.handleReset}
+              >
+                Thử lại
+              </Button>
+              <Button
+                type={isChunkError ? 'primary' : 'default'}
                 icon={<ReloadOutlined />}
                 onClick={this.handleReload}
               >
                 Tải lại ứng dụng
               </Button>
-            }
+              <Button icon={<HomeOutlined />} onClick={this.handleGoDashboard}>
+                Về Dashboard
+              </Button>
+            </Space>
+          }
+        >
+          <ErrorTechnicalDetails
+            detail={display.technicalDetail ?? 'Không có thông tin kỹ thuật bổ sung.'}
           />
-        </div>
+        </ErrorPageLayout>
       );
     }
 

@@ -1,34 +1,24 @@
-import { Result, Button } from 'antd';
-import { useNavigate } from 'react-router-dom';
-import { LoginOutlined } from '@ant-design/icons';
+import { ErrorNavigationButtons, ErrorPageLayout } from './ErrorPageLayout';
+import { classifyRuntimeError } from './error-pages.utils.ts';
 
 export default function UnauthorizedPage() {
-  const navigate = useNavigate();
+  const display = classifyRuntimeError({ status: 401 });
 
   return (
-    <div
-      style={{
-        minHeight: '70vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
-      }}
-    >
-      <Result
-        status="warning"
-        title="401 - Hết hạn phiên đăng nhập"
-        subTitle="Phiên đăng nhập của bạn đã hết hạn hoặc bạn chưa được xác thực. Vui lòng đăng nhập lại để tiếp tục."
-        extra={
-          <Button
-            type="primary"
-            icon={<LoginOutlined />}
-            onClick={() => navigate('/login')}
-          >
-            Đăng nhập lại
-          </Button>
-        }
-      />
-    </div>
+    <ErrorPageLayout
+      fullScreen
+      status={display.status}
+      category={display.category}
+      title={display.title}
+      subTitle={display.subTitle}
+      extra={
+        <ErrorNavigationButtons
+          primaryAction="login"
+          showLogin
+          showDashboard
+          dashboardLabel="Về trang chủ"
+        />
+      }
+    />
   );
 }
