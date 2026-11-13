@@ -120,23 +120,33 @@ export default function TasksPage({
           flexWrap: 'wrap',
           gap: 12,
           marginBottom: 16,
+          minWidth: 0,
         }}
       >
-        <Segmented<TaskViewMode>
-          value={viewMode}
-          onChange={(mode) => handleViewModeChange?.(mode)}
-          options={[
-            { value: 'both', label: 'Cả hai', icon: <AppstoreOutlined /> },
-            { value: 'kanban', label: 'Kanban', icon: <ProjectOutlined /> },
-            { value: 'table', label: 'Bảng', icon: <TableOutlined /> },
-            { value: 'calendar', label: 'Lịch', icon: <CalendarOutlined /> },
-            {
-              value: 'trash',
-              label: formatCountLabel('Thùng rác', trashCount),
-              icon: <DeleteOutlined />,
-            },
-          ]}
-        />
+        <div
+          style={{
+            minWidth: 0,
+            maxWidth: '100%',
+            overflowX: 'auto',
+            scrollbarWidth: 'thin',
+          }}
+        >
+          <Segmented<TaskViewMode>
+            value={viewMode}
+            onChange={(mode) => handleViewModeChange?.(mode)}
+            options={[
+              { value: 'both', label: 'Cả hai', icon: <AppstoreOutlined /> },
+              { value: 'kanban', label: 'Kanban', icon: <ProjectOutlined /> },
+              { value: 'table', label: 'Bảng', icon: <TableOutlined /> },
+              { value: 'calendar', label: 'Lịch', icon: <CalendarOutlined /> },
+              {
+                value: 'trash',
+                label: formatCountLabel('Thùng rác', trashCount),
+                icon: <DeleteOutlined />,
+              },
+            ]}
+          />
+        </div>
 
         {viewMode !== 'trash' && onCreate && (
           <Button
