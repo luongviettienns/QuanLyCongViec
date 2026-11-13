@@ -1,9 +1,28 @@
-import { getAuthHeaders, notifyUnauthorized } from './auth-session';
-import { parseApiError, UnauthorizedError } from './api-error';
+import { getAuthHeaders, notifyUnauthorized } from './auth-session.ts';
+import {
+  isAbortError,
+  NetworkError,
+  parseApiError,
+  UnauthorizedError,
+} from './api-error.ts';
 
 export interface HttpRequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
   defaultErrorMessage?: string;
+}
+
+export async function safeFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    if (isAbortError(error) || init?.signal?.aborted) {
+      throw error;
+    }
+    throw new NetworkError(undefined, { cause: error });
+  }
 }
 
 export async function handleApiResponse<T>(
@@ -49,11 +68,17 @@ export function apiUrl(path: string): string {
   return `${API_BASE_URL}${cleanPath}`;
 }
 
-async function executeRequest<T>(
-  url: string,
-  options: HttpRequestOptions = {},
-): Promise<T> {
-  const { body, defaultErrorMessage = 'Yêu cầu thất bại', headers: customHeaders, ...rest } = options;
+function buildRequestConfig(url: string, options: HttpRequestOptions = {}): {
+  resolvedUrl: string;
+  defaultErrorMessage: string;
+  init: RequestInit;
+} {
+  const {
+    body,
+    defaultErrorMessage = 'Yêu cầu thất bại',
+    headers: customHeaders,
+    ...rest
+  } = options;
 
   const authHeaders = getAuthHeaders();
   const headers: Record<string, string> = {
@@ -71,13 +96,23 @@ async function executeRequest<T>(
     }
   }
 
-  const resolvedUrl = apiUrl(url);
-  const response = await fetch(resolvedUrl, {
-    ...rest,
-    headers,
-    body: serializedBody,
-  });
+  return {
+    resolvedUrl: apiUrl(url),
+    defaultErrorMessage,
+    init: {
+      ...rest,
+      headers,
+      body: serializedBody,
+    },
+  };
+}
 
+async function executeRequest<T>(
+  url: string,
+  options: HttpRequestOptions = {},
+): Promise<T> {
+  const { resolvedUrl, defaultErrorMessage, init } = buildRequestConfig(url, options);
+  const response = await safeFetch(resolvedUrl, init);
   return handleApiResponse<T>(response, defaultErrorMessage);
 }
 
@@ -102,28 +137,9 @@ export const httpClient = {
     return executeRequest<T>(url, { ...options, method: 'DELETE' });
   },
 
-  void(url: string, options?: HttpRequestOptions): Promise<void> {
-    const { body, defaultErrorMessage = 'Yêu cầu thất bại', headers: customHeaders, ...rest } = options ?? {};
-    const authHeaders = getAuthHeaders();
-    const headers: Record<string, string> = {
-      ...authHeaders,
-      ...(customHeaders as Record<string, string>),
-    };
-
-    let serializedBody: BodyInit | undefined;
-    if (body !== undefined && body !== null) {
-      if (typeof body === 'string' || body instanceof FormData || body instanceof Blob) {
-        serializedBody = body as BodyInit;
-      } else {
-        headers['Content-Type'] = 'application/json';
-        serializedBody = JSON.stringify(body);
-      }
-    }
-
-    return fetch(apiUrl(url), {
-      ...rest,
-      headers,
-      body: serializedBody,
-    }).then((res) => handleVoidApiResponse(res, defaultErrorMessage));
+  async void(url: string, options?: HttpRequestOptions): Promise<void> {
+    const { resolvedUrl, defaultErrorMessage, init } = buildRequestConfig(url, options);
+    const response = await safeFetch(resolvedUrl, init);
+    return handleVoidApiResponse(response, defaultErrorMessage);
   },
 };
