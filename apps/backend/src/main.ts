@@ -1,6 +1,8 @@
 import dotenv from 'dotenv';
+import { access } from 'node:fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import type { NextFunction, Request, Response } from 'express';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ExpressAdapter, type NestExpressApplication } from '@nestjs/platform-express';
@@ -23,9 +25,29 @@ async function bootstrap() {
 
   app.set('trust proxy', 1);
 
+  const frontendDistDir = process.env.FRONTEND_DIST_DIR;
+  if (frontendDistDir) {
+    const root = path.resolve(frontendDistDir);
+    const indexFile = path.join(root, 'index.html');
+    await access(indexFile);
+
+    app.useStaticAssets(root);
+    const expressApp = app.getHttpAdapter().getInstance();
+    expressApp.get(
+      /^\/(?!api(?:\/|$)|health(?:\/|$)|assets(?:\/|$)).*$/i,
+      (request: Request, response: Response, next: NextFunction) => {
+        if (request.accepts('html')) {
+          response.sendFile(indexFile);
+          return;
+        }
+        next();
+      },
+    );
+  }
+
   const corsOrigins = process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
-    : true;
+    : !frontendDistDir;
   app.enableCors({ origin: corsOrigins, credentials: true });
 
   app.setGlobalPrefix('api', {
