@@ -38,12 +38,14 @@ lerna-debug.log*
 Thumbs.db
 
 # Documentation
-docs/
+docs/*
+!docs/DEPLOYMENT_GUIDE.md
 
 # Postman & YAML configs
 .postman/
 postman/
 *.yaml
+!render.yaml
 
 # Spreadsheets & Test cases
 *.xlsx

@@ -6,6 +6,7 @@ import type {
 import {
   getAuthHeaders,
   handleApiResponse,
+  safeFetch,
 } from '../../../shared/api';
 
 export async function getNotifications(
@@ -21,7 +22,7 @@ export async function getNotifications(
   const queryString = query.toString();
   const url = `/api/notifications${queryString ? `?${queryString}` : ''}`;
 
-  const response = await fetch(url, {
+  const response = await safeFetch(url, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -34,7 +35,7 @@ export async function getNotifications(
 }
 
 export async function getUnreadNotificationCount(signal?: AbortSignal): Promise<number> {
-  const response = await fetch('/api/notifications/unread-count', {
+  const response = await safeFetch('/api/notifications/unread-count', {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -51,7 +52,7 @@ export async function getUnreadNotificationCount(signal?: AbortSignal): Promise<
 }
 
 export async function markNotificationAsRead(id: number): Promise<Notification> {
-  const response = await fetch(`/api/notifications/${id}/read`, {
+  const response = await safeFetch(`/api/notifications/${id}/read`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -63,7 +64,7 @@ export async function markNotificationAsRead(id: number): Promise<Notification> 
 }
 
 export async function markAllNotificationsAsRead(): Promise<{ success: boolean; updatedCount: number }> {
-  const response = await fetch('/api/notifications/read-all', {
+  const response = await safeFetch('/api/notifications/read-all', {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -80,7 +81,7 @@ export async function markAllNotificationsAsRead(): Promise<{ success: boolean; 
 export async function markBulkNotificationsAsRead(
   ids: number[],
 ): Promise<{ success: boolean; updatedCount: number }> {
-  const response = await fetch('/api/notifications/read-bulk', {
+  const response = await safeFetch('/api/notifications/read-bulk', {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',

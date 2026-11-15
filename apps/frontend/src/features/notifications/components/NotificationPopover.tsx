@@ -134,44 +134,49 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
           >
             <Spin tip="Đang tải..." />
           </div>
-        ) : error && notifications.length === 0 ? (
-          <div style={{ padding: 16 }}>
-            <Alert
-              type="error"
-              showIcon
-              message="Không thể tải thông báo"
-              description={error}
-              action={
-                onRetry && (
-                  <Button size="small" danger onClick={onRetry}>
-                    Thử lại
-                  </Button>
-                )
-              }
-            />
-          </div>
-        ) : notifications.length === 0 ? (
-          <div style={{ padding: '40px 16px' }}>
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={
-                activeTab === 'unread'
-                  ? 'Bạn đã đọc tất cả thông báo!'
-                  : 'Chưa có thông báo nào'
-              }
-            />
-          </div>
         ) : (
           <div>
-            {notifications.map((item) => (
-              <NotificationItemView
-                key={item.id}
-                notification={item}
-                onClick={handleItemClick}
-              />
-            ))}
+            {notifications.length > 0 &&
+              notifications.map((item) => (
+                <NotificationItemView
+                  key={item.id}
+                  notification={item}
+                  onClick={handleItemClick}
+                />
+              ))}
 
-            {hasMore && (
+            {error && (
+              <div style={{ padding: notifications.length > 0 ? '8px 16px' : 16 }}>
+                <Alert
+                  type="error"
+                  showIcon
+                  message="Không thể tải thông báo"
+                  description={error}
+                  action={
+                    onRetry && (
+                      <Button size="small" danger onClick={onRetry}>
+                        Thử lại
+                      </Button>
+                    )
+                  }
+                />
+              </div>
+            )}
+
+            {!error && notifications.length === 0 && (
+              <div style={{ padding: '40px 16px' }}>
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={
+                    activeTab === 'unread'
+                      ? 'Bạn đã đọc tất cả thông báo!'
+                      : 'Chưa có thông báo nào'
+                  }
+                />
+              </div>
+            )}
+
+            {notifications.length > 0 && hasMore && (
               <div style={{ textAlign: 'center', padding: '12px 16px' }}>
                 <Button
                   type="text"

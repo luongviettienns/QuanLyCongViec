@@ -1,4 +1,5 @@
 import type { RealtimeEventData, RealtimeEventType } from '../types/realtime.types';
+import { apiUrl } from '../../../shared/api/http-client.ts';
 
 export type RealtimeConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting';
 
@@ -11,6 +12,7 @@ export interface EventSourceLike {
 }
 
 export interface RealtimeConnectionConfig {
+  url?: string;
   reconnectDelayMs?: number;
   getToken: () => string | null;
   isTokenExpired: () => boolean;
@@ -94,7 +96,7 @@ export function createRealtimeConnectionManager(config: RealtimeConnectionConfig
 
     setStatus(wasDisconnected ? 'reconnecting' : 'connecting');
 
-    const url = '/api/realtime/stream';
+    const url = config.url ?? apiUrl('/api/realtime/stream');
     const es = config.createEventSource(url, token);
     activeSource = es;
 

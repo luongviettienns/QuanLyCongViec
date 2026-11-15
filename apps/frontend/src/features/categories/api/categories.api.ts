@@ -4,7 +4,7 @@ import type {
   UpdateCategoryPayload,
   CategoryQueryParams,
 } from '../types/category.types';
-import { getAuthHeaders, handleApiResponse } from '../../../shared/api';
+import { getAuthHeaders, handleApiResponse, safeFetch } from '../../../shared/api';
 
 export async function getCategories(
   params?: CategoryQueryParams,
@@ -20,7 +20,7 @@ export async function getCategories(
   const queryString = query.toString();
   const url = queryString ? `/api/categories?${queryString}` : '/api/categories';
 
-  const response = await fetch(url, {
+  const response = await safeFetch(url, {
     headers: {
       ...getAuthHeaders(),
     },
@@ -31,7 +31,7 @@ export async function getCategories(
 }
 
 export async function createCategory(payload: CreateCategoryPayload): Promise<Category> {
-  const response = await fetch('/api/categories', {
+  const response = await safeFetch('/api/categories', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -47,7 +47,7 @@ export async function updateCategory(
   id: number,
   payload: UpdateCategoryPayload,
 ): Promise<Category> {
-  const response = await fetch(`/api/categories/${id}`, {
+  const response = await safeFetch(`/api/categories/${id}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -62,7 +62,7 @@ export async function updateCategory(
 export async function deleteCategory(
   id: number,
 ): Promise<{ success: boolean; message: string }> {
-  const response = await fetch(`/api/categories/${id}`, {
+  const response = await safeFetch(`/api/categories/${id}`, {
     method: 'DELETE',
     headers: {
       ...getAuthHeaders(),

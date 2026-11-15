@@ -13,6 +13,7 @@ import { NotificationEventService } from '../../notifications/services/notificat
 import { RealtimeService } from '../../realtime/realtime.service.js';
 import { TeamActivityService } from '../../team-activity/team-activity.service.js';
 import { type Task, Prisma, TeamActivityAction } from '@prisma/client';
+import { runSequentialTaskBatch, type BulkTaskResult } from './task-batch.utils.js';
 
 @Injectable()
 export class TaskTrashService {
@@ -273,5 +274,51 @@ export class TaskTrashService {
       success: true,
       message: `Đã xóa vĩnh viễn công việc #${deletedSnapshot.id} - "${deletedSnapshot.title}"`,
     };
+  }
+
+  async bulkRemove(taskIds: number[], userId: number): Promise<BulkTaskResult> {
+    return runSequentialTaskBatch(taskIds, (id) => this.remove(id, userId));
+  }
+
+  async bulkRestore(taskIds: number[], userId: number): Promise<BulkTaskResult> {
+    return runSequentialTaskBatch(taskIds, (id) => this.restore(id, userId));
+  }
+
+  async bulkPermanentDelete(taskIds: number[], userId: number): Promise<BulkTaskResult> {
+    return runSequentialTaskBatch(taskIds, (id) => this.permanentDelete(id, userId));
+  }
+
+  async emptyTrash(userId: number, teamId?: number): Promise<BulkTaskResult> {
+    if (teamId !== undefined) {
+      await this.queryService.buildTeamAccessWhere(userId, teamId);
+    }
+
+    const manageableTeamWhere: Prisma.TeamWhereInput = {
+      OR: [
+        { ownerId: userId },
+        { members: { some: { userId, role: 'ADMIN' } } },
+      ],
+    };
+
+    const trashTasks = await this.prisma.task.findMany({
+      where: {
+        deletedAt: { not: null },
+        ...(teamId !== undefined
+          ? { teamId, team: manageableTeamWhere }
+          : {
+              OR: [
+                { teamId: null, userId },
+                { team: manageableTeamWhere },
+              ],
+            }),
+      },
+      select: { id: true },
+      orderBy: [{ deletedAt: 'desc' }, { id: 'asc' }],
+    });
+
+    return runSequentialTaskBatch(
+      trashTasks.map((t) => t.id),
+      (id) => this.permanentDelete(id, userId),
+    );
   }
 }

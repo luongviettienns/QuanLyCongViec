@@ -12,39 +12,41 @@ import {
 } from 'antd';
 import { useResponsive } from '../../shared/hooks';
 import {
+  CalendarOutlined,
   CheckSquareOutlined,
   DashboardOutlined,
   ReloadOutlined,
-  PlusOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   LogoutOutlined,
   LoginOutlined,
   TagsOutlined,
   TeamOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../features/auth/hooks/useAuth';
+import AccountSettingsModal from '../../features/auth/components/AccountSettingsModal';
 import { NotificationBell, type NotificationDestination } from '../../features/notifications';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
+export type AppNavKey = 'dashboard' | 'tasks' | 'calendar' | 'teams' | 'categories';
+
 interface AppLayoutProps {
   children: ReactNode;
   onReload: () => void;
-  onCreateTask: () => void;
   onOpenCategories?: () => void;
   onOpenAuth?: () => void;
   loading?: boolean;
-  currentNav?: 'dashboard' | 'tasks' | 'teams' | 'categories';
-  onNavChange?: (key: 'dashboard' | 'tasks' | 'teams' | 'categories') => void;
+  currentNav?: AppNavKey;
+  onNavChange?: (key: AppNavKey) => void;
   onNavigateNotification?: (dest: NotificationDestination) => void;
 }
 
 export default function AppLayout({
   children,
   onReload,
-  onCreateTask,
   onOpenAuth,
   loading = false,
   currentNav = 'tasks',
@@ -53,6 +55,7 @@ export default function AppLayout({
 }: AppLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [accountModalOpen, setAccountModalOpen] = useState(false);
   const screens = useResponsive();
   const isMobile = !screens.md;
   const { user, logout } = useAuth();
@@ -67,6 +70,11 @@ export default function AppLayout({
       key: 'tasks',
       icon: <CheckSquareOutlined />,
       label: 'Công việc',
+    },
+    {
+      key: 'calendar',
+      icon: <CalendarOutlined />,
+      label: 'Lịch',
     },
     {
       key: 'teams',
@@ -93,6 +101,14 @@ export default function AppLayout({
     },
     {
       type: 'divider',
+    },
+    {
+      key: 'account-settings',
+      icon: <SettingOutlined />,
+      label: 'Tài khoản & Mật khẩu',
+      onClick: () => {
+        setAccountModalOpen(true);
+      },
     },
     {
       key: 'logout',
@@ -151,7 +167,13 @@ export default function AppLayout({
             if (isMobile) {
               setDrawerOpen(false);
             }
-            if (key === 'dashboard' || key === 'tasks' || key === 'teams' || key === 'categories') {
+            if (
+              key === 'dashboard' ||
+              key === 'tasks' ||
+              key === 'calendar' ||
+              key === 'teams' ||
+              key === 'categories'
+            ) {
               onNavChange?.(key);
             }
           }}
@@ -206,7 +228,7 @@ export default function AppLayout({
         </Drawer>
       )}
 
-      <Layout>
+      <Layout style={{ minWidth: 0 }}>
         <Header
           style={{
             height: 64,
@@ -250,7 +272,9 @@ export default function AppLayout({
                     ? 'Nhóm làm việc'
                     : currentNav === 'dashboard'
                       ? 'Tổng quan hệ thống'
-                      : 'Không gian làm việc'}
+                      : currentNav === 'calendar'
+                        ? 'Lịch công việc'
+                        : 'Không gian làm việc'}
               </span>
             )}
           </Space>
@@ -264,17 +288,6 @@ export default function AppLayout({
             >
               {screens.sm ? 'Tải lại' : undefined}
             </Button>
-
-            {currentNav === 'tasks' && (
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={onCreateTask}
-                aria-label="Thêm công việc"
-              >
-                {screens.sm ? 'Thêm công việc' : undefined}
-              </Button>
-            )}
 
             {user ? (
               <>
@@ -324,31 +337,17 @@ export default function AppLayout({
             background: '#f5f7fa',
             padding: screens.md ? 24 : '16px 12px',
             minHeight: 'calc(100vh - 64px)',
+            minWidth: 0,
           }}
         >
-          <div style={{ maxWidth: 1200, margin: '0 auto' }}>{children}</div>
+          <div style={{ maxWidth: 1200, minWidth: 0, margin: '0 auto' }}>{children}</div>
         </Content>
       </Layout>
 
-      {isMobile && currentNav === 'tasks' && (
-        <Button
-          type="primary"
-          shape="circle"
-          icon={<PlusOutlined style={{ fontSize: 20 }} />}
-          onClick={onCreateTask}
-          style={{
-            position: 'fixed',
-            bottom: 24,
-            right: 20,
-            width: 52,
-            height: 52,
-            boxShadow: '0 4px 16px rgba(22, 119, 255, 0.45)',
-            zIndex: 999,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          aria-label="Thêm công việc"
+      {user && (
+        <AccountSettingsModal
+          open={accountModalOpen}
+          onClose={() => setAccountModalOpen(false)}
         />
       )}
     </Layout>

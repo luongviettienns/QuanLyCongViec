@@ -10,7 +10,6 @@ import {
   Pagination,
   Card,
   Tooltip,
-  Alert,
 } from 'antd';
 import {
   ReloadOutlined,
@@ -31,6 +30,8 @@ import {
   shouldRefreshTeamActivityOnEvent,
   createDebouncedCallback,
 } from '../utils/team-realtime.utils';
+import { isAbortError, isUnauthorizedError } from '../../../shared/api';
+import { ApiErrorFallback } from '../../../app/pages/errors';
 
 const { Text } = Typography;
 
@@ -49,7 +50,7 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
   const [selectedAction, setSelectedAction] = useState<TeamActivityAction | undefined>(undefined);
   const [selectedActorId, setSelectedActorId] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [backendActors, setBackendActors] = useState<TeamActivityActor[]>([]);
 
@@ -79,7 +80,6 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
     async (currentPage: number, action?: string, actorId?: number, signal?: AbortSignal) => {
       try {
         setLoading(true);
-        setError(null);
         const res = await getTeamActivityLogs(
           teamId,
           {
@@ -90,14 +90,16 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
           },
           signal,
         );
+        if (signal?.aborted) return;
         setLogs(res.data || []);
         setTotal(res.total || 0);
+        setError(null);
         if (res.actors) {
           setBackendActors(res.actors);
         }
       } catch (err: unknown) {
-        if (signal?.aborted) return;
-        setError(err instanceof Error ? err.message : 'Không thể tải lịch sử hoạt động');
+        if (signal?.aborted || isAbortError(err) || isUnauthorizedError(err)) return;
+        setError(err);
         setLogs([]);
         setTotal(0);
       } finally {
@@ -158,16 +160,19 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
   });
 
   const handleActionChange = (value?: TeamActivityAction) => {
+    setError(null);
     setSelectedAction(value);
     setPage(1);
   };
 
   const handleActorChange = (value?: number) => {
+    setError(null);
     setSelectedActorId(value);
     setPage(1);
   };
 
   const handleResetFilters = () => {
+    setError(null);
     setSelectedAction(undefined);
     setSelectedActorId(undefined);
     setPage(1);
@@ -275,24 +280,16 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
         </Space>
       </Card>
 
-      {/* Error Alert */}
-      {error && (
-        <Alert
-          type="error"
-          message="Lỗi khi tải lịch sử hoạt động"
-          description={error}
-          action={
-            <Button size="small" type="primary" onClick={() => setReloadKey((k) => k + 1)}>
-              Thử lại
-            </Button>
-          }
-          showIcon
-          style={{ marginBottom: 16 }}
-        />
-      )}
-
       {/* Main Content */}
-      {loading ? (
+      {Boolean(error) && logs.length === 0 ? (
+        <ApiErrorFallback
+          variant="inline"
+          error={error}
+          onRetry={() => setReloadKey((k) => k + 1)}
+          retrying={loading}
+          showNavigation={false}
+        />
+      ) : loading ? (
         <div style={{ textAlign: 'center', padding: '40px 0' }}>
           <Spin />
         </div>
@@ -313,6 +310,17 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
         </Empty>
       ) : (
         <>
+          {Boolean(error) && (
+            <div style={{ marginBottom: 16 }}>
+              <ApiErrorFallback
+                variant="inline"
+                error={error}
+                onRetry={() => setReloadKey((k) => k + 1)}
+                retrying={loading}
+                showNavigation={false}
+              />
+            </div>
+          )}
           <List
             itemLayout="horizontal"
             dataSource={logs}

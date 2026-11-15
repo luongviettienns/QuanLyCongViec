@@ -1,13 +1,32 @@
-import { useCallback } from 'react';
+import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { message } from 'antd';
-import { deleteTask, restoreTask, permanentDeleteTask } from '../api/tasks.api';
-import { UnauthorizedError } from '../../../shared/api';
+import {
+  deleteTask,
+  restoreTask,
+  permanentDeleteTask,
+  bulkDeleteTasks,
+  bulkUpdateTaskStatus,
+  bulkRestoreTasks,
+  bulkPermanentDeleteTasks,
+  emptyTaskTrash,
+  updateTaskContent,
+} from '../api/tasks.api';
+import type { BulkTaskResult, Task, TaskStatus } from '../types/task.types';
+import type { Team } from '../../teams/types/team.types';
+import type { User } from '../../auth/types/auth.types';
+import { getFriendlyErrorMessage } from '../../../shared/api';
+import { shouldIgnoreTaskApiError } from '../utils/task-error.utils';
+import {
+  canDragCalendarTask,
+  computeShiftedTaskDates,
+  toDateKey,
+} from '../utils/calendar-date.utils';
 
 export function useTaskMutations(isAuthenticated: boolean) {
   const handleDeleteTask = useCallback(
-    async (id: number, onSuccess?: () => Promise<void> | void) => {
+    async (id: number, onSuccess?: () => Promise<void> | void): Promise<boolean> => {
       if (!isAuthenticated) {
-        return;
+        return false;
       }
       try {
         await deleteTask(id);
@@ -15,16 +34,13 @@ export function useTaskMutations(isAuthenticated: boolean) {
         if (onSuccess) {
           await onSuccess();
         }
+        return true;
       } catch (error) {
-        if (
-          error instanceof UnauthorizedError ||
-          (error instanceof Error && error.name === 'UnauthorizedError')
-        ) {
-          return;
+        if (shouldIgnoreTaskApiError(error)) {
+          return false;
         }
-        message.error(
-          error instanceof Error ? error.message : 'Xoá công việc thất bại',
-        );
+        message.error(getFriendlyErrorMessage(error, 'Xoá công việc thất bại'));
+        return false;
       }
     },
     [isAuthenticated],
@@ -42,15 +58,10 @@ export function useTaskMutations(isAuthenticated: boolean) {
           await onSuccess();
         }
       } catch (error) {
-        if (
-          error instanceof UnauthorizedError ||
-          (error instanceof Error && error.name === 'UnauthorizedError')
-        ) {
+        if (shouldIgnoreTaskApiError(error)) {
           return;
         }
-        message.error(
-          error instanceof Error ? error.message : 'Khôi phục công việc thất bại',
-        );
+        message.error(getFriendlyErrorMessage(error, 'Khôi phục công việc thất bại'));
       }
     },
     [isAuthenticated],
@@ -68,15 +79,197 @@ export function useTaskMutations(isAuthenticated: boolean) {
           await onSuccess();
         }
       } catch (error) {
-        if (
-          error instanceof UnauthorizedError ||
-          (error instanceof Error && error.name === 'UnauthorizedError')
-        ) {
+        if (shouldIgnoreTaskApiError(error)) {
           return;
         }
         message.error(
-          error instanceof Error ? error.message : 'Xoá vĩnh viễn công việc thất bại',
+          getFriendlyErrorMessage(error, 'Xoá vĩnh viễn công việc thất bại'),
         );
+      }
+    },
+    [isAuthenticated],
+  );
+
+  const runBulkTaskMutation = useCallback(
+    async (
+      action: () => Promise<BulkTaskResult>,
+      options: {
+        verb: string;
+        emptyMessage?: string;
+        fallbackError: string;
+        onSuccess?: () => Promise<void> | void;
+      },
+    ): Promise<BulkTaskResult | null> => {
+      if (!isAuthenticated) {
+        return null;
+      }
+      try {
+        const result = await action();
+        if (result.succeededIds.length > 0) {
+          message.success(`Đã ${options.verb} ${result.succeededIds.length} công việc`);
+        } else if (result.failed.length === 0 && options.emptyMessage) {
+          message.info(options.emptyMessage);
+        }
+        if (result.failed.length > 0) {
+          message.warning(
+            `${result.failed.length} công việc không thể ${options.verb}: ${result.failed[0]?.reason ?? 'Không đủ quyền hoặc dữ liệu không hợp lệ'}`,
+          );
+        }
+        if (options.onSuccess) {
+          await options.onSuccess();
+        }
+        return result;
+      } catch (error) {
+        if (shouldIgnoreTaskApiError(error)) {
+          return null;
+        }
+        message.error(getFriendlyErrorMessage(error, options.fallbackError));
+        return null;
+      }
+    },
+    [isAuthenticated],
+  );
+
+  const handleBulkDeleteTasks = useCallback(
+    (taskIds: number[], onSuccess?: () => Promise<void> | void) =>
+      runBulkTaskMutation(() => bulkDeleteTasks(taskIds), {
+        verb: 'xoá',
+        fallbackError: 'Xoá hàng loạt thất bại',
+        onSuccess,
+      }),
+    [runBulkTaskMutation],
+  );
+
+  const handleBulkUpdateTaskStatus = useCallback(
+    (taskIds: number[], status: TaskStatus, onSuccess?: () => Promise<void> | void) =>
+      runBulkTaskMutation(() => bulkUpdateTaskStatus(taskIds, status), {
+        verb: 'cập nhật trạng thái',
+        fallbackError: 'Cập nhật trạng thái hàng loạt thất bại',
+        onSuccess,
+      }),
+    [runBulkTaskMutation],
+  );
+
+  const handleBulkRestoreTasks = useCallback(
+    (taskIds: number[], onSuccess?: () => Promise<void> | void) =>
+      runBulkTaskMutation(() => bulkRestoreTasks(taskIds), {
+        verb: 'khôi phục',
+        fallbackError: 'Khôi phục hàng loạt thất bại',
+        onSuccess,
+      }),
+    [runBulkTaskMutation],
+  );
+
+  const handleBulkPermanentDeleteTasks = useCallback(
+    (taskIds: number[], onSuccess?: () => Promise<void> | void) =>
+      runBulkTaskMutation(() => bulkPermanentDeleteTasks(taskIds), {
+        verb: 'xoá vĩnh viễn',
+        fallbackError: 'Xoá vĩnh viễn hàng loạt thất bại',
+        onSuccess,
+      }),
+    [runBulkTaskMutation],
+  );
+
+  const handleEmptyTrash = useCallback(
+    (teamId?: number, onSuccess?: () => Promise<void> | void) =>
+      runBulkTaskMutation(() => emptyTaskTrash(teamId), {
+        verb: 'xoá vĩnh viễn',
+        emptyMessage: 'Không có công việc nào trong thùng rác thuộc quyền dọn dẹp',
+        fallbackError: 'Dọn sạch thùng rác thất bại',
+        onSuccess,
+      }),
+    [runBulkTaskMutation],
+  );
+
+  const handleUpdateTaskDate = useCallback(
+    async (
+      task: Task,
+      targetDateKey: string,
+      options: {
+        user?: User | null;
+        teams?: Team[];
+        setTasks: Dispatch<SetStateAction<Task[]>>;
+        onSuccess?: () => Promise<void> | void;
+      },
+    ): Promise<boolean> => {
+      if (!isAuthenticated) {
+        return false;
+      }
+      if (!canDragCalendarTask(options.user, task, options.teams)) {
+        message.warning(
+          task.status === 'DONE'
+            ? 'Không thể thay đổi ngày của công việc đã hoàn thành.'
+            : 'Bạn không có quyền thay đổi ngày của công việc này.',
+        );
+        return false;
+      }
+
+      let nextDates: { startDate: string | null; dueDate: string | null };
+      try {
+        nextDates = computeShiftedTaskDates(task, targetDateKey);
+      } catch {
+        message.error('Ngày mục tiêu không hợp lệ.');
+        return false;
+      }
+
+      const currentStartKey = toDateKey(task.startDate);
+      const currentDueKey = toDateKey(task.dueDate);
+      if (
+        nextDates.startDate === currentStartKey &&
+        nextDates.dueDate === currentDueKey
+      ) {
+        return true;
+      }
+
+      const previousStartDate = task.startDate ?? null;
+      const previousDueDate = task.dueDate ?? null;
+
+      options.setTasks((prev) =>
+        prev.map((item) =>
+          item.id === task.id
+            ? {
+                ...item,
+                startDate: nextDates.startDate,
+                dueDate: nextDates.dueDate,
+              }
+            : item,
+        ),
+      );
+
+      try {
+        const updated = await updateTaskContent(task.id, {
+          startDate: nextDates.startDate,
+          dueDate: nextDates.dueDate,
+        });
+        options.setTasks((prev) =>
+          prev.map((item) =>
+            item.id === task.id ? { ...item, ...updated } : item,
+          ),
+        );
+        message.success('Đã cập nhật ngày công việc');
+        if (options.onSuccess) {
+          await options.onSuccess();
+        }
+        return true;
+      } catch (error) {
+        options.setTasks((prev) =>
+          prev.map((item) =>
+            item.id === task.id
+              ? {
+                  ...item,
+                  startDate: previousStartDate,
+                  dueDate: previousDueDate,
+                }
+              : item,
+          ),
+        );
+        if (shouldIgnoreTaskApiError(error)) {
+          return false;
+        }
+        message.error(
+          getFriendlyErrorMessage(error, 'Không thể cập nhật ngày công việc'),
+        );
+        return false;
       }
     },
     [isAuthenticated],
@@ -86,5 +279,11 @@ export function useTaskMutations(isAuthenticated: boolean) {
     handleDeleteTask,
     handleRestoreTask,
     handlePermanentDeleteTask,
+    handleBulkDeleteTasks,
+    handleBulkUpdateTaskStatus,
+    handleBulkRestoreTasks,
+    handleBulkPermanentDeleteTasks,
+    handleEmptyTrash,
+    handleUpdateTaskDate,
   };
 }

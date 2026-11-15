@@ -1,10 +1,11 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { message } from 'antd';
-import type { Task, TaskStatus } from '../types/task.types';
+import type { Task, TaskStatus, TeamFilterValue } from '../types/task.types';
 import type { Team } from '../../teams/types/team.types';
 import type { User } from '../../auth/types/auth.types';
 import { updateTaskStatus, reorderTasks } from '../api/tasks.api';
-import { UnauthorizedError } from '../../../shared/api';
+import { getFriendlyErrorMessage } from '../../../shared/api';
+import { shouldIgnoreTaskApiError } from '../utils/task-error.utils';
 import { canTransitionTask, canReorderTask } from '../utils/task-permission.utils';
 
 export function useTaskBoard(
@@ -91,14 +92,11 @@ export function useTaskBoard(
         message.success('Cập nhật trạng thái thành công');
       } catch (error) {
         setTasks(previousTasks);
-        if (
-          error instanceof UnauthorizedError ||
-          (error instanceof Error && error.name === 'UnauthorizedError')
-        ) {
+        if (shouldIgnoreTaskApiError(error)) {
           return;
         }
         message.error(
-          error instanceof Error ? error.message : 'Không thể cập nhật trạng thái',
+          getFriendlyErrorMessage(error, 'Không thể cập nhật trạng thái'),
         );
       }
     },
@@ -106,7 +104,7 @@ export function useTaskBoard(
   );
 
   const handleReorder = useCallback(
-    async (taskIds: number[], status?: TaskStatus, teamFilter?: number | 'ALL') => {
+    async (taskIds: number[], status?: TaskStatus, teamFilter?: TeamFilterValue) => {
       if (!isAuthenticated) {
         return;
       }
@@ -143,19 +141,16 @@ export function useTaskBoard(
         await reorderTasks(
           taskIds,
           status,
-          teamFilter !== 'ALL' && teamFilter !== undefined ? teamFilter : undefined,
+          typeof teamFilter === 'number' ? teamFilter : undefined,
         );
         onSynced?.();
       } catch (error) {
         setTasks(previousTasks);
-        if (
-          error instanceof UnauthorizedError ||
-          (error instanceof Error && error.name === 'UnauthorizedError')
-        ) {
+        if (shouldIgnoreTaskApiError(error)) {
           return;
         }
         message.error(
-          error instanceof Error ? error.message : 'Không thể lưu vị trí công việc',
+          getFriendlyErrorMessage(error, 'Không thể lưu vị trí công việc'),
         );
       }
     },

@@ -1,5 +1,5 @@
-import { IsOptional, IsString, MaxLength, IsEnum, IsIn, IsInt, Min } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsOptional, IsString, MaxLength, IsEnum, IsIn, IsInt, Min, IsBoolean } from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskStatus, TaskPriority } from '@prisma/client';
 
@@ -82,6 +82,19 @@ export class FilterTasksDto {
   @IsInt({ message: 'Mã nhóm lọc phải là số nguyên' })
   @Min(1, { message: 'Mã nhóm lọc phải là số nguyên dương' })
   teamId?: number;
+
+  @ApiPropertyOptional({
+    description: 'Chỉ lọc công việc cá nhân (không thuộc nhóm nào)',
+    example: true,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => {
+    if (value === true || value === 'true') return true;
+    if (value === false || value === 'false') return false;
+    return value;
+  })
+  @IsBoolean({ message: 'personalOnly phải là giá trị boolean' })
+  personalOnly?: boolean;
 
   @ApiPropertyOptional({
     description: 'Mã người được phân công cần lọc (ID)',

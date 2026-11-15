@@ -27,6 +27,7 @@ import {
   type Category,
   type CreateCategoryPayload,
 } from '../types/category.types';
+import { ApiErrorFallback } from '../../../app/pages/errors';
 
 const { Text } = Typography;
 
@@ -44,6 +45,8 @@ export default function CategoryManagerModal({
   const {
     categories,
     loading,
+    error,
+    fetchCategories,
     handleCreate,
     handleUpdate,
     handleDelete,
@@ -232,16 +235,40 @@ export default function CategoryManagerModal({
           </Form>
         </Card>
 
-        <Table
-          columns={columns}
-          dataSource={categories}
-          rowKey="id"
-          size="small"
-          pagination={false}
-          loading={loading}
-          locale={{ emptyText: 'Chưa có danh mục nào' }}
-          scroll={{ y: 320 }}
-        />
+        {Boolean(error) && categories.length === 0 ? (
+          <ApiErrorFallback
+            variant="inline"
+            error={error}
+            onRetry={() => void fetchCategories()}
+            retrying={loading}
+            showNavigation={false}
+          />
+        ) : (
+          <>
+            {Boolean(error) && categories.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <ApiErrorFallback
+                  variant="inline"
+                  error={error}
+                  onRetry={() => void fetchCategories()}
+                  retrying={loading}
+                  showNavigation={false}
+                />
+              </div>
+            )}
+
+            <Table
+              columns={columns}
+              dataSource={categories}
+              rowKey="id"
+              size="small"
+              pagination={false}
+              loading={loading}
+              locale={{ emptyText: 'Chưa có danh mục nào' }}
+              scroll={{ y: 320 }}
+            />
+          </>
+        )}
       </Modal>
 
       <Modal

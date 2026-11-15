@@ -4,6 +4,13 @@ import type { Task } from '../../features/tasks/types/task.types';
 import type { NotificationDestination } from '../../features/notifications';
 import { getTaskById } from '../../features/tasks/api/tasks.api';
 import { useRealtimeReconnect } from '../../features/realtime';
+import {
+  isAbortError,
+  isUnauthorizedError,
+  isForbiddenError,
+  isNotFoundError,
+  getFriendlyErrorMessage,
+} from '../../shared/api';
 
 export type TaskModalTab = 'info' | 'collaborators' | 'subtasks';
 
@@ -13,6 +20,7 @@ export interface TaskModalState {
   defaultTab?: TaskModalTab;
   initialTab?: TaskModalTab;
   defaultTeamId?: number | null;
+  defaultDate?: string | null;
   highlightSubtaskId?: number | null;
 }
 
@@ -31,6 +39,7 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
     defaultTab: 'info',
     initialTab: 'info',
     defaultTeamId: null,
+    defaultDate: null,
     highlightSubtaskId: null,
   });
 
@@ -65,12 +74,13 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
       defaultTab: 'info',
       initialTab: 'info',
       defaultTeamId: null,
+      defaultDate: null,
       highlightSubtaskId: null,
     });
   }, []);
 
   const openCreateModal = useCallback(
-    (defaultTeamId?: number | null) => {
+    (defaultTeamId?: number | null, defaultDate?: string | null) => {
       ensureMetadataLoaded?.();
       modalTaskIdRef.current = null;
       setModalTaskOverride(null);
@@ -80,6 +90,7 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
         defaultTab: 'info',
         initialTab: 'info',
         defaultTeamId: defaultTeamId ?? null,
+        defaultDate: defaultDate ?? null,
         highlightSubtaskId: null,
       });
     },
@@ -97,6 +108,7 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
         defaultTab,
         initialTab: defaultTab,
         defaultTeamId: task.teamId ?? null,
+        defaultDate: null,
         highlightSubtaskId: null,
       });
     },
@@ -134,19 +146,10 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
         if (modalTaskIdRef.current !== openTaskId) {
           return;
         }
-        if (
-          err instanceof Error &&
-          (err.name === 'AbortError' || err.name === 'UnauthorizedError')
-        ) {
+        if (isAbortError(err) || isUnauthorizedError(err)) {
           return;
         }
-        const status = (err as { status?: number })?.status;
-        const msg = err instanceof Error ? err.message : '';
-        if (
-          status === 403 ||
-          status === 404 ||
-          /không tìm thấy|không tồn tại|không có quyền|not found|forbidden/i.test(msg)
-        ) {
+        if (isForbiddenError(err) || isNotFoundError(err)) {
           modalTaskIdRef.current = null;
           setModalTaskOverride(null);
           setModalState({
@@ -158,10 +161,18 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
             highlightSubtaskId: null,
           });
           message.warning(
-            msg || 'Công việc không còn tồn tại hoặc bạn không còn quyền truy cập.',
+            getFriendlyErrorMessage(
+              err,
+              'Công việc không còn tồn tại hoặc bạn không còn quyền truy cập.',
+            ),
           );
           void onRefetch?.();
+          return;
         }
+        void message.error({
+          content: getFriendlyErrorMessage(err, 'Không thể làm mới thông tin công việc'),
+          key: `task-modal-refresh-error-${openTaskId}`,
+        });
       }
     },
     [onRefetch],
@@ -185,16 +196,14 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
           highlightSubtaskId: dest.subtaskId ?? null,
         });
       } catch (err: unknown) {
-        if (
-          err instanceof Error &&
-          (err.name === 'AbortError' || err.name === 'UnauthorizedError')
-        ) {
+        if (isAbortError(err) || isUnauthorizedError(err)) {
           return;
         }
         message.error(
-          err instanceof Error
-            ? err.message
-            : 'Công việc không còn tồn tại hoặc bạn không có quyền truy cập.',
+          getFriendlyErrorMessage(
+            err,
+            'Công việc không còn tồn tại hoặc bạn không còn quyền truy cập.',
+          ),
         );
       }
     },

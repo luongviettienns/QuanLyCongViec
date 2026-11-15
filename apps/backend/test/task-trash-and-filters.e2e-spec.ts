@@ -350,4 +350,118 @@ describe('Task Trash, Permanent Delete & Advanced Filters (E2E)', () => {
       .expect(200);
     expect(pendingRes.body.map((t: { id: number }) => t.id)).toEqual([soonRes.body.id]);
   });
+
+  it('GET /api/tasks?personalOnly=true returns only personal tasks (teamId === null) and excludes team tasks', async () => {
+    const personalRes = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ title: `Personal Active ${runId}` })
+      .expect(201);
+
+    const teamTaskRes = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ title: `Team Active ${runId}`, teamId })
+      .expect(201);
+
+    const outsiderPersonalRes = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${outsiderToken}`)
+      .send({ title: `Outsider Personal ${runId}` })
+      .expect(201);
+
+    const personalOnlyList = await request(app.getHttpServer())
+      .get('/api/tasks?personalOnly=true')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+
+    const personalTasks = personalOnlyList.body as Array<{ id: number; teamId: number | null }>;
+    const personalIds = personalTasks.map((t) => t.id);
+    expect(personalIds).toContain(personalRes.body.id);
+    expect(personalIds).not.toContain(teamTaskRes.body.id);
+    expect(personalIds).not.toContain(outsiderPersonalRes.body.id);
+    expect(personalTasks.every((t) => t.teamId === null)).toBe(true);
+
+    const allList = await request(app.getHttpServer())
+      .get('/api/tasks?personalOnly=false')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    const allIds = (allList.body as Array<{ id: number }>).map((t) => t.id);
+    expect(allIds).toContain(personalRes.body.id);
+    expect(allIds).toContain(teamTaskRes.body.id);
+
+    await request(app.getHttpServer())
+      .get('/api/tasks?personalOnly=invalid')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(400);
+  });
+
+  it('GET /api/tasks/trash?personalOnly=true returns only soft-deleted personal tasks (teamId === null)', async () => {
+    const personalTaskRes = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ title: `Personal Trash ${runId}` })
+      .expect(201);
+
+    const teamTaskRes = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ title: `Team Trash ${runId}`, teamId })
+      .expect(201);
+
+    const outsiderTaskRes = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${outsiderToken}`)
+      .send({ title: `Outsider Trash ${runId}` })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .delete(`/api/tasks/${personalTaskRes.body.id}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .delete(`/api/tasks/${teamTaskRes.body.id}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .delete(`/api/tasks/${outsiderTaskRes.body.id}`)
+      .set('Authorization', `Bearer ${outsiderToken}`)
+      .expect(200);
+
+    const personalTrashRes = await request(app.getHttpServer())
+      .get('/api/tasks/trash?personalOnly=true')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+
+    const personalTrash = personalTrashRes.body as Array<{ id: number; teamId: number | null }>;
+    const personalTrashIds = personalTrash.map((t) => t.id);
+    expect(personalTrashIds).toContain(personalTaskRes.body.id);
+    expect(personalTrashIds).not.toContain(teamTaskRes.body.id);
+    expect(personalTrashIds).not.toContain(outsiderTaskRes.body.id);
+    expect(personalTrash.every((t) => t.teamId === null)).toBe(true);
+
+    const fullTrashRes = await request(app.getHttpServer())
+      .get('/api/tasks/trash')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    const fullTrashIds = (fullTrashRes.body as Array<{ id: number }>).map((t) => t.id);
+    expect(fullTrashIds).toContain(personalTaskRes.body.id);
+    expect(fullTrashIds).toContain(teamTaskRes.body.id);
+  });
+
+  it('rejects combining teamId and personalOnly=true with 400 BadRequestException', async () => {
+    const tasksRes = await request(app.getHttpServer())
+      .get(`/api/tasks?teamId=${teamId}&personalOnly=true`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(400);
+    expect(tasksRes.body.message).toContain('Không thể đồng thời lọc theo nhóm và chỉ công việc cá nhân');
+
+    const trashRes = await request(app.getHttpServer())
+      .get(`/api/tasks/trash?teamId=${teamId}&personalOnly=true`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(400);
+    expect(trashRes.body.message).toContain('Không thể đồng thời lọc theo nhóm và chỉ công việc cá nhân');
+  });
 });

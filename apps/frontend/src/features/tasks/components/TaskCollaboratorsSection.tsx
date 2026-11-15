@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   List,
   Button,
@@ -26,6 +26,12 @@ import type { Team } from '../../teams/types/team.types';
 import type { User } from '../../auth/types/auth.types';
 import { useRealtimeEvent, useRealtimeReconnect } from '../../realtime';
 import type { RealtimeEventData } from '../../realtime/types/realtime.types';
+import { ApiErrorFallback } from '../../../app/pages/errors';
+import { getFriendlyErrorMessage } from '../../../shared/api';
+import {
+  resolveSectionRenderPlan,
+  shouldIgnoreTaskApiError,
+} from '../utils/task-error.utils';
 import {
   getCollaborators,
   inviteCollaborator,
@@ -52,40 +58,57 @@ export function TaskCollaboratorsSection({
 }: TaskCollaboratorsSectionProps) {
   const [collaborators, setCollaborators] = useState<TaskCollaborator[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [inviting, setInviting] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<number | undefined>(undefined);
+  const fetchSeqRef = useRef(0);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const fetchCollaborators = useCallback(async () => {
+    const requestSeq = ++fetchSeqRef.current;
     try {
       setLoading(true);
       const data = await getCollaborators(task.id);
+      if (!isMountedRef.current || fetchSeqRef.current !== requestSeq) {
+        return;
+      }
       setCollaborators(data);
+      setLoadError(null);
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Không thể tải danh sách người phối hợp');
+      if (!isMountedRef.current || fetchSeqRef.current !== requestSeq) {
+        return;
+      }
+      if (shouldIgnoreTaskApiError(err)) {
+        return;
+      }
+      setLoadError(err);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current && fetchSeqRef.current === requestSeq) {
+        setLoading(false);
+      }
     }
   }, [task.id]);
 
   useEffect(() => {
-    let cancelled = false;
-    getCollaborators(task.id)
-      .then((data) => {
-        if (!cancelled) {
-          setCollaborators(data);
-          setLoading(false);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          message.error(err instanceof Error ? err.message : 'Không thể tải danh sách người phối hợp');
-          setLoading(false);
-        }
-      });
+    let active = true;
+    async function init() {
+      await Promise.resolve();
+      if (active) {
+        await fetchCollaborators();
+      }
+    }
+    void init();
     return () => {
-      cancelled = true;
+      active = false;
     };
-  }, [task.id]);
+  }, [fetchCollaborators]);
 
   const handleRealtimeCollaborators = useCallback(
     (event: RealtimeEventData) => {
@@ -143,7 +166,10 @@ export function TaskCollaboratorsSection({
       await fetchCollaborators();
       onChanged?.();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Không thể gửi lời mời');
+      if (shouldIgnoreTaskApiError(err)) {
+        return;
+      }
+      message.error(getFriendlyErrorMessage(err, 'Không thể gửi lời mời'));
     } finally {
       setInviting(false);
     }
@@ -160,7 +186,10 @@ export function TaskCollaboratorsSection({
       await fetchCollaborators();
       onChanged?.();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Thao tác thất bại');
+      if (shouldIgnoreTaskApiError(err)) {
+        return;
+      }
+      message.error(getFriendlyErrorMessage(err, 'Thao tác thất bại'));
     }
   };
 
@@ -175,7 +204,10 @@ export function TaskCollaboratorsSection({
       await fetchCollaborators();
       onChanged?.();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Không thể thu hồi quyền');
+      if (shouldIgnoreTaskApiError(err)) {
+        return;
+      }
+      message.error(getFriendlyErrorMessage(err, 'Không thể thu hồi quyền'));
     }
   };
 
@@ -193,6 +225,12 @@ export function TaskCollaboratorsSection({
         return null;
     }
   };
+
+  const renderPlan = resolveSectionRenderPlan(
+    loading,
+    loadError,
+    collaborators.length,
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -260,16 +298,26 @@ export function TaskCollaboratorsSection({
         </div>
       )}
 
-      {loading ? (
+      {renderPlan.showInlineError && (
+        <ApiErrorFallback
+          variant="inline"
+          error={loadError}
+          onRetry={() => void fetchCollaborators()}
+          retrying={loading}
+          showNavigation={false}
+        />
+      )}
+
+      {renderPlan.contentState === 'spinner' ? (
         <div style={{ textAlign: 'center', padding: 24 }}>
           <Spin />
         </div>
-      ) : collaborators.length === 0 ? (
+      ) : renderPlan.contentState === 'empty' ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description="Chưa có người phối hợp nào cho công việc này"
         />
-      ) : (
+      ) : renderPlan.contentState === 'list' ? (
         <List
           size="small"
           bordered
@@ -326,7 +374,7 @@ export function TaskCollaboratorsSection({
             );
           }}
         />
-      )}
+      ) : null}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import {
   Form,
   Alert,
   Button,
+  Popconfirm,
   message,
   Tabs,
 } from 'antd';
@@ -12,6 +13,7 @@ import {
   InfoCircleOutlined,
   TeamOutlined,
   UnorderedListOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
 import { useResponsive } from '../../../shared/hooks';
 import type { Task, TaskFormValues } from '../types/task.types';
@@ -23,6 +25,8 @@ import {
   updateTask,
   updateTaskStatus,
 } from '../api/tasks.api';
+import { getFriendlyErrorMessage } from '../../../shared/api';
+import { shouldIgnoreTaskApiError } from '../utils/task-error.utils';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { getTaskPermissions } from '../utils/task-permission.utils';
 import { TaskCollaboratorsSection } from './TaskCollaboratorsSection';
@@ -34,12 +38,14 @@ export interface TaskFormModalProps {
   open: boolean;
   task: Task | null;
   defaultTeamId?: number | null;
+  defaultDate?: string | null;
   initialTab?: 'info' | 'collaborators' | 'subtasks';
   highlightSubtaskId?: number | null;
   categories: Category[];
   teams?: Team[];
   onClose: () => void;
   onSuccess: () => Promise<void> | void;
+  onDelete?: (id: number) => Promise<boolean | void> | void;
 }
 
 function getTaskVersion(task: Task | null): string {
@@ -63,16 +69,19 @@ export default function TaskFormModal({
   open,
   task,
   defaultTeamId,
+  defaultDate,
   initialTab = 'info',
   highlightSubtaskId = null,
   categories,
   teams = [],
   onClose,
   onSuccess,
+  onDelete,
 }: TaskFormModalProps) {
   const { user } = useAuth();
   const [form] = Form.useForm<TaskFormValues>();
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState<'info' | 'collaborators' | 'subtasks'>(
     () => initialTab,
   );
@@ -82,6 +91,10 @@ export default function TaskFormModal({
 
   const screens = useResponsive();
   const watchedStatus = Form.useWatch('status', form);
+  const defaultDayjs = useMemo(
+    () => (defaultDate && dayjs(defaultDate).isValid() ? dayjs(defaultDate) : null),
+    [defaultDate],
+  );
 
   const applyTaskValues = useCallback(
     (target: Task) => {
@@ -131,9 +144,11 @@ export default function TaskFormModal({
     if (open && !task && !isFormDirty) {
       form.setFieldsValue({
         teamId: defaultTeamId ?? null,
+        startDate: defaultDayjs,
+        dueDate: defaultDayjs,
       });
     }
-  }, [open, task, defaultTeamId, isFormDirty, form]);
+  }, [open, task, defaultTeamId, defaultDayjs, isFormDirty, form]);
 
   const taskTeam = task?.teamId ? teams.find((t) => t.id === task.teamId) : null;
   const permissions = task ? getTaskPermissions(user, task, taskTeam) : null;
@@ -187,6 +202,25 @@ export default function TaskFormModal({
     onClose();
     await onSuccess();
   }, [onClose, onSuccess]);
+
+  const handleDeleteFromModal = useCallback(async () => {
+    if (!task || !onDelete) {
+      return;
+    }
+    try {
+      setDeleting(true);
+      const deleted = await onDelete(task.id);
+      if (deleted !== false) {
+        setIsFormDirty(false);
+        onClose();
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }, [task, onDelete, onClose]);
+
+  const canDeleteTask = Boolean(task && permissions?.canDelete && onDelete);
+  const showSaveButton = !isReadOnly && (!task || activeTab === 'info');
 
   // Consolidated single alert for task info form according to role and status
   let alertConfig: { type: 'warning' | 'info'; message: string; description?: string } | null = null;
@@ -265,7 +299,10 @@ export default function TaskFormModal({
       onClose();
       await onSuccess();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : 'Thao tác thất bại');
+      if (shouldIgnoreTaskApiError(error)) {
+        return;
+      }
+      message.error(getFriendlyErrorMessage(error, 'Thao tác thất bại'));
     } finally {
       setSaving(false);
     }
@@ -309,6 +346,8 @@ export default function TaskFormModal({
           status: 'TODO',
           priority: 'MEDIUM',
           teamId: defaultTeamId ?? null,
+          startDate: defaultDayjs,
+          dueDate: defaultDayjs,
         }}
       >
         {alertConfig && (
@@ -359,8 +398,9 @@ export default function TaskFormModal({
             : 'Thêm công việc mới'
       }
       open={open}
-      onOk={() => form.submit()}
       onCancel={onClose}
+      closable={!deleting}
+      maskClosable={!deleting}
       afterOpenChange={(visible) => {
         if (visible) {
           setActiveTab(initialTab ?? 'info');
@@ -380,21 +420,59 @@ export default function TaskFormModal({
                 categoryId: null,
                 teamId: defaultTeamId ?? null,
                 assigneeId: null,
-                startDate: null,
-                dueDate: null,
+                startDate: defaultDayjs,
+                dueDate: defaultDayjs,
               });
             }
           }
         }
       }}
-      confirmLoading={saving}
-      okButtonProps={
-        isReadOnly || (task && activeTab !== 'info')
-          ? { style: { display: 'none' } }
-          : { disabled: isSaveDisabled }
+      footer={
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: canDeleteTask ? 'space-between' : 'flex-end',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          {canDeleteTask && task ? (
+            <Popconfirm
+              title="Xác nhận xoá"
+              description={`Bạn có chắc chắn muốn xoá công việc "${task.title}"?`}
+              onConfirm={() => void handleDeleteFromModal()}
+              okText="Xoá"
+              cancelText="Huỷ"
+              okButtonProps={{ danger: true, loading: deleting }}
+            >
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                loading={deleting}
+                disabled={saving}
+              >
+                Xoá
+              </Button>
+            </Popconfirm>
+          ) : null}
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button onClick={onClose} disabled={saving || deleting}>
+              {showSaveButton ? 'Huỷ' : 'Đóng'}
+            </Button>
+            {showSaveButton && (
+              <Button
+                type="primary"
+                loading={saving}
+                disabled={isSaveDisabled || deleting}
+                onClick={() => form.submit()}
+              >
+                {task ? 'Lưu thay đổi' : 'Tạo mới'}
+              </Button>
+            )}
+          </div>
+        </div>
       }
-      okText={task ? 'Lưu thay đổi' : 'Tạo mới'}
-      cancelText={isReadOnly || (task && activeTab !== 'info') ? 'Đóng' : 'Huỷ'}
       destroyOnHidden
       width={screens.sm ? 640 : '95%'}
       style={{ maxWidth: 640 }}
