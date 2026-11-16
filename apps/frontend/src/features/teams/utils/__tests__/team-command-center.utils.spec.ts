@@ -27,7 +27,6 @@ function makeTask(overrides: Partial<Task>): Task {
     assigneeId: null,
     createdAt: '2026-11-01T00:00:00.000Z',
     updatedAt: '2026-11-01T00:00:00.000Z',
-    deletedAt: null,
     ...overrides,
   };
 }

@@ -3,7 +3,6 @@ import type { TeamMember } from '../types/team.types.ts';
 import {
   toDateKey,
   addDaysToDateKey,
-  diffDateKeys,
   getVietnamTodayKey,
 } from '../../tasks/utils/calendar-date.utils.ts';
 
@@ -28,7 +27,6 @@ export interface MemberWorkload {
   userId: number;
   name: string;
   email: string;
-  avatarUrl?: string | null;
   role: string;
   taskCount: number;
   overdueCount: number;
@@ -62,7 +60,6 @@ export function computeTeamCommandMetrics(
   let dueSoon = 0;
 
   for (const task of tasks) {
-    if (task.deletedAt) continue;
     total += 1;
 
     if (task.status === 'DONE') {
@@ -101,7 +98,6 @@ export function computeMemberWorkloads(
     userId: member.userId,
     name: member.user?.name || `Thành viên #${member.userId}`,
     email: member.user?.email || '',
-    avatarUrl: member.user?.avatarUrl || null,
     role: member.role,
     taskCount: 0,
     overdueCount: 0,
@@ -115,7 +111,7 @@ export function computeMemberWorkloads(
   }
 
   for (const task of tasks) {
-    if (task.deletedAt || !task.assigneeId) continue;
+    if (!task.assigneeId) continue;
     const target = workloadMap.get(task.assigneeId);
     if (!target) continue;
 
@@ -162,8 +158,6 @@ export function filterTeamTasks(
   const normalizedQuery = searchQuery?.trim().toLowerCase();
 
   return tasks.filter((task) => {
-    if (task.deletedAt) return false;
-
     // Filter by type
     if (filterType === 'in_progress' && task.status !== 'IN_PROGRESS') {
       return false;
