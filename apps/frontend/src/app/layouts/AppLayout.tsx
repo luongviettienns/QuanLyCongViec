@@ -20,7 +20,6 @@ import {
   MenuUnfoldOutlined,
   LogoutOutlined,
   LoginOutlined,
-  TagsOutlined,
   TeamOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
@@ -72,19 +71,14 @@ export default function AppLayout({
       label: 'Công việc',
     },
     {
-      key: 'calendar',
-      icon: <CalendarOutlined />,
-      label: 'Lịch',
-    },
-    {
       key: 'teams',
       icon: <TeamOutlined />,
       label: 'Nhóm làm việc',
     },
     {
-      key: 'categories',
-      icon: <TagsOutlined />,
-      label: 'Danh mục',
+      key: 'calendar',
+      icon: <CalendarOutlined />,
+      label: 'Lịch',
     },
   ];
 
@@ -178,6 +172,27 @@ export default function AppLayout({
             }
           }}
           style={{ borderRight: 0 }}
+        />
+      </div>
+
+      <div style={{ padding: '0 8px 8px', borderTop: '1px solid #f0f0f0' }}>
+        <Menu
+          mode="inline"
+          selectedKeys={currentNav === 'categories' ? ['categories'] : []}
+          items={[
+            {
+              key: 'categories',
+              icon: <SettingOutlined />,
+              label: 'Thiết lập & Danh mục',
+            },
+          ]}
+          onClick={() => {
+            if (isMobile) {
+              setDrawerOpen(false);
+            }
+            onNavChange?.('categories');
+          }}
+          style={{ borderRight: 0, borderRadius: 6 }}
         />
       </div>
 
