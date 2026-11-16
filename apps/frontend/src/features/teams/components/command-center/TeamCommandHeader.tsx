@@ -9,6 +9,7 @@ import {
   LogoutOutlined,
   DeleteOutlined,
   TeamOutlined,
+  TagsOutlined,
 } from '@ant-design/icons';
 import type { Team } from '../../types/team.types.ts';
 
@@ -25,6 +26,7 @@ export interface TeamCommandHeaderProps {
   onOpenEditTeam?: () => void;
   onOpenAddMember?: () => void;
   onOpenTransferOwnership?: () => void;
+  onOpenManageCategories?: () => void;
   onDeleteTeam?: () => void;
   onLeaveTeam?: () => void;
 }
@@ -40,6 +42,7 @@ export function TeamCommandHeader({
   onOpenEditTeam,
   onOpenAddMember,
   onOpenTransferOwnership,
+  onOpenManageCategories,
   onDeleteTeam,
   onLeaveTeam,
 }: TeamCommandHeaderProps) {
@@ -55,6 +58,12 @@ export function TeamCommandHeader({
       label: 'Sửa thông tin nhóm',
       icon: <EditOutlined />,
       onClick: onOpenEditTeam,
+    });
+    menuItems.push({
+      key: 'categories',
+      label: 'Quản lý danh mục nhóm',
+      icon: <TagsOutlined />,
+      onClick: onOpenManageCategories,
     });
     menuItems.push({
       key: 'add-member',

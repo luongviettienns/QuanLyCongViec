@@ -14,6 +14,8 @@ import {
   RightOutlined,
   CrownOutlined,
   SafetyCertificateOutlined,
+  TeamOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import type { Task, TaskPriority, TaskStatus } from '../../../tasks/types/task.types.ts';
 import type { Team, TeamMember } from '../../types/team.types.ts';
@@ -40,6 +42,7 @@ export interface TeamCommandPanelProps {
   activeAssigneeId?: number | null;
   team: Team | null;
   currentUser: User | null;
+  contextMode?: 'tasks' | 'members' | 'activity';
   onOpenFullModal: (task: Task) => void;
   onUpdateStatus?: (taskId: number, status: TaskStatus) => Promise<boolean | void>;
   onUpdateAssignee?: (taskId: number, assigneeId: number | null) => Promise<boolean | void>;
@@ -64,6 +67,7 @@ export function TeamCommandPanel({
   activeAssigneeId,
   team,
   currentUser,
+  contextMode = 'tasks',
   onOpenFullModal,
   onUpdateStatus,
   onUpdateAssignee,
@@ -78,6 +82,108 @@ export function TeamCommandPanel({
   const screens = useBreakpoint();
   const isMobileOrTablet = !screens.lg;
   const workloads = computeMemberWorkloads(members, tasks);
+
+  const memberContent = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Card
+        size="small"
+        title={
+          <Space>
+            <TeamOutlined style={{ color: '#1677ff' }} />
+            <Text strong>Cơ cấu nhân sự nhóm</Text>
+          </Space>
+        }
+        style={{ borderRadius: 8 }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f0f0f0' }}>
+            <Text type="secondary">Tổng thành viên:</Text>
+            <Text strong>{1 + (members?.length || 0)} người</Text>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f0f0f0' }}>
+            <Text type="secondary">Chủ nhóm:</Text>
+            <Space size={4}>
+              <CrownOutlined style={{ color: '#faad14' }} />
+              <Text strong>{team?.owner?.name || 'Chưa rõ'}</Text>
+            </Space>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f0f0f0' }}>
+            <Text type="secondary">Quản trị viên:</Text>
+            <Text strong>{members?.filter((m) => m.role === 'ADMIN').length || 0} người</Text>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+            <Text type="secondary">Thành viên thường:</Text>
+            <Text strong>{members?.filter((m) => m.role === 'MEMBER').length || 0} người</Text>
+          </div>
+        </div>
+      </Card>
+
+      <Card
+        size="small"
+        title={
+          <Space>
+            <UserOutlined style={{ color: '#52c41a' }} />
+            <Text strong>Khối lượng đang phụ trách</Text>
+          </Space>
+        }
+        style={{ borderRadius: 8 }}
+      >
+        <List
+          size="small"
+          dataSource={workloads}
+          renderItem={(item) => (
+            <List.Item style={{ padding: '8px 4px' }}>
+              <Space>
+                <Avatar
+                  size="small"
+                  style={{
+                    backgroundColor:
+                      item.role === 'OWNER'
+                        ? '#faad14'
+                        : item.role === 'ADMIN'
+                          ? '#1677ff'
+                          : '#52c41a',
+                  }}
+                >
+                  {item.name.charAt(0).toUpperCase()}
+                </Avatar>
+                <div>
+                  <Text strong style={{ fontSize: 13 }}>{item.name}</Text>
+                </div>
+              </Space>
+              <Text type="secondary" style={{ fontSize: 12, fontWeight: 600 }}>
+                {item.taskCount} việc
+              </Text>
+            </List.Item>
+          )}
+        />
+      </Card>
+    </div>
+  );
+
+  const activityContent = (
+    <Card
+      size="small"
+      title={
+        <Space>
+          <HistoryOutlined style={{ color: '#1677ff' }} />
+          <Text strong>Nhật ký kiểm toán</Text>
+        </Space>
+      }
+      style={{ borderRadius: 8 }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <Text style={{ fontSize: 13 }}>
+          Mọi thay đổi về phân công, trạng thái công việc và nhân sự nhóm đều được ghi nhận tự động theo thời gian thực.
+        </Text>
+        <div style={{ padding: '10px 12px', background: '#fafafa', borderRadius: 6, border: '1px solid #f0f0f0' }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            Chỉ Chủ nhóm và Quản trị viên mới có quyền xem toàn bộ lịch sử chi tiết.
+          </Text>
+        </div>
+      </div>
+    </Card>
+  );
 
   const panelContent = selectedTask ? (
     <TeamTaskQuickDetail
@@ -94,6 +200,10 @@ export function TeamCommandPanel({
       onToggleSubtask={onToggleSubtask}
       onAddSubtask={onAddSubtask}
     />
+  ) : contextMode === 'members' ? (
+    memberContent
+  ) : contextMode === 'activity' ? (
+    activityContent
   ) : (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Action Center: Cần xử lý ngay */}

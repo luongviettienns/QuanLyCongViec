@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Row,
   Col,
@@ -12,13 +13,13 @@ import {
   Input,
   Tag,
   Grid,
+  Modal,
 } from 'antd';
 import {
   PlusOutlined,
   SearchOutlined,
   UnorderedListOutlined,
   UserOutlined,
-  AppstoreOutlined,
   HistoryOutlined,
   ExclamationCircleOutlined,
 } from '@ant-design/icons';
@@ -112,6 +113,8 @@ function getFilterLabel(filter: CommandFilterType): string {
 
 export default function TeamPage({ onTeamChanged }: TeamPageProps) {
   const { user } = useAuth();
+  const { teamId: routeTeamId } = useParams<{ teamId?: string }>();
+  const navigate = useNavigate();
   const screens = useBreakpoint();
   const isMobileOrTablet = !screens.lg;
 
@@ -128,9 +131,10 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
   const [teamTasks, setTeamTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [teamCategories, setTeamCategories] = useState<Category[]>([]);
+  const [teamCategoryModalOpen, setTeamCategoryModalOpen] = useState(false);
 
   // Navigation & filter state
-  const [activeTab, setActiveTab] = useState<'tasks' | 'members' | 'categories' | 'activity'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'members' | 'activity'>('tasks');
   const [commandFilter, setCommandFilter] = useState<CommandFilterType>('all');
   const [assigneeFilter, setAssigneeFilter] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -172,6 +176,23 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
     selectedTaskRef.current = selectedTask;
   }, [selectedTask]);
 
+  const routeTeamIdRef = useRef<string | undefined>(routeTeamId);
+  useEffect(() => {
+    routeTeamIdRef.current = routeTeamId;
+  }, [routeTeamId]);
+
+  // Sync routeTeamId when URL changes
+  useEffect(() => {
+    if (routeTeamId) {
+      const parsed = Number(routeTeamId);
+      if (!isNaN(parsed) && parsed !== selectedTeamIdRef.current) {
+        if (teams.some((t) => t.id === parsed)) {
+          setSelectedTeamId(parsed);
+        }
+      }
+    }
+  }, [routeTeamId, teams]);
+
   // Load Teams list
   const loadTeams = useCallback(async (selectId?: number): Promise<Team[]> => {
     teamsAbortRef.current?.abort();
@@ -186,7 +207,10 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       setTeams(data);
       setTeamsError(null);
       if (data.length > 0) {
-        const nextId = selectId && data.some((t) => t.id === selectId) ? selectId : data[0].id;
+        const parsedRouteId = routeTeamIdRef.current ? Number(routeTeamIdRef.current) : null;
+        const validRouteId = parsedRouteId && !isNaN(parsedRouteId) ? parsedRouteId : null;
+        const targetId = selectId ?? validRouteId;
+        const nextId = targetId && data.some((t) => t.id === targetId) ? targetId : data[0].id;
         setSelectedTeamId(nextId);
       } else {
         setSelectedTeamId(null);
@@ -488,7 +512,8 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       setSearchQuery('');
     }
     setSelectedTeamId(id);
-  }, []);
+    navigate(`/teams/${id}`, { replace: true });
+  }, [navigate]);
 
   // Team Modals & Action handlers
   async function handleCreateTeam(values: CreateTeamPayload) {
@@ -1012,21 +1037,6 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
         ),
       },
       {
-        key: 'categories',
-        label: (
-          <span>
-            <AppstoreOutlined /> Danh mục
-          </span>
-        ),
-        children: selectedTeam ? (
-          <TeamCategorySection
-            key={`cat-${selectedTeam.id}`}
-            teamId={selectedTeam.id}
-            canManage={canManageMembers}
-          />
-        ) : null,
-      },
-      {
         key: 'activity',
         label: (
           <span>
@@ -1140,6 +1150,7 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
           setTaskModalTask(null);
           setTaskModalOpen(true);
         }}
+        onOpenManageCategories={() => setTeamCategoryModalOpen(true)}
         canCreateTask={canCreateTask}
         canManageTeam={canManageMembers}
         isOwner={isOwner}
@@ -1223,6 +1234,7 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
 
             <Col xs={24} lg={7} xl={7}>
               <TeamCommandPanel
+                contextMode={activeTab}
                 metrics={metrics}
                 members={selectedTeam.members}
                 tasks={teamTasks}
@@ -1280,6 +1292,23 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
         onEditTeam={handleEditTeam}
         onAddMember={handleAddMember}
       />
+
+      <Modal
+        title={`Danh mục nhóm — ${selectedTeam?.name || ''}`}
+        open={teamCategoryModalOpen}
+        onCancel={() => setTeamCategoryModalOpen(false)}
+        footer={null}
+        width={640}
+        destroyOnClose
+      >
+        {selectedTeam && (
+          <TeamCategorySection
+            key={`cat-modal-${selectedTeam.id}`}
+            teamId={selectedTeam.id}
+            canManage={canManageMembers}
+          />
+        )}
+      </Modal>
 
       <TaskFormModal
         open={taskModalOpen}
