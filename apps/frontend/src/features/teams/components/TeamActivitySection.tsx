@@ -39,11 +39,17 @@ interface TeamActivitySectionProps {
   teamId: number;
   members?: TeamMember[];
   owner?: TeamMemberUser;
+  canView?: boolean;
 }
 
 const PAGE_SIZE = 4;
 
-export function TeamActivitySection({ teamId, members = [], owner }: TeamActivitySectionProps) {
+export function TeamActivitySection({
+  teamId,
+  members = [],
+  owner,
+  canView = true,
+}: TeamActivitySectionProps) {
   const [logs, setLogs] = useState<TeamActivityLog[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -78,6 +84,10 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
 
   const loadLogs = useCallback(
     async (currentPage: number, action?: string, actorId?: number, signal?: AbortSignal) => {
+      if (!canView) {
+        setLoading(false);
+        return;
+      }
       try {
         setLoading(true);
         const res = await getTeamActivityLogs(
@@ -108,7 +118,7 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
         }
       }
     },
-    [teamId],
+    [teamId, canView],
   );
 
   useEffect(() => {
@@ -177,6 +187,17 @@ export function TeamActivitySection({ teamId, members = [], owner }: TeamActivit
     setSelectedActorId(undefined);
     setPage(1);
   };
+
+  if (!canView) {
+    return (
+      <Card style={{ borderRadius: 8, textAlign: 'center', padding: '32px 16px' }}>
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description="Bạn không có quyền xem lịch sử hoạt động nhóm. Chỉ Chủ nhóm và Quản trị viên mới có quyền xem thông tin này."
+        />
+      </Card>
+    );
+  }
 
   return (
     <div>

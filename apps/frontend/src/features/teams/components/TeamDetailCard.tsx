@@ -340,6 +340,7 @@ export function TeamDetailCard({
                     teamId={selectedTeam.id}
                     members={selectedTeam.members}
                     owner={selectedTeam.owner}
+                    canView={canManageMembers}
                   />
                 ),
               },

@@ -889,6 +889,11 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
   const canManageMembers = isOwner || isAdmin;
   const canCreateTask = isOwner || isAdmin || selectedTeam?.currentUserRole === 'MEMBER';
 
+  // Adjust activeTab during render if user loses permission for activity tab
+  if (activeTab === 'activity' && !canManageMembers) {
+    setActiveTab('tasks');
+  }
+
   const metrics: TeamCommandMetrics = useMemo(() => {
     return computeTeamCommandMetrics(teamTasks);
   }, [teamTasks]);
@@ -914,8 +919,8 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
   );
 
   // Tab items configuration
-  const tabItems = useMemo(
-    () => [
+  const tabItems = useMemo(() => {
+    const items = [
       {
         key: 'tasks',
         label: (
@@ -1036,7 +1041,10 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
           />
         ),
       },
-      {
+    ];
+
+    if (canManageMembers) {
+      items.push({
         key: 'activity',
         label: (
           <span>
@@ -1049,12 +1057,17 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
             teamId={selectedTeam.id}
             members={selectedTeam.members}
             owner={selectedTeam.owner}
+            canView={canManageMembers}
           />
-        ) : null,
-      },
-    ],
-    [
-      teamTasks.length,
+        ) : (
+          <div />
+        ),
+      });
+    }
+
+    return items;
+  }, [
+    teamTasks.length,
       searchQuery,
       commandFilter,
       assigneeFilter,
