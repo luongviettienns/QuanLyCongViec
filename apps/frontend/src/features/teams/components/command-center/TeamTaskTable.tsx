@@ -192,6 +192,23 @@ export function TeamTaskTable({
           return displayEl;
         }
 
+        const memberItems: MenuProps['items'] = members.map((m) => ({
+          key: String(m.userId),
+          label: (
+            <Space>
+              <Avatar size="small" style={{ backgroundColor: '#1677ff' }}>
+                {m.user?.name.charAt(0).toUpperCase() || 'U'}
+              </Avatar>
+              <span>{m.user?.name}</span>
+              {m.userId === team.ownerId && <Tag color="gold">Chủ nhóm</Tag>}
+            </Space>
+          ),
+          onClick: (e) => {
+            e.domEvent.stopPropagation();
+            void onUpdateAssignee?.(record.id, m.userId);
+          },
+        }));
+
         const items: MenuProps['items'] = [
           {
             key: 'unassigned',
@@ -206,22 +223,7 @@ export function TeamTaskTable({
             },
           },
           { type: 'divider' },
-          ...members.map((m) => ({
-            key: String(m.userId),
-            label: (
-              <Space>
-                <Avatar size="small" style={{ backgroundColor: '#1677ff' }}>
-                  {m.user?.name.charAt(0).toUpperCase() || 'U'}
-                </Avatar>
-                <span>{m.user?.name}</span>
-                {m.userId === team.ownerId && <Tag color="gold">Chủ nhóm</Tag>}
-              </Space>
-            ),
-            onClick: (e: any) => {
-              e.domEvent.stopPropagation();
-              void onUpdateAssignee?.(record.id, m.userId);
-            },
-          })),
+          ...memberItems,
         ];
 
         return (

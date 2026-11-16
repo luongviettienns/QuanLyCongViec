@@ -6,7 +6,6 @@ import {
   computeTeamCommandMetrics,
   computeMemberWorkloads,
   filterTeamTasks,
-  type CommandFilterType,
 } from '../team-command-center.utils.ts';
 
 const TODAY = '2026-11-16';
