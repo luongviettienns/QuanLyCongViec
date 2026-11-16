@@ -22,9 +22,11 @@ import {
   LoginOutlined,
   TeamOutlined,
   SettingOutlined,
+  TagsOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import AccountSettingsModal from '../../features/auth/components/AccountSettingsModal';
+import CategoryManagerModal from '../../features/categories/components/CategoryManagerModal';
 import { NotificationBell, type NotificationDestination } from '../../features/notifications';
 
 const { Header, Sider, Content } = Layout;
@@ -55,6 +57,7 @@ export default function AppLayout({
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [accountModalOpen, setAccountModalOpen] = useState(false);
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const screens = useResponsive();
   const isMobile = !screens.md;
   const { user, logout } = useAuth();
@@ -95,6 +98,14 @@ export default function AppLayout({
     },
     {
       type: 'divider',
+    },
+    {
+      key: 'categories',
+      icon: <TagsOutlined />,
+      label: 'Quản lý danh mục',
+      onClick: () => {
+        setCategoryModalOpen(true);
+      },
     },
     {
       key: 'account-settings',
@@ -172,27 +183,6 @@ export default function AppLayout({
             }
           }}
           style={{ borderRight: 0 }}
-        />
-      </div>
-
-      <div style={{ padding: '0 8px 8px', borderTop: '1px solid #f0f0f0' }}>
-        <Menu
-          mode="inline"
-          selectedKeys={currentNav === 'categories' ? ['categories'] : []}
-          items={[
-            {
-              key: 'categories',
-              icon: <SettingOutlined />,
-              label: 'Thiết lập & Danh mục',
-            },
-          ]}
-          onClick={() => {
-            if (isMobile) {
-              setDrawerOpen(false);
-            }
-            onNavChange?.('categories');
-          }}
-          style={{ borderRight: 0, borderRadius: 6 }}
         />
       </div>
 
@@ -360,10 +350,17 @@ export default function AppLayout({
       </Layout>
 
       {user && (
-        <AccountSettingsModal
-          open={accountModalOpen}
-          onClose={() => setAccountModalOpen(false)}
-        />
+        <>
+          <AccountSettingsModal
+            open={accountModalOpen}
+            onClose={() => setAccountModalOpen(false)}
+          />
+          <CategoryManagerModal
+            open={categoryModalOpen}
+            onClose={() => setCategoryModalOpen(false)}
+            onChanged={onReload}
+          />
+        </>
       )}
     </Layout>
   );
