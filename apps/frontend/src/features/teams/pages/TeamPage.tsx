@@ -181,17 +181,17 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
     routeTeamIdRef.current = routeTeamId;
   }, [routeTeamId]);
 
-  // Sync routeTeamId when URL changes
-  useEffect(() => {
+  // Adjust selectedTeamId during render when routeTeamId changes
+  const [prevRouteTeamId, setPrevRouteTeamId] = useState(routeTeamId);
+  if (routeTeamId !== prevRouteTeamId) {
+    setPrevRouteTeamId(routeTeamId);
     if (routeTeamId) {
       const parsed = Number(routeTeamId);
-      if (!isNaN(parsed) && parsed !== selectedTeamIdRef.current) {
-        if (teams.some((t) => t.id === parsed)) {
-          setSelectedTeamId(parsed);
-        }
+      if (!isNaN(parsed) && teams.some((t) => t.id === parsed)) {
+        setSelectedTeamId(parsed);
       }
     }
-  }, [routeTeamId, teams]);
+  }
 
   // Load Teams list
   const loadTeams = useCallback(async (selectId?: number): Promise<Team[]> => {
