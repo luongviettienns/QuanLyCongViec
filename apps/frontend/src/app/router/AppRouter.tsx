@@ -20,6 +20,7 @@ import { useTaskModalController } from '../hooks/useTaskModalController';
 import { useAppRealtimeSync } from '../hooks/useAppRealtimeSync';
 
 import TasksPage from '../../features/tasks/pages/TasksPage';
+import CalendarWorkspace from '../../features/calendar/pages/CalendarWorkspace';
 import CategoryPage from '../../features/categories/pages/CategoryPage';
 import TeamPage from '../../features/teams/pages/TeamPage';
 import DashboardPage from '../../features/dashboard/pages/DashboardPage';
@@ -257,7 +258,7 @@ function TaskAppShell() {
         navigate('/tasks');
         await openTaskFromNotification(dest);
       } else if (dest.type === 'team') {
-        navigate('/teams');
+        navigate(dest.id ? `/teams/${dest.id}` : '/teams');
       }
     },
     [viewMode, setViewMode, navigate, openTaskFromNotification],
@@ -335,9 +336,33 @@ function TaskAppShell() {
             }
           />
           <Route path="tasks" element={renderTasksWorkspace(tasksRouteViewMode)} />
-          <Route path="calendar" element={renderTasksWorkspace('calendar')} />
+          <Route
+            path="calendar"
+            element={
+              <CalendarWorkspace
+                tasks={tasks}
+                teams={teams}
+                categories={categories}
+                loading={loading}
+                tasksError={tasksError}
+                filters={filters}
+                pendingInvitesCount={pendingInvitesCount}
+                onFiltersChange={applyFilters}
+                onReset={handleReset}
+                onRetry={() => void refetch()}
+                onCreate={openCreateModal}
+                onEdit={openEditModal}
+                onMoveTaskDate={handleUpdateTaskDate}
+                currentUserId={user?.id}
+              />
+            }
+          />
           <Route
             path="teams"
+            element={<TeamPage onTeamChanged={() => void refetch()} />}
+          />
+          <Route
+            path="teams/:teamId"
             element={<TeamPage onTeamChanged={() => void refetch()} />}
           />
           <Route
