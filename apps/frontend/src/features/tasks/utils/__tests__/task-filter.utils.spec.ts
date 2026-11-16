@@ -47,8 +47,8 @@ describe('task-filter.utils', () => {
   });
 
   it('handles loadSavedViewMode and saveViewMode safely in non-browser or browser environment', () => {
-    // In node environment without window, returns 'both'
-    assert.equal(loadSavedViewMode(), 'both');
+    // In node environment without window, returns 'table'
+    assert.equal(loadSavedViewMode(), 'table');
     saveViewMode('kanban'); // safe no-op
 
     // Mock window.localStorage
@@ -64,7 +64,7 @@ describe('task-filter.utils', () => {
     (globalThis as unknown as { window?: typeof mockWindow }).window = mockWindow;
 
     try {
-      assert.equal(loadSavedViewMode(), 'both');
+      assert.equal(loadSavedViewMode(), 'table');
       saveViewMode('kanban');
       assert.equal(loadSavedViewMode(), 'kanban');
       saveViewMode('table');
@@ -74,13 +74,13 @@ describe('task-filter.utils', () => {
       assert.equal(loadSavedViewMode(), 'table');
       // calendar mode can be saved and loaded, while /tasks route guard falls back to 'both'
       saveViewMode('calendar');
-      assert.equal(loadSavedViewMode(), 'calendar');
+      assert.equal(loadSavedViewMode(), 'table');
       saveViewMode('trash');
-      assert.equal(loadSavedViewMode(), 'calendar');
-      assert.equal(resolveTasksRouteViewMode('calendar'), 'both');
+      assert.equal(loadSavedViewMode(), 'table');
+      assert.equal(resolveTasksRouteViewMode('calendar'), 'table');
       assert.equal(resolveTasksRouteViewMode('kanban'), 'kanban');
       assert.equal(resolveTasksRouteViewMode('table'), 'table');
-      assert.equal(resolveTasksRouteViewMode('both'), 'both');
+      assert.equal(resolveTasksRouteViewMode('both'), 'table');
       assert.equal(resolveTasksRouteViewMode('trash'), 'trash');
     } finally {
       delete (globalThis as unknown as { window?: typeof mockWindow }).window;

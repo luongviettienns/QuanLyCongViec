@@ -1,16 +1,16 @@
-import { Segmented, Button } from 'antd';
+import { useState } from 'react';
+import { Segmented, Button, Space, Badge } from 'antd';
 import {
-  AppstoreOutlined,
-  CalendarOutlined,
   ProjectOutlined,
   TableOutlined,
   DeleteOutlined,
   PlusOutlined,
+  TagsOutlined,
+  ArrowLeftOutlined,
 } from '@ant-design/icons';
 import TaskToolbar from '../components/TaskToolbar';
 import KanbanBoard from '../components/kanban/KanbanBoard';
 import TaskTable from '../components/table/TaskTable';
-import { TaskCalendarView } from '../components/calendar';
 import TaskTrashView from '../components/trash/TaskTrashView';
 import CategoryManagerModal from '../../categories/components/CategoryManagerModal';
 import { ApiErrorFallback } from '../../../app/pages/errors';
@@ -25,7 +25,6 @@ import type {
 } from '../types/task.types.ts';
 import type { Category } from '../../categories/types/category.types.ts';
 import type { Team } from '../../teams/types/team.types.ts';
-import { formatCountLabel } from '../utils/task-filter.utils.ts';
 import { resolveErrorFallbackVariant } from '../utils/task-error.utils.ts';
 
 export interface TasksPageProps {
@@ -97,12 +96,14 @@ export default function TasksPage({
   onEmptyTrash,
   onReorder,
   onStatusMove,
-  onMoveTaskDate,
   categoryModalOpen = false,
   onCloseCategoryModal,
   onCategoryChanged,
   currentUserId,
 }: TasksPageProps) {
+  const [internalCategoryModalOpen, setInternalCategoryModalOpen] = useState(false);
+  const isCatModalOpen = categoryModalOpen || internalCategoryModalOpen;
+
   const handleRetry = onRetry ?? onReset;
   const handleViewModeChange = onViewModeChange ?? setViewMode;
   const defaultCreateTeamId =
@@ -131,32 +132,67 @@ export default function TasksPage({
             scrollbarWidth: 'thin',
           }}
         >
-          <Segmented<TaskViewMode>
-            value={viewMode}
-            onChange={(mode) => handleViewModeChange?.(mode)}
-            options={[
-              { value: 'both', label: 'Cả hai', icon: <AppstoreOutlined /> },
-              { value: 'kanban', label: 'Kanban', icon: <ProjectOutlined /> },
-              { value: 'table', label: 'Bảng', icon: <TableOutlined /> },
-              { value: 'calendar', label: 'Lịch', icon: <CalendarOutlined /> },
-              {
-                value: 'trash',
-                label: formatCountLabel('Thùng rác', trashCount),
-                icon: <DeleteOutlined />,
-              },
-            ]}
-          />
+          {viewMode === 'trash' ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Button
+                icon={<ArrowLeftOutlined />}
+                onClick={() => handleViewModeChange?.('table')}
+              >
+                Quay lại danh sách việc
+              </Button>
+              <span style={{ fontWeight: 600, fontSize: 16, color: '#ff4d4f' }}>
+                <DeleteOutlined /> Thùng rác ({trashCount})
+              </span>
+            </div>
+          ) : (
+            <Segmented<TaskViewMode>
+              value={viewMode === 'kanban' ? 'kanban' : 'table'}
+              onChange={(mode) => handleViewModeChange?.(mode)}
+              options={[
+                { value: 'table', label: 'Bảng', icon: <TableOutlined /> },
+                { value: 'kanban', label: 'Kanban', icon: <ProjectOutlined /> },
+              ]}
+            />
+          )}
         </div>
 
-        {viewMode !== 'trash' && onCreate && (
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => onCreate(defaultCreateTeamId)}
-          >
-            Thêm công việc
-          </Button>
-        )}
+        <Space wrap>
+          {viewMode !== 'trash' ? (
+            <>
+              <Button
+                icon={<TagsOutlined />}
+                onClick={() => setInternalCategoryModalOpen(true)}
+              >
+                Danh mục
+              </Button>
+
+              <Badge count={trashCount} size="small" offset={[-2, 2]}>
+                <Button
+                  icon={<DeleteOutlined />}
+                  onClick={() => handleViewModeChange?.('trash')}
+                >
+                  Thùng rác
+                </Button>
+              </Badge>
+
+              {onCreate && (
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={() => onCreate(defaultCreateTeamId)}
+                >
+                  Thêm công việc
+                </Button>
+              )}
+            </>
+          ) : (
+            onEmptyTrash && trashTasks.length > 0 && (
+              <Button danger onClick={onEmptyTrash}>
+                Dọn sạch thùng rác
+              </Button>
+            )
+          )}
+        </Space>
       </div>
 
       <TaskToolbar
@@ -226,20 +262,16 @@ export default function TasksPage({
             </div>
           )}
 
-          {(viewMode === 'both' || viewMode === 'kanban') && (
-            <div style={{ marginBottom: viewMode === 'both' ? 30 : 0 }}>
-              <KanbanBoard
-                tasks={tasks}
-                teams={teams}
-                onReorder={onReorder}
-                onStatusChange={onStatusMove}
-                onEdit={onEdit}
-                isFiltering={isFiltering}
-              />
-            </div>
-          )}
-
-          {(viewMode === 'both' || viewMode === 'table') && (
+          {viewMode === 'kanban' ? (
+            <KanbanBoard
+              tasks={tasks}
+              teams={teams}
+              onReorder={onReorder}
+              onStatusChange={onStatusMove}
+              onEdit={onEdit}
+              isFiltering={isFiltering}
+            />
+          ) : (
             <TaskTable
               tasks={tasks}
               teams={teams}
@@ -250,29 +282,19 @@ export default function TasksPage({
               onBulkStatusMove={onBulkStatusMove}
             />
           )}
-
-          {viewMode === 'calendar' && (
-            <TaskCalendarView
-              tasks={tasks}
-              teams={teams}
-              loading={loading}
-              onEditTask={onEdit}
-              onCreateTaskForDate={
-                onCreate
-                  ? (dateKey) => onCreate(defaultCreateTeamId, dateKey)
-                  : undefined
-              }
-              onMoveTaskDate={onMoveTaskDate}
-            />
-          )}
         </>
       )}
 
-      {categoryModalOpen && onCloseCategoryModal && onCategoryChanged && (
+      {isCatModalOpen && (
         <CategoryManagerModal
-          open={categoryModalOpen}
-          onClose={onCloseCategoryModal}
-          onChanged={onCategoryChanged}
+          open={isCatModalOpen}
+          onClose={() => {
+            setInternalCategoryModalOpen(false);
+            onCloseCategoryModal?.();
+          }}
+          onChanged={() => {
+            onCategoryChanged?.();
+          }}
         />
       )}
     </>
