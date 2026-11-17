@@ -86,6 +86,7 @@ import {
   TeamTaskTable,
   TeamCommandPanel,
   TeamMembersTab,
+  TeamQuickAssignDrawer,
 } from '../components/command-center';
 
 const { useBreakpoint } = Grid;
@@ -142,6 +143,7 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
   // Right Panel & Modal state
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [quickAssignOpen, setQuickAssignOpen] = useState(false);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [taskModalTask, setTaskModalTask] = useState<Task | null>(null);
 
@@ -1160,8 +1162,7 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
         selectedTeam={selectedTeam}
         onSelectTeamId={handleSelectTeam}
         onOpenCreateTask={() => {
-          setTaskModalTask(null);
-          setTaskModalOpen(true);
+          setQuickAssignOpen(true);
         }}
         onOpenManageCategories={() => setTeamCategoryModalOpen(true)}
         canCreateTask={canCreateTask}
@@ -1309,7 +1310,12 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       <Modal
         title={`Danh mục nhóm — ${selectedTeam?.name || ''}`}
         open={teamCategoryModalOpen}
-        onCancel={() => setTeamCategoryModalOpen(false)}
+        onCancel={() => {
+          setTeamCategoryModalOpen(false);
+          if (selectedTeamId) {
+            void loadTeamCategories(selectedTeamId);
+          }
+        }}
         footer={null}
         width={640}
         destroyOnClose
@@ -1322,6 +1328,20 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
           />
         )}
       </Modal>
+
+      <TeamQuickAssignDrawer
+        open={quickAssignOpen}
+        team={selectedTeam}
+        categories={teamCategories}
+        currentUserId={user?.id}
+        onClose={() => setQuickAssignOpen(false)}
+        onSuccess={async () => {
+          if (selectedTeamId) {
+            await loadTeamTasks(selectedTeamId);
+          }
+          onTeamChanged?.();
+        }}
+      />
 
       <TaskFormModal
         open={taskModalOpen}
