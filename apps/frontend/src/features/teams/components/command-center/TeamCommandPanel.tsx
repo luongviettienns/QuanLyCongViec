@@ -17,7 +17,7 @@ import {
   TeamOutlined,
   HistoryOutlined,
 } from '@ant-design/icons';
-import type { Task, TaskPriority, TaskStatus } from '../../../tasks/types/task.types.ts';
+import type { Subtask, Task, TaskPriority, TaskStatus } from '../../../tasks/types/task.types.ts';
 import type { Team, TeamMember } from '../../types/team.types.ts';
 import type { User } from '../../../auth/types/auth.types.ts';
 import type {
@@ -50,8 +50,7 @@ export interface TeamCommandPanelProps {
   onUpdateDueDate?: (taskId: number, dueDate: string | null) => Promise<boolean | void>;
   onUpdatePriority?: (taskId: number, priority: TaskPriority) => Promise<boolean | void>;
   onReturnTask?: (taskId: number, reason: string) => Promise<boolean | void>;
-  onToggleSubtask?: (subtaskId: number, currentStatus: string) => Promise<boolean | void>;
-  onAddSubtask?: (taskId: number, title: string) => Promise<boolean | void>;
+  onSubtasksChange?: (taskId: number, subtasks: Subtask[]) => void;
   isDrawerOpen?: boolean;
   onCloseDrawer?: () => void;
 }
@@ -75,8 +74,7 @@ export function TeamCommandPanel({
   onUpdateDueDate,
   onUpdatePriority,
   onReturnTask,
-  onToggleSubtask,
-  onAddSubtask,
+  onSubtasksChange,
   isDrawerOpen = false,
   onCloseDrawer,
 }: TeamCommandPanelProps) {
@@ -199,8 +197,7 @@ export function TeamCommandPanel({
       onUpdateDueDate={onUpdateDueDate}
       onUpdatePriority={onUpdatePriority}
       onReturnTask={onReturnTask}
-      onToggleSubtask={onToggleSubtask}
-      onAddSubtask={onAddSubtask}
+      onSubtasksChange={onSubtasksChange}
     />
   ) : contextMode === 'members' ? (
     memberContent

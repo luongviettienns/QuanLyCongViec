@@ -41,8 +41,6 @@ import {
   updateTaskContent,
   returnTask,
   deleteTask,
-  createSubtask,
-  updateSubtaskStatus,
 } from '../../tasks/api/tasks.api';
 import { getCategories } from '../../categories/api/categories.api';
 import {
@@ -62,7 +60,7 @@ import type {
   UpdateTeamPayload,
   AddMemberPayload,
 } from '../types/team.types';
-import type { Task, TaskPriority, TaskStatus } from '../../tasks/types/task.types';
+import type { Subtask, Task, TaskPriority, TaskStatus } from '../../tasks/types/task.types';
 import type { Category } from '../../categories/types/category.types';
 import { TeamModals } from '../components/TeamModals';
 import { TeamCategorySection } from '../components/TeamCategorySection';
@@ -848,42 +846,16 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
     }
   }, []);
 
-  const handleToggleSubtask = useCallback(
-    async (subtaskId: number, currentStatus: string) => {
-      const activeTask = selectedTaskRef.current;
-      if (!activeTask) return;
-      const nextStatus: TaskStatus = currentStatus === 'DONE' ? 'TODO' : 'DONE';
-      try {
-        const updatedSubtask = await updateSubtaskStatus(activeTask.id, subtaskId, nextStatus);
-        const updatedSubtasks =
-          activeTask.subtasks?.map((s) => (s.id === subtaskId ? updatedSubtask : s)) || [];
-        const updatedTask = { ...activeTask, subtasks: updatedSubtasks };
-        setSelectedTask(updatedTask);
-        setTeamTasks((prev) =>
-          prev.map((t) => (t.id === activeTask.id ? updatedTask : t)),
-        );
-      } catch (err: unknown) {
-        message.error(getFriendlyErrorMessage(err, 'Không thể cập nhật checklist'));
-      }
-    },
-    [],
-  );
-
-  const handleAddSubtask = useCallback(async (taskId: number, title: string) => {
-    try {
-      const newSubtask = await createSubtask(taskId, { title });
-      if (selectedTaskRef.current?.id === taskId) {
-        const updatedSubtasks = [...(selectedTaskRef.current.subtasks || []), newSubtask];
-        const updatedTask = { ...selectedTaskRef.current, subtasks: updatedSubtasks };
-        setSelectedTask(updatedTask);
-        setTeamTasks((prev) =>
-          prev.map((t) => (t.id === taskId ? updatedTask : t)),
-        );
-      }
-      message.success('Đã thêm việc cần làm');
-    } catch (err: unknown) {
-      message.error(getFriendlyErrorMessage(err, 'Không thể thêm việc cần làm'));
-    }
+  const handleSubtasksChange = useCallback((taskId: number, subtasks: Subtask[]) => {
+    setTeamTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, subtasks } : t)),
+    );
+    setSelectedTask((prev) =>
+      prev && prev.id === taskId ? { ...prev, subtasks } : prev,
+    );
+    setTaskModalTask((prev) =>
+      prev && prev.id === taskId ? { ...prev, subtasks } : prev,
+    );
   }, []);
 
   // Permissions & Derived metrics
@@ -1214,7 +1186,7 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       {selectedTeam && (
         <>
           {/* Stat Strip */}
-          <div style={{ margin: '16px 0' }}>
+          <div style={{ margin: '16px 0', overflowX: 'hidden' }}>
             <TeamStatStrip
               metrics={metrics}
               activeFilter={commandFilter}
@@ -1228,7 +1200,8 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
           </div>
 
           {/* Main Workspace (72% Left Tab area + 28% Right Command Panel) */}
-          <Row gutter={[16, 16]}>
+          <div style={{ overflowX: 'hidden' }}>
+            <Row gutter={[16, 16]}>
             <Col xs={24} lg={17} xl={17}>
               <Card
                 variant="borderless"
@@ -1280,13 +1253,13 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
                 onUpdateDueDate={handleUpdateDueDate}
                 onUpdatePriority={handleUpdatePriority}
                 onReturnTask={handleReturnTask}
-                onToggleSubtask={handleToggleSubtask}
-                onAddSubtask={handleAddSubtask}
+                onSubtasksChange={handleSubtasksChange}
                 isDrawerOpen={drawerOpen}
                 onCloseDrawer={() => setDrawerOpen(false)}
               />
             </Col>
           </Row>
+          </div>
         </>
       )}
 
@@ -1346,7 +1319,11 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
 
       <TaskFormModal
         open={taskModalOpen}
-        task={taskModalTask}
+        task={
+          taskModalTask
+            ? (teamTasks.find((t) => t.id === taskModalTask.id) ?? taskModalTask)
+            : null
+        }
         defaultTeamId={selectedTeamId}
         categories={teamCategories}
         teams={teams}
@@ -1355,12 +1332,11 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
           setTaskModalTask(null);
         }}
         onSuccess={async () => {
-          setTaskModalOpen(false);
-          setTaskModalTask(null);
           if (selectedTeamId) {
             await loadTeamTasks(selectedTeamId);
           }
         }}
+        onSubtasksChange={handleSubtasksChange}
         onDelete={async (id) => {
           try {
             await deleteTask(id);

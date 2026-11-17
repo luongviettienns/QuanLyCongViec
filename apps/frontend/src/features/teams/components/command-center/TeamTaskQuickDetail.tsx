@@ -6,7 +6,6 @@ import {
   Button,
   Select,
   DatePicker,
-  Checkbox,
   Input,
   Tag,
   Divider,
@@ -18,14 +17,15 @@ import {
   CloseOutlined,
   FullscreenOutlined,
   RollbackOutlined,
-  PlusOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import type { Task, TaskPriority, TaskStatus } from '../../../tasks/types/task.types.ts';
+import type { Subtask, Task, TaskPriority, TaskStatus } from '../../../tasks/types/task.types.ts';
 import type { Team, TeamMember } from '../../types/team.types.ts';
 import type { User } from '../../../auth/types/auth.types.ts';
 import { getTaskPermissions } from '../../../tasks/utils/task-permission.utils.ts';
+import { canUserManageChecklist } from '../../../tasks/utils/checklist.utils.ts';
 import { toDateKey } from '../../../tasks/utils/calendar-date.utils.ts';
+import { TaskSubtasksSection } from '../../../tasks/components/TaskSubtasksSection.tsx';
 
 const { Text, Title } = Typography;
 
@@ -40,8 +40,7 @@ export interface TeamTaskQuickDetailProps {
   onUpdateDueDate?: (taskId: number, dueDate: string | null) => Promise<boolean | void>;
   onUpdatePriority?: (taskId: number, priority: TaskPriority) => Promise<boolean | void>;
   onReturnTask?: (taskId: number, reason: string) => Promise<boolean | void>;
-  onToggleSubtask?: (subtaskId: number, currentStatus: string) => Promise<boolean | void>;
-  onAddSubtask?: (taskId: number, title: string) => Promise<boolean | void>;
+  onSubtasksChange?: (taskId: number, subtasks: Subtask[]) => void;
 }
 
 export function TeamTaskQuickDetail({
@@ -55,15 +54,14 @@ export function TeamTaskQuickDetail({
   onUpdateDueDate,
   onUpdatePriority,
   onReturnTask,
-  onToggleSubtask,
-  onAddSubtask,
+  onSubtasksChange,
 }: TeamTaskQuickDetailProps) {
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnReason, setReturnReason] = useState('');
-  const [subtaskInput, setSubtaskInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const perms = getTaskPermissions(currentUser, task, team);
+  const canManageChecklist = canUserManageChecklist(currentUser, task, team);
   const members: TeamMember[] = team?.members || [];
   const dueKey = toDateKey(task.dueDate);
 
@@ -79,16 +77,6 @@ export function TeamTaskQuickDetail({
       setReturnReason('');
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const handleAddSubtaskSubmit = async () => {
-    if (!subtaskInput.trim()) return;
-    try {
-      await onAddSubtask?.(task.id, subtaskInput.trim());
-      setSubtaskInput('');
-    } catch {
-      // handled upstream
     }
   };
 
@@ -235,75 +223,17 @@ export function TeamTaskQuickDetail({
 
       <Divider style={{ margin: '16px 0 12px 0' }} />
 
-      {/* Subtasks Section */}
+      {/* Checklist Section */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 8,
-          }}
-        >
-          <Text strong style={{ fontSize: 13 }}>
-            Việc con ({task.subtasks?.length || 0})
-          </Text>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
-          {task.subtasks && task.subtasks.length > 0 ? (
-            task.subtasks.map((st) => (
-              <div
-                key={st.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '4px 6px',
-                  borderRadius: 4,
-                  background: '#f9f9f9',
-                }}
-              >
-                <Checkbox
-                  checked={st.status === 'DONE'}
-                  onChange={() => void onToggleSubtask?.(st.id, st.status)}
-                />
-                <Text
-                  delete={st.status === 'DONE'}
-                  style={{
-                    fontSize: 12,
-                    color: st.status === 'DONE' ? '#8c8c8c' : '#262626',
-                    flex: 1,
-                  }}
-                >
-                  {st.title}
-                </Text>
-              </div>
-            ))
-          ) : (
-            <Text type="secondary" style={{ fontSize: 12, fontStyle: 'italic' }}>
-              Chưa có việc con
-            </Text>
-          )}
-        </div>
-
-        {perms.canEditContent && (
-          <Space.Compact style={{ width: '100%' }}>
-            <Input
-              size="small"
-              placeholder="Thêm việc con..."
-              value={subtaskInput}
-              onChange={(e) => setSubtaskInput(e.target.value)}
-              onPressEnter={handleAddSubtaskSubmit}
-            />
-            <Button
-              size="small"
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={handleAddSubtaskSubmit}
-            />
-          </Space.Compact>
-        )}
+        <TaskSubtasksSection
+          key={task.id}
+          task={task}
+          currentUser={currentUser}
+          canManage={canManageChecklist}
+          variant="compact"
+          initialSubtasks={task.subtasks}
+          onSubtasksChange={onSubtasksChange}
+        />
       </div>
 
       {/* Bottom Action: Return Task */}

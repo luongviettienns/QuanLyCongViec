@@ -16,7 +16,7 @@ import {
   DeleteOutlined,
 } from '@ant-design/icons';
 import { useResponsive } from '../../../shared/hooks';
-import type { Task, TaskFormValues } from '../types/task.types';
+import type { Subtask, Task, TaskFormValues } from '../types/task.types';
 import { TASK_STATUS_CONFIG } from '../types/task.types';
 import type { Category } from '../../categories/types/category.types';
 import type { Team } from '../../teams/types/team.types';
@@ -29,6 +29,12 @@ import { getFriendlyErrorMessage } from '../../../shared/api';
 import { shouldIgnoreTaskApiError } from '../utils/task-error.utils';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { getTaskPermissions } from '../utils/task-permission.utils';
+import {
+  canUserManageChecklist,
+  getChecklistProgress,
+  resolveModalChecklistSubtasks,
+  type LiveChecklistCache,
+} from '../utils/checklist.utils';
 import { TaskCollaboratorsSection } from './TaskCollaboratorsSection';
 import { TaskSubtasksSection } from './TaskSubtasksSection';
 import { TaskInfoForm } from './TaskInfoForm';
@@ -46,6 +52,7 @@ export interface TaskFormModalProps {
   onClose: () => void;
   onSuccess: () => Promise<void> | void;
   onDelete?: (id: number) => Promise<boolean | void> | void;
+  onSubtasksChange?: (taskId: number, subtasks: Subtask[]) => void;
 }
 
 function getTaskVersion(task: Task | null): string {
@@ -77,11 +84,13 @@ export default function TaskFormModal({
   onClose,
   onSuccess,
   onDelete,
+  onSubtasksChange,
 }: TaskFormModalProps) {
   const { user } = useAuth();
   const [form] = Form.useForm<TaskFormValues>();
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [liveSubtasks, setLiveSubtasks] = useState<LiveChecklistCache | null>(null);
   const [activeTab, setActiveTab] = useState<'info' | 'collaborators' | 'subtasks'>(
     () => initialTab,
   );
@@ -156,10 +165,11 @@ export default function TaskFormModal({
   const canEditContent = !task ? true : (permissions?.canEditContent ?? true);
   const canChangeStatus = !task ? true : (permissions?.canChangeStatus ?? true);
   const isReadOnly = Boolean(task && !canEditContent && !canChangeStatus);
-  const canManage = Boolean(
-    permissions?.roles.some((r) =>
-      ['OWNER', 'ADMIN', 'CREATOR', 'ASSIGNEE'].includes(r),
-    ),
+  const canManage = task ? canUserManageChecklist(user, task, taskTeam) : false;
+
+  const checklistProgress = useMemo(
+    () => getChecklistProgress(resolveModalChecklistSubtasks(open, task, liveSubtasks)),
+    [open, task, liveSubtasks],
   );
 
   const isSaveDisabled = Boolean(
@@ -402,7 +412,12 @@ export default function TaskFormModal({
       closable={!deleting}
       maskClosable={!deleting}
       afterOpenChange={(visible) => {
+        if (!visible) {
+          setLiveSubtasks(null);
+          return;
+        }
         if (visible) {
+          setLiveSubtasks(null);
           setActiveTab(initialTab ?? 'info');
           if (!isFormDirty) {
             if (task) {
@@ -523,19 +538,30 @@ export default function TaskFormModal({
               key: 'subtasks',
               label: (
                 <span>
-                  <UnorderedListOutlined /> Công việc con{' '}
-                  {task.subtasks && task.subtasks.length > 0
-                    ? `(${task.subtasks.length})`
+                  <UnorderedListOutlined /> Checklist
+                  {checklistProgress.total > 0
+                    ? ` (${checklistProgress.done}/${checklistProgress.total})`
                     : ''}
                 </span>
               ),
               children: (
                 <TaskSubtasksSection
+                  key={task.id}
                   task={task}
                   currentUser={user}
                   canManage={canManage}
+                  variant="standard"
+                  initialSubtasks={task.subtasks}
                   highlightSubtaskId={highlightSubtaskId}
                   onChanged={onSuccess}
+                  onSubtasksChange={(targetTaskId, latestSubtasks) => {
+                    setLiveSubtasks({
+                      taskId: targetTaskId,
+                      sourceSubtasksRef: task.subtasks,
+                      subtasks: latestSubtasks,
+                    });
+                    onSubtasksChange?.(targetTaskId, latestSubtasks);
+                  }}
                 />
               ),
             },

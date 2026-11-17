@@ -64,65 +64,69 @@ export function TeamStatStrip({
   };
 
   return (
-    <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-      {cards.map((card) => {
-        const isActive = activeFilter === card.key;
-        return (
-          <Col xs={12} sm={12} md={6} key={card.key}>
-            <Card
-              hoverable
-              onClick={() => handleCardClick(card.key)}
-              styles={{
-                body: {
-                  padding: '12px 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                },
-              }}
-              style={{
-                borderRadius: 8,
-                cursor: 'pointer',
-                border: isActive ? `2px solid ${card.color}` : '1px solid #f0f0f0',
-                background: isActive ? '#fafafa' : '#ffffff',
-                boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.08)' : undefined,
-                transition: 'all 0.2s ease',
-              }}
-            >
-              <div>
-                <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
-                  {card.title}
-                </Text>
-                <Statistic
-                  value={card.value}
-                  styles={{
-                    content: {
-                      fontSize: 22,
-                      fontWeight: 700,
-                      color: card.color,
-                      lineHeight: 1.2,
-                    },
-                  }}
-                />
-              </div>
-              <div
+    <div style={{ overflow: 'hidden', marginBottom: 16 }}>
+      <Row gutter={[10, 10]}>
+        {cards.map((card) => {
+          const isActive = activeFilter === card.key;
+          return (
+            <Col xs={12} sm={12} md={6} key={card.key}>
+              <Card
+                hoverable
+                onClick={() => handleCardClick(card.key)}
+                styles={{
+                  body: {
+                    padding: '10px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                  },
+                }}
                 style={{
-                  fontSize: 22,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 40,
-                  height: 40,
-                  borderRadius: '50%',
-                  background: `${card.color}15`,
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  border: isActive ? `2px solid ${card.color}` : '1px solid #f0f0f0',
+                  background: isActive ? '#fafafa' : '#ffffff',
+                  boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.08)' : undefined,
+                  transition: 'all 0.2s ease',
                 }}
               >
-                {card.icon}
-              </div>
-            </Card>
-          </Col>
-        );
-      })}
-    </Row>
+                <div style={{ minWidth: 0 }}>
+                  <Text type="secondary" style={{ fontSize: 12, display: 'block' }} ellipsis>
+                    {card.title}
+                  </Text>
+                  <Statistic
+                    value={card.value}
+                    styles={{
+                      content: {
+                        fontSize: 20,
+                        fontWeight: 700,
+                        color: card.color,
+                        lineHeight: 1.2,
+                      },
+                    }}
+                  />
+                </div>
+                <div
+                  style={{
+                    fontSize: 18,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 34,
+                    height: 34,
+                    borderRadius: '50%',
+                    background: `${card.color}15`,
+                    flexShrink: 0,
+                  }}
+                >
+                  {card.icon}
+                </div>
+              </Card>
+            </Col>
+          );
+        })}
+      </Row>
+    </div>
   );
 }

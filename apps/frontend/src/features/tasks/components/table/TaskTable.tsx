@@ -35,6 +35,7 @@ import { getTaskPermissions } from '../../utils/task-permission.utils';
 import { summarizeBulkSelection } from '../../utils/task-bulk.utils';
 import { formatDate, getDeadlineDisplayState } from '../../../../shared/utils/date.utils';
 import { useResponsive } from '../../../../shared/hooks';
+import { ChecklistProgressBadge } from '../checklist';
 
 interface TaskTableProps {
   tasks: Task[];
@@ -219,7 +220,12 @@ export default function TaskTable({
     {
       title: 'Tiêu đề',
       dataIndex: 'title',
-      render: (title: string) => <strong>{title}</strong>,
+      render: (title: string, record: Task) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <strong>{title}</strong>
+          <ChecklistProgressBadge subtasks={record.subtasks} />
+        </div>
+      ),
     },
     {
       title: 'Nhóm / Thực hiện',
@@ -400,6 +406,7 @@ export default function TaskTable({
               </div>
 
               <div style={{ fontSize: 12, color: '#888', display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 8, alignItems: 'center' }}>
+                <ChecklistProgressBadge subtasks={task.subtasks} />
                 {task.startDate && <span>Bắt đầu: {formatDate(task.startDate)}</span>}
                 {task.dueDate && deadline.formatted && (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
