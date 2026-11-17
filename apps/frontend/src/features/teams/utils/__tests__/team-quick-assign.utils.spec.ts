@@ -121,7 +121,7 @@ describe('team-quick-assign.utils', () => {
       });
     });
 
-    it('includes trimmed description, dueDate string, priority, and categoryId when provided', () => {
+    it('includes trimmed description, dueDate string, priority, categoryId, and cleaned collaboratorIds when provided', () => {
       const payload = buildQuickAssignCreatePayload(7, {
         title: 'Kiểm tra KPI',
         assigneeId: 2,
@@ -129,6 +129,8 @@ describe('team-quick-assign.utils', () => {
         dueDateStr: '2026-11-25',
         description: '  Kiểm tra số liệu quý IV  ',
         categoryId: 12,
+        collaboratorIds: [1, 2, 3, 3],
+        currentUserId: 1,
       });
 
       assert.deepEqual(payload, {
@@ -139,6 +141,7 @@ describe('team-quick-assign.utils', () => {
         priority: 'HIGH',
         categoryId: 12,
         dueDate: '2026-11-25',
+        collaboratorIds: [3],
       });
     });
   });

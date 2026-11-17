@@ -8,6 +8,7 @@ import {
   Matches,
   IsInt,
   Min,
+  IsArray,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskStatus, TaskPriority } from '@prisma/client';
@@ -96,4 +97,15 @@ export class CreateTaskDto {
   @IsInt({ message: 'Mã người được phân công phải là số nguyên' })
   @Min(1, { message: 'Mã người được phân công phải là số nguyên dương' })
   assigneeId?: number;
+
+  @ApiPropertyOptional({
+    description: 'Danh sách ID người phối hợp được mời ngay khi tạo công việc nhóm',
+    type: [Number],
+    example: [3, 4],
+  })
+  @IsOptional()
+  @IsArray({ message: 'Danh sách người phối hợp phải là mảng số nguyên' })
+  @IsInt({ each: true, message: 'Mỗi mã người phối hợp phải là số nguyên' })
+  @Min(1, { each: true, message: 'Mỗi mã người phối hợp phải là số nguyên dương' })
+  collaboratorIds?: number[];
 }

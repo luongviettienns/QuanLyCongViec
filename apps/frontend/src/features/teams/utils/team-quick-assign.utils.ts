@@ -16,6 +16,8 @@ export interface QuickAssignPayloadInput {
   priority?: TaskPriority;
   description?: string | null;
   categoryId?: number | null;
+  collaboratorIds?: number[];
+  currentUserId?: number | null;
 }
 
 export interface QuickAssignDirtyCheckValues {
@@ -115,6 +117,19 @@ export function buildQuickAssignCreatePayload(
 
   if (cleanDescription) {
     payload.description = cleanDescription;
+  }
+
+  const cleanCollaboratorIds = Array.from(
+    new Set(
+      stripConflictingCollaborators(
+        input.collaboratorIds ?? [],
+        input.assigneeId,
+        input.currentUserId,
+      ),
+    ),
+  );
+  if (cleanCollaboratorIds.length > 0) {
+    payload.collaboratorIds = cleanCollaboratorIds;
   }
 
   return payload;

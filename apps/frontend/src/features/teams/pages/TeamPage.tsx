@@ -80,6 +80,7 @@ import {
   type CommandFilterType,
   type TeamCommandMetrics,
 } from '../utils/team-command-center.utils';
+import { buildTeamMemberOptions } from '../utils/team-quick-assign.utils';
 import {
   TeamCommandHeader,
   TeamStatStrip,
@@ -1024,7 +1025,7 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
         key: 'members',
         label: (
           <span>
-            <UserOutlined /> Thành viên ({selectedTeam ? 1 + (selectedTeam.members?.length || 0) : 0})
+            <UserOutlined /> Thành viên ({buildTeamMemberOptions(selectedTeam).length})
           </span>
         ),
         children: (

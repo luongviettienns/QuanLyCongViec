@@ -29,7 +29,7 @@ import { useResponsive } from '../../../../shared/hooks';
 import { getFriendlyErrorMessage } from '../../../../shared/api';
 import type { Category } from '../../../categories/types/category.types.ts';
 import type { TaskPriority } from '../../../tasks/types/task.types.ts';
-import { createTask, inviteCollaborator } from '../../../tasks/api/tasks.api.ts';
+import { createTask } from '../../../tasks/api/tasks.api.ts';
 import { shouldIgnoreTaskApiError } from '../../../tasks/utils/task-error.utils.ts';
 import type { Team } from '../../types/team.types.ts';
 import {
@@ -158,44 +158,17 @@ export function TeamQuickAssignDrawer({
         priority: values.priority || 'MEDIUM',
         description: values.description,
         categoryId: values.categoryId ?? null,
+        collaboratorIds: values.collaboratorIds,
+        currentUserId,
       });
 
       const createdTask = await createTask(payload);
-
-      const collaboratorIds = stripConflictingCollaborators(
-        values.collaboratorIds ?? [],
-        values.assigneeId,
-        currentUserId,
-      );
-
-      let failedInviteNames: string[] = [];
-      if (collaboratorIds.length > 0) {
-        const inviteResults = await Promise.allSettled(
-          collaboratorIds.map((uid) => inviteCollaborator(createdTask.id, uid)),
-        );
-        failedInviteNames = inviteResults.reduce<string[]>((acc, res, idx) => {
-          if (res.status === 'rejected') {
-            const uid = collaboratorIds[idx];
-            const member = memberOptions.find((m) => m.userId === uid);
-            acc.push(member?.name || `#${uid}`);
-          }
-          return acc;
-        }, []);
-      }
 
       form.resetFields();
       setExtraOpenKeys([]);
       await onSuccess();
       onClose();
-
-      if (failedInviteNames.length > 0) {
-        message.warning(
-          `Đã tạo công việc "${createdTask.title}", nhưng chưa gửi được lời mời phối hợp cho: ${failedInviteNames.join(', ')}`,
-          6,
-        );
-      } else {
-        message.success(`Đã giao công việc "${createdTask.title}" thành công`);
-      }
+      message.success(`Đã giao công việc "${createdTask.title}" thành công`);
     } catch (err: unknown) {
       if (!shouldIgnoreTaskApiError(err)) {
         message.error(getFriendlyErrorMessage(err, 'Không thể tạo công việc'));
@@ -271,7 +244,7 @@ export function TeamQuickAssignDrawer({
           initialValues={{
             priority: 'MEDIUM' as TaskPriority,
           }}
-          requiredMark="optional"
+          requiredMark={false}
         >
           {/* Team locked context */}
           <Form.Item label="Team thực hiện" style={{ marginBottom: 16 }}>

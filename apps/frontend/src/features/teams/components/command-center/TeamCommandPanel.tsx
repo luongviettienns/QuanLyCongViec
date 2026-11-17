@@ -25,6 +25,7 @@ import type {
   CommandFilterType,
 } from '../../utils/team-command-center.utils.ts';
 import { computeMemberWorkloads } from '../../utils/team-command-center.utils.ts';
+import { buildTeamMemberOptions } from '../../utils/team-quick-assign.utils.ts';
 import { TeamTaskQuickDetail } from './TeamTaskQuickDetail.tsx';
 
 const { Text } = Typography;
@@ -82,6 +83,7 @@ export function TeamCommandPanel({
   const screens = useBreakpoint();
   const isMobileOrTablet = !screens.lg;
   const workloads = computeMemberWorkloads(members, tasks);
+  const memberOptions = buildTeamMemberOptions(team);
 
   const memberContent = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -98,7 +100,7 @@ export function TeamCommandPanel({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f0f0f0' }}>
             <Text type="secondary">Tổng thành viên:</Text>
-            <Text strong>{1 + (members?.length || 0)} người</Text>
+            <Text strong>{memberOptions.length} người</Text>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f0f0f0' }}>
             <Text type="secondary">Chủ nhóm:</Text>
@@ -109,11 +111,11 @@ export function TeamCommandPanel({
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f0f0f0' }}>
             <Text type="secondary">Quản trị viên:</Text>
-            <Text strong>{members?.filter((m) => m.role === 'ADMIN').length || 0} người</Text>
+            <Text strong>{memberOptions.filter((m) => !m.isOwner && m.role === 'ADMIN').length} người</Text>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
             <Text type="secondary">Thành viên thường:</Text>
-            <Text strong>{members?.filter((m) => m.role === 'MEMBER').length || 0} người</Text>
+            <Text strong>{memberOptions.filter((m) => !m.isOwner && m.role === 'MEMBER').length} người</Text>
           </div>
         </div>
       </Card>

@@ -138,6 +138,7 @@ export interface CreateTaskPayload {
   categoryId?: number | null;
   teamId?: number | null;
   assigneeId?: number | null;
+  collaboratorIds?: number[];
   startDate?: string | null;
   dueDate?: string | null;
 }

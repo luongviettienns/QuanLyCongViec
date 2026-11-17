@@ -12,6 +12,7 @@ import {
   TagsOutlined,
 } from '@ant-design/icons';
 import type { Team } from '../../types/team.types.ts';
+import { buildTeamMemberOptions } from '../../utils/team-quick-assign.utils.ts';
 
 const { Text } = Typography;
 
@@ -46,9 +47,7 @@ export function TeamCommandHeader({
   onDeleteTeam,
   onLeaveTeam,
 }: TeamCommandHeaderProps) {
-  const memberCount = selectedTeam
-    ? 1 + (selectedTeam.members?.length || 0)
-    : 0;
+  const memberCount = buildTeamMemberOptions(selectedTeam).length;
 
   const menuItems: MenuProps['items'] = [];
 

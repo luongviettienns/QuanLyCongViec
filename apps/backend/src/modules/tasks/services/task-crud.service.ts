@@ -14,7 +14,7 @@ import { TaskReorderService } from './task-reorder.service.js';
 import { NotificationEventService } from '../../notifications/services/notification-event.service.js';
 import { RealtimeService } from '../../realtime/realtime.service.js';
 import { TeamActivityService } from '../../team-activity/team-activity.service.js';
-import { type Task, Prisma, TaskStatus, TaskPriority, TeamActivityAction } from '@prisma/client';
+import { type Task, Prisma, TaskStatus, TaskPriority, TeamActivityAction, CollaboratorStatus } from '@prisma/client';
 import {
   parseDateOnly,
   assertDateRangeValid,
@@ -144,6 +144,24 @@ export class TaskCrudService {
           }
         }
 
+        const uniqueCollabIds = Array.from(new Set(data.collaboratorIds ?? []));
+        if (uniqueCollabIds.length > 0) {
+          if (!data.teamId) {
+            throw new BadRequestException('Chỉ có thể mời người phối hợp cho công việc thuộc nhóm làm việc');
+          }
+          for (const collabUserId of uniqueCollabIds) {
+            if (collabUserId === userId) {
+              throw new BadRequestException('Không thể tự mời chính mình làm người phối hợp');
+            }
+            if (data.assigneeId && collabUserId === data.assigneeId) {
+              throw new BadRequestException('Người này đang là người phụ trách chính của công việc');
+            }
+            if (!this.policy.isTeamMember(collabUserId, targetTeam)) {
+              throw new BadRequestException('Người được mời không phải là thành viên trong nhóm');
+            }
+          }
+        }
+
         const currentCount = await this.reorderService.getNextPosition(
           tx,
           titleScopeWhere,
@@ -163,6 +181,17 @@ export class TaskCrudService {
             position: currentCount,
             startDate: parsedStartDate,
             dueDate: parsedDueDate,
+            ...(uniqueCollabIds.length > 0
+              ? {
+                  collaborators: {
+                    create: uniqueCollabIds.map((collabUserId) => ({
+                      userId: collabUserId,
+                      invitedById: userId,
+                      status: CollaboratorStatus.PENDING,
+                    })),
+                  },
+                }
+              : {}),
           },
           include: {
             category: true,
@@ -171,6 +200,12 @@ export class TaskCrudService {
             },
             team: {
               select: { id: true, name: true },
+            },
+            collaborators: {
+              include: {
+                user: { select: { id: true, name: true, email: true } },
+                invitedBy: { select: { id: true, name: true, email: true } },
+              },
             },
           },
         });
@@ -212,6 +247,35 @@ export class TaskCrudService {
                 taskTitle: createdTask.title,
                 assigneeId: createdTask.assigneeId,
                 teamId: createdTask.teamId,
+                timestamp: createdTask.createdAt.getTime(),
+              },
+              tx,
+            );
+          }
+        }
+
+        if (createdTask.teamId && uniqueCollabIds.length > 0) {
+          for (const collabUserId of uniqueCollabIds) {
+            await this.teamActivityService.logActivity(tx, {
+              teamId: createdTask.teamId,
+              actorId: userId,
+              action: TeamActivityAction.COLLABORATOR_INVITED,
+              targetUserId: collabUserId,
+              metadata: {
+                taskId: createdTask.id,
+                taskTitle: createdTask.title,
+              },
+            });
+
+            await this.notificationEventService.publish(
+              {
+                type: 'TASK_COLLABORATOR_INVITED',
+                actorId: userId,
+                taskId: createdTask.id,
+                taskTitle: createdTask.title,
+                teamId: createdTask.teamId,
+                invitedUserId: collabUserId,
+                invitedAt: createdTask.createdAt,
                 timestamp: createdTask.createdAt.getTime(),
               },
               tx,
