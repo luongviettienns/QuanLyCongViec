@@ -1,5 +1,5 @@
 import React from 'react';
-import { Typography, Space } from 'antd';
+import { Button, Space, Tag, Tooltip, Typography } from 'antd';
 import {
   UserAddOutlined,
   UserDeleteOutlined,
@@ -17,72 +17,66 @@ import {
   StopOutlined,
   BellOutlined,
   OrderedListOutlined,
+  CheckOutlined,
 } from '@ant-design/icons';
 import type { Notification, NotificationType } from '../types/notification.types';
+import { getNotificationVisualStyle } from '../utils/notification-state.utils';
 
 const { Text } = Typography;
 
 interface NotificationItemViewProps {
   notification: Notification;
   onClick: (notification: Notification) => void;
+  onMarkRead?: (id: number) => void;
 }
 
-function getNotificationIcon(type: NotificationType) {
-  const iconStyle = { fontSize: 18, marginTop: 2 };
+function getNotificationIcon(type: NotificationType, color: string) {
+  const iconStyle = { fontSize: 15, color };
 
   switch (type) {
     case 'TASK_ASSIGNED':
-      return <UserAddOutlined style={{ ...iconStyle, color: '#1677ff' }} />;
+    case 'TASK_COLLABORATOR_INVITED':
+      return <UserAddOutlined style={iconStyle} />;
     case 'TASK_UNASSIGNED':
-      return <UserDeleteOutlined style={{ ...iconStyle, color: '#fa8c16' }} />;
+    case 'TEAM_MEMBER_REMOVED':
+    case 'TASK_COLLABORATOR_REMOVED':
+    case 'SUBTASK_UNASSIGNED':
+      return <UserDeleteOutlined style={iconStyle} />;
     case 'TASK_STATUS_CHANGED':
-      return <SyncOutlined style={{ ...iconStyle, color: '#13c2c2' }} />;
+    case 'SUBTASK_STATUS_CHANGED':
+      return <SyncOutlined style={iconStyle} />;
     case 'TASK_COMPLETED':
-      return <CheckCircleOutlined style={{ ...iconStyle, color: '#52c41a' }} />;
+    case 'TASK_COLLABORATOR_ACCEPTED':
+    case 'SUBTASK_COMPLETED':
+      return <CheckCircleOutlined style={iconStyle} />;
     case 'TASK_RETURNED':
-      return <RollbackOutlined style={{ ...iconStyle, color: '#faad14' }} />;
+    case 'SUBTASK_REOPENED':
+      return <RollbackOutlined style={iconStyle} />;
     case 'TASK_DEADLINE_CHANGED':
-      return <CalendarOutlined style={{ ...iconStyle, color: '#722ed1' }} />;
+      return <CalendarOutlined style={iconStyle} />;
     case 'TASK_DEADLINE_SOON':
     case 'DEADLINE_SOON':
-      return <ClockCircleOutlined style={{ ...iconStyle, color: '#fa8c16' }} />;
+      return <ClockCircleOutlined style={iconStyle} />;
     case 'TASK_OVERDUE':
-      return <AlertOutlined style={{ ...iconStyle, color: '#ff4d4f' }} />;
+      return <AlertOutlined style={iconStyle} />;
     case 'TASK_DELETED':
-      return <DeleteOutlined style={{ ...iconStyle, color: '#8c8c8c' }} />;
+      return <DeleteOutlined style={iconStyle} />;
     case 'TASK_MOVED_TEAM':
-      return <FolderOpenOutlined style={{ ...iconStyle, color: '#2f54eb' }} />;
+      return <FolderOpenOutlined style={iconStyle} />;
     case 'TEAM_MEMBER_ADDED':
     case 'TEAM_INVITED':
-      return <TeamOutlined style={{ ...iconStyle, color: '#52c41a' }} />;
-    case 'TEAM_MEMBER_REMOVED':
-      return <UserDeleteOutlined style={{ ...iconStyle, color: '#ff4d4f' }} />;
+      return <TeamOutlined style={iconStyle} />;
     case 'TEAM_ROLE_CHANGED':
-      return <SafetyCertificateOutlined style={{ ...iconStyle, color: '#1677ff' }} />;
+      return <SafetyCertificateOutlined style={iconStyle} />;
     case 'TEAM_OWNERSHIP_TRANSFERRED':
-      return <CrownOutlined style={{ ...iconStyle, color: '#faad14' }} />;
+      return <CrownOutlined style={iconStyle} />;
     case 'TEAM_DELETED':
-      return <StopOutlined style={{ ...iconStyle, color: '#ff4d4f' }} />;
-    case 'TASK_COLLABORATOR_INVITED':
-      return <UserAddOutlined style={{ ...iconStyle, color: '#722ed1' }} />;
-    case 'TASK_COLLABORATOR_ACCEPTED':
-      return <CheckCircleOutlined style={{ ...iconStyle, color: '#52c41a' }} />;
     case 'TASK_COLLABORATOR_DECLINED':
-      return <StopOutlined style={{ ...iconStyle, color: '#ff4d4f' }} />;
-    case 'TASK_COLLABORATOR_REMOVED':
-      return <UserDeleteOutlined style={{ ...iconStyle, color: '#fa8c16' }} />;
+      return <StopOutlined style={iconStyle} />;
     case 'SUBTASK_ASSIGNED':
-      return <OrderedListOutlined style={{ ...iconStyle, color: '#13c2c2' }} />;
-    case 'SUBTASK_UNASSIGNED':
-      return <UserDeleteOutlined style={{ ...iconStyle, color: '#fa8c16' }} />;
-    case 'SUBTASK_STATUS_CHANGED':
-      return <SyncOutlined style={{ ...iconStyle, color: '#13c2c2' }} />;
-    case 'SUBTASK_COMPLETED':
-      return <CheckCircleOutlined style={{ ...iconStyle, color: '#52c41a' }} />;
-    case 'SUBTASK_REOPENED':
-      return <RollbackOutlined style={{ ...iconStyle, color: '#faad14' }} />;
+      return <OrderedListOutlined style={iconStyle} />;
     default:
-      return <BellOutlined style={{ ...iconStyle, color: '#1677ff' }} />;
+      return <BellOutlined style={iconStyle} />;
   }
 }
 
@@ -115,58 +109,115 @@ function formatTime(isoString: string): string {
 export const NotificationItemView: React.FC<NotificationItemViewProps> = ({
   notification,
   onClick,
+  onMarkRead,
 }) => {
+  const visualStyle = getNotificationVisualStyle(notification.type);
+
+  const rowClassName = [
+    'notification-item',
+    !notification.isRead ? 'notification-item--unread' : '',
+    visualStyle.isOverdue ? 'notification-item--overdue' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
     <div
+      role="button"
+      tabIndex={0}
+      className={rowClassName}
       onClick={() => onClick(notification)}
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 12,
-        padding: '12px 16px',
-        cursor: 'pointer',
-        transition: 'background-color 0.2s ease',
-        backgroundColor: notification.isRead ? '#ffffff' : '#f0f7ff',
-        borderBottom: '1px solid #f0f0f0',
-        position: 'relative',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = notification.isRead ? '#fafafa' : '#e6f4ff';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor = notification.isRead ? '#ffffff' : '#f0f7ff';
+      onKeyDown={(e) => {
+        if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          onClick(notification);
+        }
       }}
     >
-      <div style={{ flexShrink: 0, paddingTop: 2 }}>
-        {getNotificationIcon(notification.type)}
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: '50%',
+          backgroundColor: visualStyle.iconBgColor,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+          marginTop: 2,
+        }}
+      >
+        {getNotificationIcon(notification.type, visualStyle.iconColor)}
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-          <Text
-            strong={!notification.isRead}
-            style={{
-              fontSize: 13,
-              color: notification.isRead ? '#595959' : '#1f1f1f',
-              lineHeight: 1.3,
-            }}
-            ellipsis
-          >
-            {notification.title}
-          </Text>
-          {!notification.isRead && (
-            <span
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: 6,
+            marginBottom: 2,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+            <Text
+              strong={!notification.isRead}
               style={{
-                width: 7,
-                height: 7,
-                borderRadius: '50%',
-                backgroundColor: '#1677ff',
-                display: 'inline-block',
-                marginLeft: 6,
-                flexShrink: 0,
+                fontSize: 13,
+                color: notification.isRead ? '#595959' : '#1f1f1f',
+                lineHeight: 1.35,
               }}
-            />
-          )}
+              ellipsis
+            >
+              {notification.title}
+            </Text>
+            {visualStyle.isOverdue && (
+              <Tag
+                color="error"
+                style={{
+                  margin: 0,
+                  fontSize: 10,
+                  lineHeight: '16px',
+                  padding: '0 5px',
+                  borderRadius: 8,
+                  flexShrink: 0,
+                }}
+              >
+                Quá hạn
+              </Tag>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+            {!notification.isRead && onMarkRead && (
+              <Tooltip title="Đánh dấu đã đọc">
+                <Button
+                  type="text"
+                  size="small"
+                  className="notification-mark-read-btn"
+                  icon={<CheckOutlined style={{ fontSize: 11, color: '#1677ff' }} />}
+                  aria-label="Đánh dấu đã đọc"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMarkRead(notification.id);
+                  }}
+                />
+              </Tooltip>
+            )}
+            {!notification.isRead && (
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: '50%',
+                  backgroundColor: visualStyle.isOverdue ? '#ff4d4f' : '#1677ff',
+                  display: 'inline-block',
+                }}
+              />
+            )}
+          </div>
         </div>
 
         <Text
@@ -186,9 +237,7 @@ export const NotificationItemView: React.FC<NotificationItemViewProps> = ({
 
         <Space size={8} style={{ fontSize: 11, color: '#8c8c8c' }}>
           <span>{formatTime(notification.createdAt)}</span>
-          {notification.actor?.name && (
-            <span>• từ {notification.actor.name}</span>
-          )}
+          {notification.actor?.name && <span>• từ {notification.actor.name}</span>}
         </Space>
       </div>
     </div>

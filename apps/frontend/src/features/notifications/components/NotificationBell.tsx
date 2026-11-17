@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Badge, Button, Popover } from 'antd';
+import { Badge, Button, Drawer, Popover } from 'antd';
 import { BellOutlined } from '@ant-design/icons';
+import { useResponsive } from '../../../shared/hooks';
 import { useNotifications } from '../hooks/useNotifications';
 import { NotificationPopover } from './NotificationPopover';
 import type { NotificationDestination } from '../utils/notification-state.utils';
@@ -11,6 +12,9 @@ interface NotificationBellProps {
 
 export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigate }) => {
   const [open, setOpen] = useState(false);
+  const screens = useResponsive();
+  const isMobile = !screens.md;
+
   const {
     notifications,
     unreadCount,
@@ -33,48 +37,82 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigate }
     }
   };
 
+  const triggerButton = (
+    <Badge count={unreadCount} overflowCount={99} size="small" offset={[-2, 4]}>
+      <Button
+        type="text"
+        shape="circle"
+        icon={<BellOutlined style={{ fontSize: 18 }} />}
+        aria-label="Thông báo"
+        onClick={isMobile ? () => handleOpenChange(!open) : undefined}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 36,
+          height: 36,
+        }}
+      />
+    </Badge>
+  );
+
+  const renderContent = (variant: 'popover' | 'drawer') => (
+    <NotificationPopover
+      notifications={notifications}
+      unreadCount={unreadCount}
+      loading={loading}
+      loadingMore={loadingMore}
+      error={error}
+      hasMore={hasMore}
+      activeTab={activeTab}
+      variant={variant}
+      onTabChange={setActiveTab}
+      onMarkRead={markRead}
+      onMarkAllRead={markAllRead}
+      onLoadMore={loadMore}
+      onRetry={() => void fetchNotifications()}
+      onNavigate={onNavigate}
+      onClose={() => setOpen(false)}
+    />
+  );
+
+  if (isMobile) {
+    return (
+      <>
+        {triggerButton}
+        <Drawer
+          open={open}
+          onClose={() => setOpen(false)}
+          placement="right"
+          size="100%"
+          closable={false}
+          destroyOnHidden
+          styles={{
+            body: {
+              padding: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              height: '100%',
+            },
+          }}
+        >
+          {renderContent('drawer')}
+        </Drawer>
+      </>
+    );
+  }
+
   return (
     <Popover
-      content={
-        <NotificationPopover
-          notifications={notifications}
-          unreadCount={unreadCount}
-          loading={loading}
-          loadingMore={loadingMore}
-          error={error}
-          hasMore={hasMore}
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          onMarkRead={markRead}
-          onMarkAllRead={markAllRead}
-          onLoadMore={loadMore}
-          onRetry={() => void fetchNotifications()}
-          onNavigate={onNavigate}
-          onClose={() => setOpen(false)}
-        />
-      }
+      content={renderContent('popover')}
       trigger="click"
       open={open}
       onOpenChange={handleOpenChange}
       placement="bottomRight"
-      overlayInnerStyle={{ padding: 0 }}
+      styles={{ container: { padding: 0 } }}
       arrow={{ pointAtCenter: true }}
     >
-      <Badge count={unreadCount} overflowCount={99} size="small" offset={[-2, 4]}>
-        <Button
-          type="text"
-          shape="circle"
-          icon={<BellOutlined style={{ fontSize: 18 }} />}
-          aria-label="Thông báo"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 36,
-            height: 36,
-          }}
-        />
-      </Badge>
+      {triggerButton}
     </Popover>
   );
 };

@@ -1,13 +1,15 @@
-import React from 'react';
-import { Button, Segmented, Empty, Spin, Alert } from 'antd';
-import { CheckOutlined } from '@ant-design/icons';
+import React, { useMemo } from 'react';
+import { Alert, Button, Empty, Segmented, Spin, Tag } from 'antd';
+import { CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { NotificationItemView } from './NotificationItemView';
-import type { Notification } from '../types/notification.types';
+import type { Notification, NotificationFilterTab } from '../types/notification.types';
 import {
   buildNotificationDestination,
+  groupNotificationsByTime,
   resolveNotificationModalTab,
   type NotificationDestination,
 } from '../utils/notification-state.utils';
+import './notifications.css';
 
 interface NotificationPopoverProps {
   notifications: Notification[];
@@ -16,14 +18,26 @@ interface NotificationPopoverProps {
   loadingMore: boolean;
   error?: string | null;
   hasMore: boolean;
-  activeTab: 'all' | 'unread';
-  onTabChange: (tab: 'all' | 'unread') => void;
+  activeTab: NotificationFilterTab;
+  variant?: 'popover' | 'drawer';
+  onTabChange: (tab: NotificationFilterTab) => void;
   onMarkRead: (id: number) => void;
   onMarkAllRead: () => void;
   onLoadMore: () => void;
   onRetry?: () => void;
   onNavigate?: (dest: NotificationDestination) => void;
   onClose: () => void;
+}
+
+function getEmptyDescription(activeTab: NotificationFilterTab): string {
+  switch (activeTab) {
+    case 'unread':
+      return 'Bạn đã đọc tất cả thông báo!';
+    case 'important':
+      return 'Không có thông báo quan trọng nào';
+    default:
+      return 'Chưa có thông báo nào';
+  }
 }
 
 export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
@@ -34,6 +48,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   error,
   hasMore,
   activeTab,
+  variant = 'popover',
   onTabChange,
   onMarkRead,
   onMarkAllRead,
@@ -42,6 +57,13 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   onNavigate,
   onClose,
 }) => {
+  const isDrawer = variant === 'drawer';
+
+  const groupedNotifications = useMemo(
+    () => groupNotificationsByTime(notifications),
+    [notifications],
+  );
+
   const handleItemClick = (notification: Notification) => {
     if (!notification.isRead) {
       onMarkRead(notification.id);
@@ -64,51 +86,85 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   return (
     <div
       style={{
-        width: 360,
-        maxWidth: '92vw',
-        maxHeight: 520,
+        width: isDrawer ? '100%' : 400,
+        maxWidth: isDrawer ? '100%' : 'calc(100vw - 24px)',
+        height: isDrawer ? '100%' : undefined,
+        maxHeight: isDrawer ? '100%' : 540,
         display: 'flex',
         flexDirection: 'column',
+        backgroundColor: '#ffffff',
+        borderRadius: isDrawer ? 0 : 8,
+        overflow: isDrawer ? undefined : 'hidden',
       }}
     >
       {/* Header */}
       <div
         style={{
-          padding: '12px 16px 8px 16px',
+          padding: '12px 16px 10px 16px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          gap: 8,
           borderBottom: '1px solid #f0f0f0',
+          flexShrink: 0,
         }}
       >
-        <span style={{ fontWeight: 600, fontSize: 15, color: '#1f1f1f' }}>
-          Thông báo {unreadCount > 0 && `(${unreadCount})`}
-        </span>
-        <Button
-          type="link"
-          size="small"
-          icon={<CheckOutlined />}
-          disabled={unreadCount === 0}
-          onClick={onMarkAllRead}
-          style={{ padding: 0, fontSize: 12 }}
-        >
-          Đọc tất cả
-        </Button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontWeight: 600, fontSize: 15, color: '#1f1f1f' }}>Thông báo</span>
+          {unreadCount > 0 && (
+            <Tag
+              color="blue"
+              style={{
+                margin: 0,
+                borderRadius: 10,
+                fontSize: 11,
+                lineHeight: '18px',
+                padding: '0 7px',
+              }}
+            >
+              {unreadCount} chưa đọc
+            </Tag>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Button
+            type="link"
+            size="small"
+            icon={<CheckOutlined />}
+            disabled={unreadCount === 0}
+            onClick={onMarkAllRead}
+            style={{ padding: 0, fontSize: 12 }}
+          >
+            Đọc tất cả
+          </Button>
+          {isDrawer && (
+            <Button
+              type="text"
+              size="small"
+              icon={<CloseOutlined />}
+              onClick={onClose}
+              aria-label="Đóng thông báo"
+              style={{ minWidth: 32, minHeight: 32 }}
+            />
+          )}
+        </div>
       </div>
 
       {/* Tabs Filter */}
-      <div style={{ padding: '8px 16px', borderBottom: '1px solid #f0f0f0' }}>
-        <Segmented
+      <div style={{ padding: '8px 16px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+        <Segmented<NotificationFilterTab>
           block
           size="small"
           value={activeTab}
-          onChange={(val) => onTabChange(val as 'all' | 'unread')}
+          onChange={(val) => onTabChange(val)}
           options={[
             { label: 'Tất cả', value: 'all' },
             {
               label: unreadCount > 0 ? `Chưa đọc (${unreadCount})` : 'Chưa đọc',
               value: 'unread',
             },
+            { label: 'Quan trọng', value: 'important' },
           ]}
         />
       </div>
@@ -118,8 +174,8 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
         style={{
           flex: 1,
           overflowY: 'auto',
-          maxHeight: 380,
-          minHeight: 180,
+          maxHeight: isDrawer ? undefined : 410,
+          minHeight: isDrawer ? 0 : 200,
           position: 'relative',
         }}
       >
@@ -132,18 +188,23 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
               height: 200,
             }}
           >
-            <Spin tip="Đang tải..." />
+            <Spin description="Đang tải..." />
           </div>
         ) : (
           <div>
-            {notifications.length > 0 &&
-              notifications.map((item) => (
-                <NotificationItemView
-                  key={item.id}
-                  notification={item}
-                  onClick={handleItemClick}
-                />
-              ))}
+            {groupedNotifications.map((group) => (
+              <div key={group.key}>
+                <div className="notification-group-header">{group.label}</div>
+                {group.items.map((item) => (
+                  <NotificationItemView
+                    key={item.id}
+                    notification={item}
+                    onClick={handleItemClick}
+                    onMarkRead={onMarkRead}
+                  />
+                ))}
+              </div>
+            ))}
 
             {error && (
               <div style={{ padding: notifications.length > 0 ? '8px 16px' : 16 }}>
@@ -164,14 +225,10 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
             )}
 
             {!error && notifications.length === 0 && (
-              <div style={{ padding: '40px 16px' }}>
+              <div style={{ padding: '44px 16px' }}>
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description={
-                    activeTab === 'unread'
-                      ? 'Bạn đã đọc tất cả thông báo!'
-                      : 'Chưa có thông báo nào'
-                  }
+                  description={getEmptyDescription(activeTab)}
                 />
               </div>
             )}

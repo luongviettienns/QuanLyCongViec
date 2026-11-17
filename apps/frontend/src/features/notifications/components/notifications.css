@@ -1,0 +1,73 @@
+.notification-group-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 6px 16px;
+  background-color: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #8c8c8c;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.notification-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  background-color: #ffffff;
+  border-bottom: 1px solid #f5f5f5;
+  transition: background-color 0.15s ease;
+  position: relative;
+}
+
+.notification-item:hover {
+  background-color: #fafafa;
+}
+
+.notification-item:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: -2px;
+}
+
+.notification-item--unread {
+  background-color: #f0f7ff;
+}
+
+.notification-item--unread:hover {
+  background-color: #e6f4ff;
+}
+
+.notification-item--overdue:not(.notification-item--unread) {
+  box-shadow: inset 2px 0 0 #ffa39e;
+}
+
+.notification-item--overdue.notification-item--unread {
+  box-shadow: inset 3px 0 0 #ff4d4f;
+  background-color: #fff2f0;
+}
+
+.notification-item--overdue.notification-item--unread:hover {
+  background-color: #ffebe8;
+}
+
+.notification-mark-read-btn {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.notification-item:hover .notification-mark-read-btn,
+.notification-item:focus-within .notification-mark-read-btn {
+  opacity: 1;
+}
+
+@media (max-width: 767px), (hover: none) {
+  .notification-mark-read-btn {
+    opacity: 1;
+    min-width: 32px;
+    min-height: 32px;
+  }
+}

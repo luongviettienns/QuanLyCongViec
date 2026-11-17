@@ -1,6 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service.js';
 import { QueryNotificationsDto } from '../dto/query-notifications.dto.js';
+import {
+  IMPORTANT_NOTIFICATION_TYPES,
+  isImportantNotificationType,
+} from '../constants/notification-priority.constants.js';
 import type { Prisma } from '@prisma/client';
 
 @Injectable()
@@ -20,7 +24,17 @@ export class NotificationsService {
       where.isRead = false;
     }
 
-    if (query.type) {
+    if (query.filter === 'important') {
+      if (query.type && !isImportantNotificationType(query.type)) {
+        const unreadCount = await this.getUnreadCount(userId);
+        return {
+          items: [],
+          nextCursor: null,
+          unreadCount,
+        };
+      }
+      where.type = query.type ?? { in: [...IMPORTANT_NOTIFICATION_TYPES] };
+    } else if (query.type) {
       where.type = query.type;
     }
 

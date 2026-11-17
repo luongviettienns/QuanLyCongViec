@@ -56,9 +56,11 @@ export interface NotificationsResponse {
   unreadCount: number;
 }
 
+export type NotificationFilterTab = 'all' | 'unread' | 'important';
+
 export interface QueryNotificationsParams {
   limit?: number;
   cursor?: number;
-  filter?: 'all' | 'unread';
+  filter?: NotificationFilterTab;
   type?: NotificationType;
 }

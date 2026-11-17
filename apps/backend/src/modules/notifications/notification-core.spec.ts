@@ -1,9 +1,17 @@
+import 'reflect-metadata';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { plainToInstance } from 'class-transformer';
+import { validateSync } from 'class-validator';
 import { renderNotificationTemplate } from './templates/notification-template.js';
 import { NotificationRecipientService } from './services/notification-recipient.service.js';
 import { NotificationsService } from './services/notifications.service.js';
 import { NotificationEventService } from './services/notification-event.service.js';
-import { TaskStatus, TeamRole } from '@prisma/client';
+import { QueryNotificationsDto } from './dto/query-notifications.dto.js';
+import {
+  IMPORTANT_NOTIFICATION_TYPES,
+  isImportantNotificationType,
+} from './constants/notification-priority.constants.js';
+import { NotificationType, TaskStatus, TeamRole } from '@prisma/client';
 
 describe('Notification Core Module Unit Tests', () => {
   describe('Notification Templates', () => {
@@ -400,6 +408,55 @@ describe('Notification Core Module Unit Tests', () => {
       expect(res.items.map((i) => i.id)).toEqual([10, 9, 8]);
       expect(res.nextCursor).toBe(8);
       expect(res.unreadCount).toBe(10);
+    });
+
+    it('findAllForUser: filters by IMPORTANT_NOTIFICATION_TYPES when filter="important" and keeps cursor pagination', async () => {
+      mockPrisma.notification.findMany.mockResolvedValue([
+        { id: 25, userId: 1, type: NotificationType.TASK_OVERDUE, isRead: false },
+        { id: 20, userId: 1, type: NotificationType.TASK_ASSIGNED, isRead: true },
+        { id: 15, userId: 1, type: NotificationType.TEAM_INVITED, isRead: false },
+      ]);
+      mockPrisma.notification.count.mockResolvedValue(4);
+
+      const res = await notificationsService.findAllForUser(1, {
+        limit: 2,
+        filter: 'important',
+      });
+
+      expect(mockPrisma.notification.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            userId: 1,
+            type: { in: [...IMPORTANT_NOTIFICATION_TYPES] },
+          }),
+        }),
+      );
+      expect(res.items.map((i) => i.id)).toEqual([25, 20]);
+      expect(res.nextCursor).toBe(20);
+      expect(res.unreadCount).toBe(4);
+    });
+
+    it('findAllForUser: returns empty without leaking non-important items when filter="important" and type is non-important', async () => {
+      mockPrisma.notification.count.mockResolvedValue(3);
+
+      const res = await notificationsService.findAllForUser(1, {
+        limit: 20,
+        filter: 'important',
+        type: NotificationType.TASK_COMPLETED,
+      });
+
+      expect(mockPrisma.notification.findMany).not.toHaveBeenCalled();
+      expect(res).toEqual({ items: [], nextCursor: null, unreadCount: 3 });
+      expect(isImportantNotificationType(NotificationType.TASK_COMPLETED)).toBe(false);
+      expect(isImportantNotificationType(NotificationType.TASK_OVERDUE)).toBe(true);
+    });
+
+    it('QueryNotificationsDto: accepts filter="important" and rejects unsupported filter values', () => {
+      const validDto = plainToInstance(QueryNotificationsDto, { filter: 'important', limit: '20' });
+      expect(validateSync(validDto)).toHaveLength(0);
+
+      const invalidDto = plainToInstance(QueryNotificationsDto, { filter: 'invalid_tab' });
+      expect(validateSync(invalidDto).length).toBeGreaterThan(0);
     });
   });
 
