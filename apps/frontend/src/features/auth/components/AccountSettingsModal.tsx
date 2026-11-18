@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Modal, Tabs, Form, Input, Button, message } from 'antd';
-import { UserOutlined, LockOutlined, MailOutlined } from '@ant-design/icons';
+import { UserOutlined, LockOutlined, MailOutlined, ApiOutlined } from '@ant-design/icons';
 import { useAuth } from '../hooks/useAuth';
 import { changePassword } from '../api/auth.api';
+import { McpTokensTab } from '../../mcp';
 import {
   getFriendlyErrorMessage,
   isAbortError,
@@ -28,9 +29,18 @@ export default function AccountSettingsModal({ open, onClose }: AccountSettingsM
   const { user, updateProfile } = useAuth();
   const [profileForm] = Form.useForm<ProfileFormValues>();
   const [passwordForm] = Form.useForm<PasswordFormValues>();
-  const [activeTab, setActiveTab] = useState<'profile' | 'password'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'password' | 'mcp'>('profile');
+  const [prevOpen, setPrevOpen] = useState(open);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [mcpBusy, setMcpBusy] = useState(false);
+
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) {
+      setActiveTab('profile');
+    }
+  }
 
   async function handleSaveProfile(values: ProfileFormValues) {
     try {
@@ -70,7 +80,7 @@ export default function AccountSettingsModal({ open, onClose }: AccountSettingsM
     }
   }
 
-  const busy = savingProfile || savingPassword;
+  const busy = savingProfile || savingPassword || mcpBusy;
 
   return (
     <Modal
@@ -78,22 +88,21 @@ export default function AccountSettingsModal({ open, onClose }: AccountSettingsM
       open={open}
       onCancel={onClose}
       footer={null}
-      width={460}
+      width={560}
+      style={{ maxWidth: 'calc(100vw - 24px)' }}
       destroyOnHidden
       closable={!busy}
-      maskClosable={!busy}
+      mask={{ closable: !busy }}
       afterOpenChange={(visible) => {
-        if (visible) {
-          setActiveTab('profile');
+        if (visible && activeTab === 'profile') {
           profileForm.setFieldsValue({ name: user?.name ?? '' });
-          passwordForm.resetFields();
         }
       }}
     >
       <Tabs
         activeKey={activeTab}
         onChange={(key) => {
-          if (key === 'profile' || key === 'password') {
+          if (key === 'profile' || key === 'password' || key === 'mcp') {
             setActiveTab(key);
           }
         }}
@@ -233,6 +242,20 @@ export default function AccountSettingsModal({ open, onClose }: AccountSettingsM
                   </Button>
                 </div>
               </Form>
+            ),
+          },
+          {
+            key: 'mcp',
+            label: (
+              <span data-testid="account-tab-mcp">
+                <ApiOutlined /> Kết nối MCP
+              </span>
+            ),
+            children: (
+              <McpTokensTab
+                active={open && activeTab === 'mcp'}
+                onBusyChange={setMcpBusy}
+              />
             ),
           },
         ]}

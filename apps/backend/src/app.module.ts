@@ -12,6 +12,7 @@ import { AuthModule } from './modules/auth/auth.module.js';
 import { TeamsModule } from './modules/teams/teams.module.js';
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { RealtimeModule } from './modules/realtime/realtime.module.js';
+import { McpModule } from './modules/mcp/mcp.module.js';
 import { CustomThrottlerGuard } from './common/index.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
@@ -38,6 +39,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     CategoriesModule,
     TeamsModule,
     NotificationsModule,
+    McpModule,
   ],
   controllers: [AppController],
   providers: [

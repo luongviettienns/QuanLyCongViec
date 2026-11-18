@@ -87,6 +87,10 @@ enum TeamActivityAction {
   TASK_UPDATED
 }
 
+enum McpTokenScope {
+  READ
+}
+
 model User {
   id                     Int            @id @default(autoincrement())
   email                  String         @unique
@@ -111,6 +115,7 @@ model User {
   completedSubtasks      Subtask[]          @relation("SubtaskCompleter")
   teamActivityActorLogs  TeamActivityLog[]  @relation("TeamActivityActor")
   teamActivityTargetLogs TeamActivityLog[]  @relation("TeamActivityTarget")
+  personalAccessTokens   PersonalAccessToken[]
 
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
@@ -349,4 +354,24 @@ model TeamActivityLog {
   @@index([actorId])
   @@index([targetUserId])
   @@map("TeamActivityLog")
+}
+
+model PersonalAccessToken {
+  id          Int           @id @default(autoincrement())
+
+  userId      Int
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  tokenPrefix String
+  tokenHash   String        @unique
+  scope       McpTokenScope @default(READ)
+
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime      @default(now())
+
+  @@index([userId, revokedAt])
+  @@map("PersonalAccessToken")
 }
