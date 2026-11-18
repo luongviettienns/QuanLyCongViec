@@ -65,7 +65,8 @@ export class TaskStatsService {
     } else if (query?.scope === 'my_work') {
       scopeSql = Prisma.sql`
         (
-          "assigneeId" = ${userId}
+          ("teamId" IS NULL AND "userId" = ${userId})
+          OR "assigneeId" = ${userId}
           OR EXISTS (
             SELECT 1 FROM "TaskCollaborator" tc
             WHERE tc."taskId" = "Task"."id" AND tc."userId" = ${userId} AND tc."status" = 'ACCEPTED'
@@ -88,6 +89,7 @@ export class TaskStatsService {
           inProgress: bigint | number;
           done: bigint | number;
           overdue: bigint | number;
+          today: bigint | number;
           dueSoon: bigint | number;
           priorityLow: bigint | number;
           priorityMedium: bigint | number;
@@ -100,6 +102,7 @@ export class TaskStatsService {
           COUNT(*) FILTER (WHERE status = 'IN_PROGRESS')::bigint AS "inProgress",
           COUNT(*) FILTER (WHERE status = 'DONE')::bigint AS done,
           COUNT(*) FILTER (WHERE status != 'DONE' AND "dueDate" IS NOT NULL AND "dueDate" < ${todayDate}::date)::bigint AS overdue,
+          COUNT(*) FILTER (WHERE status != 'DONE' AND "dueDate" IS NOT NULL AND "dueDate" = ${todayDate}::date)::bigint AS today,
           COUNT(*) FILTER (WHERE status != 'DONE' AND "dueDate" IS NOT NULL AND "dueDate" >= ${todayDate}::date AND "dueDate" < ${next7Days}::date)::bigint AS "dueSoon",
           COUNT(*) FILTER (WHERE "Priority" = 'LOW')::bigint AS "priorityLow",
           COUNT(*) FILTER (WHERE "Priority" = 'MEDIUM')::bigint AS "priorityMedium",
@@ -135,6 +138,7 @@ export class TaskStatsService {
     const inProgress = Number(stats?.inProgress ?? 0);
     const done = Number(stats?.done ?? 0);
     const overdue = Number(stats?.overdue ?? 0);
+    const today = Number(stats?.today ?? 0);
     const dueSoon = Number(stats?.dueSoon ?? 0);
     const priorityLow = Number(stats?.priorityLow ?? 0);
     const priorityMedium = Number(stats?.priorityMedium ?? 0);
@@ -165,6 +169,7 @@ export class TaskStatsService {
       inProgress,
       done,
       overdue,
+      today,
       dueSoon,
       completionRate,
       byPriority: {

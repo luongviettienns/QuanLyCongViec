@@ -47,8 +47,8 @@ describe('task-filter.utils', () => {
   });
 
   it('handles loadSavedViewMode and saveViewMode safely in non-browser or browser environment', () => {
-    // In node environment without window, returns 'table'
-    assert.equal(loadSavedViewMode(), 'table');
+    // In node environment without window, defaults to 'my_tasks'
+    assert.equal(loadSavedViewMode(), 'my_tasks');
     saveViewMode('kanban'); // safe no-op
 
     // Mock window.localStorage
@@ -64,23 +64,24 @@ describe('task-filter.utils', () => {
     (globalThis as unknown as { window?: typeof mockWindow }).window = mockWindow;
 
     try {
-      assert.equal(loadSavedViewMode(), 'table');
+      assert.equal(loadSavedViewMode(), 'my_tasks');
       saveViewMode('kanban');
       assert.equal(loadSavedViewMode(), 'kanban');
       saveViewMode('table');
       assert.equal(loadSavedViewMode(), 'table');
+      saveViewMode('my_tasks');
+      assert.equal(loadSavedViewMode(), 'my_tasks');
       // trash mode should not be saved
       saveViewMode('trash');
-      assert.equal(loadSavedViewMode(), 'table');
-      // calendar mode can be saved and loaded, while /tasks route guard falls back to 'both'
+      assert.equal(loadSavedViewMode(), 'my_tasks');
+      // calendar mode falls back to 'my_tasks' on /tasks route
       saveViewMode('calendar');
-      assert.equal(loadSavedViewMode(), 'table');
-      saveViewMode('trash');
-      assert.equal(loadSavedViewMode(), 'table');
-      assert.equal(resolveTasksRouteViewMode('calendar'), 'table');
+      assert.equal(loadSavedViewMode(), 'my_tasks');
+      assert.equal(resolveTasksRouteViewMode('calendar'), 'my_tasks');
+      assert.equal(resolveTasksRouteViewMode('my_tasks'), 'my_tasks');
       assert.equal(resolveTasksRouteViewMode('kanban'), 'kanban');
       assert.equal(resolveTasksRouteViewMode('table'), 'table');
-      assert.equal(resolveTasksRouteViewMode('both'), 'table');
+      assert.equal(resolveTasksRouteViewMode('both'), 'my_tasks');
       assert.equal(resolveTasksRouteViewMode('trash'), 'trash');
     } finally {
       delete (globalThis as unknown as { window?: typeof mockWindow }).window;

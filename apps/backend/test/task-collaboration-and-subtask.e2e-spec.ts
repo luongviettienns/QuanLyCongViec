@@ -1876,6 +1876,48 @@ describe('Task Collaboration & Subtasks P0 (e2e)', () => {
         .expect(200);
 
       expect(Number(statsRes.body.total)).toBeGreaterThanOrEqual(3);
+      expect(typeof statsRes.body.today).toBe('number');
+    });
+
+    it('6. scope=my_work includes unassigned personal tasks and counts today accurately without leaking into teamId queries', async () => {
+      const vnToday = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
+
+      const personalRes = await request(app.getHttpServer())
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .send({
+          title: `MyWork Personal Today ${Date.now()}`,
+          dueDate: vnToday,
+        })
+        .expect(201);
+      const personalTaskId = personalRes.body.id as number;
+      expect(personalRes.body.assigneeId).toBeNull();
+
+      const myWorkRes = await request(app.getHttpServer())
+        .get('/api/tasks?scope=my_work')
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+      const myWorkIds = myWorkRes.body.map((t: any) => t.id);
+      expect(myWorkIds).toContain(personalTaskId);
+
+      // Must NOT leak personal task when filtered by a specific teamId
+      const teamScopedRes = await request(app.getHttpServer())
+        .get(`/api/tasks?scope=my_work&teamId=${teamId}`)
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+      const teamScopedIds = teamScopedRes.body.map((t: any) => t.id);
+      expect(teamScopedIds).not.toContain(personalTaskId);
+
+      const myStatsRes = await request(app.getHttpServer())
+        .get('/api/tasks/stats?scope=my_work')
+        .set('Authorization', `Bearer ${tokenCollab}`)
+        .expect(200);
+      expect(Number(myStatsRes.body.today)).toBeGreaterThanOrEqual(1);
     });
   });
 

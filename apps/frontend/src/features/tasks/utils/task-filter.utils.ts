@@ -115,17 +115,17 @@ export function shouldShowPendingInvitesShortcut(
 }
 
 export function loadSavedViewMode(): Exclude<TaskViewMode, 'trash'> {
-  if (typeof window === 'undefined') return 'table';
+  if (typeof window === 'undefined') return 'my_tasks';
   const saved = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
-  return saved === 'kanban' || saved === 'table'
+  return saved === 'my_tasks' || saved === 'kanban' || saved === 'table'
     ? saved
-    : 'table';
+    : 'my_tasks';
 }
 
 export function resolveTasksRouteViewMode(
   mode: TaskViewMode,
-): Exclude<TaskViewMode, 'calendar'> {
-  return mode === 'calendar' || mode === 'both' ? 'table' : mode;
+): Exclude<TaskViewMode, 'calendar' | 'both'> {
+  return mode === 'calendar' || mode === 'both' ? 'my_tasks' : mode;
 }
 
 export function saveViewMode(mode: TaskViewMode): void {

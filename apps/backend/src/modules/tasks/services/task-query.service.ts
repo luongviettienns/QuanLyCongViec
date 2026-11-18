@@ -209,6 +209,7 @@ export class TaskQueryService {
     } else if (query?.scope === 'my_work') {
       scopeWhere = {
         OR: [
+          { teamId: null, userId },
           { assigneeId: userId },
           {
             collaborators: {

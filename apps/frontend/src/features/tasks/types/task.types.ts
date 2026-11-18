@@ -46,7 +46,7 @@ export type DeadlineFilter = 'ALL' | 'overdue' | 'due_soon' | 'today' | 'no_due_
 
 export type TaskSortBy = 'default' | 'due_date_asc' | 'due_date_desc' | 'priority_desc';
 
-export type TaskViewMode = 'both' | 'kanban' | 'table' | 'calendar' | 'trash';
+export type TaskViewMode = 'my_tasks' | 'both' | 'kanban' | 'table' | 'calendar' | 'trash';
 
 export type TeamFilterValue = number | 'ALL' | 'PERSONAL';
 
@@ -185,6 +185,7 @@ export interface TaskStats {
   inProgress: number;
   done: number;
   overdue: number;
+  today?: number;
   dueSoon: number;
   completionRate: number;
   byPriority: TaskPriorityStats;

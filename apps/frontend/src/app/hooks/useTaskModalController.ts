@@ -3,6 +3,7 @@ import { message } from 'antd';
 import type { Task } from '../../features/tasks/types/task.types';
 import type { NotificationDestination } from '../../features/notifications';
 import { getTaskById } from '../../features/tasks/api/tasks.api';
+import { resolveOpenedModalTask } from '../../features/tasks/utils/my-tasks.utils';
 import { useRealtimeReconnect } from '../../features/realtime';
 import {
   isAbortError,
@@ -52,17 +53,8 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
 
   const activeModalTask = useMemo(() => {
     if (!modalState.open || !modalState.task) return null;
-    const baseTask = tasks.find((t) => t.id === modalState.task?.id) ?? modalState.task;
-    if (modalTaskOverride && modalTaskOverride.id === modalState.task.id) {
-      if (!baseTask.updatedAt || !modalTaskOverride.updatedAt) {
-        return modalTaskOverride;
-      }
-      return new Date(modalTaskOverride.updatedAt).getTime() >=
-        new Date(baseTask.updatedAt).getTime()
-        ? modalTaskOverride
-        : baseTask;
-    }
-    return baseTask;
+    const listTask = tasks.find((t) => t.id === modalState.task?.id);
+    return resolveOpenedModalTask(modalState.task, listTask, modalTaskOverride);
   }, [modalState.open, modalState.task, tasks, modalTaskOverride]);
 
   const closeModal = useCallback(() => {

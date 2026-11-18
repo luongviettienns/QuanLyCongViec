@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Segmented, Button, Space, Badge } from 'antd';
+import { Segmented, Button, Space, Badge, Typography } from 'antd';
 import {
   ProjectOutlined,
   TableOutlined,
@@ -7,11 +7,13 @@ import {
   PlusOutlined,
   TagsOutlined,
   ArrowLeftOutlined,
+  SolutionOutlined,
 } from '@ant-design/icons';
 import TaskToolbar from '../components/TaskToolbar';
 import KanbanBoard from '../components/kanban/KanbanBoard';
 import TaskTable from '../components/table/TaskTable';
 import TaskTrashView from '../components/trash/TaskTrashView';
+import { MyTasksView } from '../components/my-tasks';
 import CategoryManagerModal from '../../categories/components/CategoryManagerModal';
 import { ApiErrorFallback } from '../../../app/pages/errors';
 import type {
@@ -23,9 +25,13 @@ import type {
   TaskViewMode,
   BulkTaskResult,
 } from '../types/task.types.ts';
+import type { MyTasksNavigationPreset } from '../utils/my-tasks.utils.ts';
 import type { Category } from '../../categories/types/category.types.ts';
 import type { Team } from '../../teams/types/team.types.ts';
+import type { User } from '../../auth/types/auth.types.ts';
 import { resolveErrorFallbackVariant } from '../utils/task-error.utils.ts';
+
+const { Title, Text } = Typography;
 
 export interface TasksPageProps {
   tasks: Task[];
@@ -63,6 +69,11 @@ export interface TasksPageProps {
   onCloseCategoryModal?: () => void;
   onCategoryChanged?: () => void;
   currentUserId?: number;
+  currentUser?: User | null;
+  myTasksPreset?: MyTasksNavigationPreset | null;
+  myTasksPresetKey?: number;
+  myTasksRefreshKey?: number;
+  onMyTasksPresetConsumed?: () => void;
 }
 
 export default function TasksPage({
@@ -100,19 +111,50 @@ export default function TasksPage({
   onCloseCategoryModal,
   onCategoryChanged,
   currentUserId,
+  currentUser = null,
+  myTasksPreset = null,
+  myTasksPresetKey = 0,
+  myTasksRefreshKey = 0,
+  onMyTasksPresetConsumed,
 }: TasksPageProps) {
   const [internalCategoryModalOpen, setInternalCategoryModalOpen] = useState(false);
   const isCatModalOpen = categoryModalOpen || internalCategoryModalOpen;
 
   const handleRetry = onRetry ?? onReset;
   const handleViewModeChange = onViewModeChange ?? setViewMode;
+  const isMyTasksView = viewMode === 'my_tasks';
   const defaultCreateTeamId =
-    typeof filters.teamFilter === 'number' ? filters.teamFilter : null;
+    !isMyTasksView && typeof filters.teamFilter === 'number' ? filters.teamFilter : null;
   const trashFallbackVariant = resolveErrorFallbackVariant(trashError, trashTasks.length);
   const tasksFallbackVariant = resolveErrorFallbackVariant(tasksError, tasks.length);
 
+  const segmentedMode: TaskViewMode =
+    viewMode === 'kanban' ? 'kanban' : viewMode === 'table' ? 'table' : 'my_tasks';
+
   return (
     <>
+      {isMyTasksView && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            flexWrap: 'wrap',
+            gap: 12,
+            marginBottom: 14,
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <Title level={4} style={{ margin: '0 0 2px 0', color: '#1f1f1f' }}>
+              Việc của tôi
+            </Title>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              Tập trung vào công việc cá nhân, việc được giao và đầu việc con cần xử lý
+            </Text>
+          </div>
+        </div>
+      )}
+
       <div
         style={{
           display: 'flex',
@@ -136,7 +178,7 @@ export default function TasksPage({
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <Button
                 icon={<ArrowLeftOutlined />}
-                onClick={() => handleViewModeChange?.('table')}
+                onClick={() => handleViewModeChange?.('my_tasks')}
               >
                 Quay lại danh sách việc
               </Button>
@@ -146,9 +188,10 @@ export default function TasksPage({
             </div>
           ) : (
             <Segmented<TaskViewMode>
-              value={viewMode === 'kanban' ? 'kanban' : 'table'}
+              value={segmentedMode}
               onChange={(mode) => handleViewModeChange?.(mode)}
               options={[
+                { value: 'my_tasks', label: 'Việc của tôi', icon: <SolutionOutlined /> },
                 { value: 'table', label: 'Bảng', icon: <TableOutlined /> },
                 { value: 'kanban', label: 'Kanban', icon: <ProjectOutlined /> },
               ]}
@@ -181,7 +224,7 @@ export default function TasksPage({
                   icon={<PlusOutlined />}
                   onClick={() => onCreate(defaultCreateTeamId)}
                 >
-                  Thêm công việc
+                  {isMyTasksView ? 'Tạo công việc' : 'Thêm công việc'}
                 </Button>
               )}
             </>
@@ -195,18 +238,32 @@ export default function TasksPage({
         </Space>
       </div>
 
-      <TaskToolbar
-        filters={filters}
-        viewMode={viewMode}
-        categories={categories}
-        teams={teams}
-        currentUserId={currentUserId}
-        pendingInvitesCount={pendingInvitesCount}
-        onFiltersChange={onFiltersChange}
-        onReset={onReset}
-      />
+      {!isMyTasksView && (
+        <TaskToolbar
+          filters={filters}
+          viewMode={viewMode}
+          categories={categories}
+          teams={teams}
+          currentUserId={currentUserId}
+          pendingInvitesCount={pendingInvitesCount}
+          onFiltersChange={onFiltersChange}
+          onReset={onReset}
+        />
+      )}
 
-      {viewMode === 'trash' ? (
+      {isMyTasksView ? (
+        <MyTasksView
+          teams={teams}
+          currentUser={currentUser}
+          initialPreset={myTasksPreset}
+          presetKey={myTasksPresetKey}
+          refreshKey={myTasksRefreshKey}
+          onPresetConsumed={onMyTasksPresetConsumed}
+          onOpenFullModal={onEdit}
+          onCreateTask={onCreate ? () => onCreate(null) : undefined}
+          onExternalSync={onRetry}
+        />
+      ) : viewMode === 'trash' ? (
         trashFallbackVariant === 'page' ? (
           <ApiErrorFallback
             variant="page"

@@ -16,6 +16,10 @@ import {
   loadSavedViewMode,
   resolveTasksRouteViewMode,
 } from '../../features/tasks/utils/task-filter.utils';
+import {
+  resolveDashboardNavigationTarget,
+  type MyTasksNavigationPreset,
+} from '../../features/tasks/utils/my-tasks.utils';
 import { useTaskModalController } from '../hooks/useTaskModalController';
 import { useAppRealtimeSync } from '../hooks/useAppRealtimeSync';
 
@@ -119,6 +123,11 @@ function TaskAppShell() {
   const [dashboardReloadCounter, setDashboardReloadCounter] = useState(0);
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [myTasksPresetState, setMyTasksPresetState] = useState<{
+    preset: MyTasksNavigationPreset;
+    key: number;
+  } | null>(null);
+  const [myTasksRefreshKey, setMyTasksRefreshKey] = useState(0);
 
   const {
     tasks,
@@ -174,8 +183,15 @@ function TaskAppShell() {
     }
   }, [currentNav, viewMode, setViewMode]);
 
+  const handleConsumeMyTasksPreset = useCallback(() => {
+    setMyTasksPresetState(null);
+  }, []);
+
   const handleViewModeChange = useCallback(
     (nextMode: TaskViewMode) => {
+      if (nextMode !== 'my_tasks') {
+        setMyTasksPresetState(null);
+      }
       if (nextMode === 'calendar') {
         if (viewMode === 'trash') {
           setViewMode(resolveTasksRouteViewMode(loadSavedViewMode()));
@@ -228,20 +244,51 @@ function TaskAppShell() {
     if (currentNav === 'dashboard') {
       handleDashboardReload();
     } else {
+      if (currentNav === 'tasks') {
+        setMyTasksRefreshKey((k) => k + 1);
+      }
       void refetch();
     }
   }, [currentNav, handleDashboardReload, refetch]);
 
+  const handleModalSuccess = useCallback(async () => {
+    setMyTasksRefreshKey((k) => k + 1);
+    await refetch();
+  }, [refetch]);
+
+  const handleModalDelete = useCallback(
+    async (id: number) => {
+      const ok = await handleDelete(id);
+      if (ok) {
+        setMyTasksRefreshKey((k) => k + 1);
+      }
+      return ok;
+    },
+    [handleDelete],
+  );
+
   const handleNavigateFromDashboard = useCallback(
     (patchOrStatus?: TaskFilterPatch | TaskStatus) => {
-      if (viewMode === 'trash') {
-        setViewMode(resolveTasksRouteViewMode(loadSavedViewMode()));
-      }
       let patch: TaskFilterPatch = {};
       if (typeof patchOrStatus === 'string') {
         patch = { statusFilter: patchOrStatus };
       } else if (patchOrStatus) {
         patch = patchOrStatus;
+      }
+
+      const target = resolveDashboardNavigationTarget(patch);
+      if (target.viewMode === 'my_tasks' && target.preset) {
+        setViewMode('my_tasks');
+        setMyTasksPresetState((prev) => ({
+          preset: target.preset!,
+          key: (prev?.key ?? 0) + 1,
+        }));
+        navigate('/tasks');
+        return;
+      }
+
+      if (viewMode === 'trash' || viewMode === 'my_tasks') {
+        setViewMode('table');
       }
       applyFilters(applyFilterPatch(createDefaultTaskFilters(), patch));
       navigate('/tasks');
@@ -307,6 +354,11 @@ function TaskAppShell() {
       onCloseCategoryModal={() => setCategoryModalOpen(false)}
       onCategoryChanged={() => void refetch()}
       currentUserId={user?.id}
+      currentUser={user}
+      myTasksPreset={myTasksPresetState?.preset ?? null}
+      myTasksPresetKey={myTasksPresetState?.key ?? 0}
+      myTasksRefreshKey={myTasksRefreshKey}
+      onMyTasksPresetConsumed={handleConsumeMyTasksPreset}
     />
   );
 
@@ -385,8 +437,8 @@ function TaskAppShell() {
           categories={categories}
           teams={teams}
           onClose={closeModal}
-          onSuccess={refetch}
-          onDelete={handleDelete}
+          onSuccess={handleModalSuccess}
+          onDelete={handleModalDelete}
         />
       )}
     </AppLayout>
