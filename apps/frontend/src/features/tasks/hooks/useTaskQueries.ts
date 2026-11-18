@@ -133,7 +133,10 @@ export function useTaskQueries(isAuthenticated: boolean) {
       trashAbortControllerRef.current = controller;
 
       try {
-        const data = await getTrashTasks(buildTaskQueryParams(filters), controller.signal);
+        const data = await getTrashTasks(
+          buildTaskQueryParams(filters, { isTrash: true }),
+          controller.signal,
+        );
         if (trashAbortControllerRef.current === controller) {
           setTrashTasks(data);
           setTrashError(null);

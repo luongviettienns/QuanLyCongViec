@@ -108,7 +108,9 @@ export class TaskQueryService {
       });
     }
 
-    if (query.status) {
+    if (query.status === 'INCOMPLETE') {
+      andClauses.push({ status: { not: TaskStatus.DONE } });
+    } else if (query.status) {
       andClauses.push({ status: query.status });
     }
 
@@ -289,7 +291,11 @@ export class TaskQueryService {
       personalOnly: query?.personalOnly,
     });
     const andClauses: Prisma.TaskWhereInput[] = [accessWhere];
-    this.applyAttributeFilters(andClauses, query);
+    // Trash mode only filters by trash-applicable attributes (status is hidden in trash UI)
+    this.applyAttributeFilters(
+      andClauses,
+      query ? { ...query, status: undefined } : undefined,
+    );
 
     return this.prisma.task.findMany({
       where: {

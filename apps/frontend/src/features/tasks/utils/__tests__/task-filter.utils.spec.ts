@@ -275,4 +275,79 @@ describe('task-filter.utils', () => {
       'personalOnly=true',
     );
   });
+
+  it('serializes statusFilter=INCOMPLETE into query string and counts as active filter', () => {
+    const base = createDefaultTaskFilters();
+    const incomplete = applyFilterPatch(base, { statusFilter: 'INCOMPLETE', priorityFilter: 'HIGH' });
+    assert.equal(computeIsFiltering(incomplete), true);
+    assert.equal(countActiveToolbarFilters(incomplete, false), 2);
+    assert.equal(
+      buildTaskListQueryString(buildTaskQueryParams(incomplete)),
+      'status=INCOMPLETE&priority=HIGH',
+    );
+  });
+
+  it('buildTaskQueryParams omits status, scope, deadlineFilter, and sortBy when isTrash is true', () => {
+    const filters = applyFilterPatch(createDefaultTaskFilters(), {
+      searchText: 'report',
+      statusFilter: 'INCOMPLETE',
+      priorityFilter: 'HIGH',
+      categoryFilter: 4,
+      teamFilter: 2,
+      assigneeFilter: 8,
+      scopeFilter: 'my_work',
+      deadlineFilter: 'overdue',
+      sortBy: 'due_date_asc',
+    });
+
+    const trashParams = buildTaskQueryParams(filters, { isTrash: true });
+    assert.deepEqual(trashParams, {
+      search: 'report',
+      status: undefined,
+      categoryId: 4,
+      priority: 'HIGH',
+      teamId: 2,
+      personalOnly: undefined,
+      assigneeId: 8,
+      scope: undefined,
+      deadlineFilter: undefined,
+      sortBy: undefined,
+    });
+    assert.equal(
+      buildTaskListQueryString(trashParams),
+      'search=report&priority=HIGH&categoryId=4&teamId=2&assigneeId=8',
+    );
+  });
+
+  it('applyFilterPatch resolves single-step DONE <-> open-deadline conflicts while preserving no_due_date and explicit multi-field patches', () => {
+    const base = createDefaultTaskFilters();
+
+    // no_due_date + DONE is valid and must be preserved
+    const doneNoDue = applyFilterPatch(applyFilterPatch(base, { deadlineFilter: 'no_due_date' }), {
+      statusFilter: 'DONE',
+    });
+    assert.equal(doneNoDue.statusFilter, 'DONE');
+    assert.equal(doneNoDue.deadlineFilter, 'no_due_date');
+
+    // Single-step today while on DONE clears DONE
+    const todayAfterDone = applyFilterPatch(doneNoDue, { deadlineFilter: 'today' });
+    assert.equal(todayAfterDone.deadlineFilter, 'today');
+    assert.equal(todayAfterDone.statusFilter, 'ALL');
+
+    // Single-step DONE while on overdue clears overdue
+    const overdueThenDone = applyFilterPatch(
+      applyFilterPatch(base, { deadlineFilter: 'overdue' }),
+      { statusFilter: 'DONE' },
+    );
+    assert.equal(overdueThenDone.statusFilter, 'DONE');
+    assert.equal(overdueThenDone.deadlineFilter, 'ALL');
+
+    // Explicit multi-field patch remains deterministic
+    const explicitBoth = applyFilterPatch(base, {
+      statusFilter: 'DONE',
+      deadlineFilter: 'overdue',
+    });
+    assert.equal(explicitBoth.statusFilter, 'DONE');
+    assert.equal(explicitBoth.deadlineFilter, 'overdue');
+  });
 });

@@ -24,6 +24,10 @@ export function createDefaultTaskFilters(): TaskFilterState {
   };
 }
 
+function isOpenOnlyDeadlineFilter(value: TaskFilterState['deadlineFilter']): boolean {
+  return value === 'overdue' || value === 'today' || value === 'due_soon';
+}
+
 export function applyFilterPatch(current: TaskFilterState, patch: TaskFilterPatch): TaskFilterState {
   const next: TaskFilterState = { ...current, ...patch };
   if (patch.teamFilter !== undefined && patch.teamFilter !== current.teamFilter) {
@@ -34,6 +38,24 @@ export function applyFilterPatch(current: TaskFilterState, patch: TaskFilterPatc
       next.assigneeFilter = 'ALL';
     }
   }
+
+  // Prevent impossible empty intersections on single-step user toggles:
+  // Backend overdue/today/due_soon always exclude DONE tasks.
+  if (
+    patch.deadlineFilter !== undefined &&
+    patch.statusFilter === undefined &&
+    isOpenOnlyDeadlineFilter(patch.deadlineFilter) &&
+    current.statusFilter === 'DONE'
+  ) {
+    next.statusFilter = 'ALL';
+  } else if (
+    patch.statusFilter === 'DONE' &&
+    patch.deadlineFilter === undefined &&
+    isOpenOnlyDeadlineFilter(current.deadlineFilter)
+  ) {
+    next.deadlineFilter = 'ALL';
+  }
+
   return next;
 }
 
@@ -217,18 +239,23 @@ export interface TaskListQueryParams {
   sortBy?: string;
 }
 
-export function buildTaskQueryParams(filters: TaskFilterState): TaskListQueryParams {
+export function buildTaskQueryParams(
+  filters: TaskFilterState,
+  options?: { isTrash?: boolean },
+): TaskListQueryParams {
+  const isTrash = options?.isTrash === true;
   return {
     search: filters.searchText,
-    status: filters.statusFilter === 'ALL' ? undefined : filters.statusFilter,
+    status: isTrash || filters.statusFilter === 'ALL' ? undefined : filters.statusFilter,
     categoryId: filters.categoryFilter === 'ALL' ? undefined : filters.categoryFilter,
     priority: filters.priorityFilter === 'ALL' ? undefined : filters.priorityFilter,
     teamId: typeof filters.teamFilter === 'number' ? filters.teamFilter : undefined,
     personalOnly: filters.teamFilter === 'PERSONAL' ? true : undefined,
     assigneeId: filters.assigneeFilter === 'ALL' ? undefined : filters.assigneeFilter,
-    scope: filters.scopeFilter === 'all' ? undefined : filters.scopeFilter,
-    deadlineFilter: filters.deadlineFilter === 'ALL' ? undefined : filters.deadlineFilter,
-    sortBy: filters.sortBy === 'default' ? undefined : filters.sortBy,
+    scope: isTrash || filters.scopeFilter === 'all' ? undefined : filters.scopeFilter,
+    deadlineFilter:
+      isTrash || filters.deadlineFilter === 'ALL' ? undefined : filters.deadlineFilter,
+    sortBy: isTrash || filters.sortBy === 'default' ? undefined : filters.sortBy,
   };
 }
 

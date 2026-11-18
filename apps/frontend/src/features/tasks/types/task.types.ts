@@ -38,7 +38,7 @@ export interface Subtask {
   completedBy?: { id: number; name: string; email: string } | null;
 }
 
-export type StatusFilter = 'ALL' | TaskStatus;
+export type StatusFilter = 'ALL' | 'INCOMPLETE' | TaskStatus;
 
 export type PriorityFilter = 'ALL' | TaskPriority;
 

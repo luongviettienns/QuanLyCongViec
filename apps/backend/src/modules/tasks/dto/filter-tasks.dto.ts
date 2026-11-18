@@ -3,6 +3,15 @@ import { Type, Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskStatus, TaskPriority } from '@prisma/client';
 
+export const TASK_STATUS_FILTERS = [
+  TaskStatus.TODO,
+  TaskStatus.IN_PROGRESS,
+  TaskStatus.DONE,
+  'INCOMPLETE',
+] as const;
+
+export type TaskStatusFilter = (typeof TASK_STATUS_FILTERS)[number];
+
 export const TASK_SCOPES = [
   'all',
   'my_work',
@@ -44,14 +53,14 @@ export class FilterTasksDto {
   search?: string;
 
   @ApiPropertyOptional({
-    description: 'Trạng thái công việc cần lọc',
-    enum: TaskStatus,
+    description: 'Trạng thái công việc cần lọc (TODO, IN_PROGRESS, DONE hoặc INCOMPLETE)',
+    enum: TASK_STATUS_FILTERS,
   })
   @IsOptional()
-  @IsEnum(TaskStatus, {
-    message: 'Trạng thái lọc phải là TODO, IN_PROGRESS hoặc DONE',
+  @IsIn([...TASK_STATUS_FILTERS], {
+    message: 'Trạng thái lọc phải là TODO, IN_PROGRESS, DONE hoặc INCOMPLETE',
   })
-  status?: TaskStatus;
+  status?: TaskStatusFilter;
 
   @ApiPropertyOptional({
     description: 'Mức độ ưu tiên cần lọc',

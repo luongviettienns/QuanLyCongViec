@@ -464,4 +464,65 @@ describe('Task Trash, Permanent Delete & Advanced Filters (E2E)', () => {
       .expect(400);
     expect(trashRes.body.message).toContain('Không thể đồng thời lọc theo nhóm và chỉ công việc cá nhân');
   });
+
+  it('GET /api/tasks?status=INCOMPLETE returns TODO and IN_PROGRESS tasks, excludes DONE, and composes with priority', async () => {
+    const todoHighRes = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ title: `Incomplete Todo High ${runId}`, teamId, priority: 'HIGH' })
+      .expect(201);
+
+    const inProgressLowRes = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ title: `Incomplete InProgress Low ${runId}`, teamId, priority: 'LOW' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/api/tasks/${inProgressLowRes.body.id}/status`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ status: 'IN_PROGRESS' })
+      .expect(200);
+
+    const doneHighRes = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ title: `Completed High ${runId}`, teamId, priority: 'HIGH' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/api/tasks/${doneHighRes.body.id}/status`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ status: 'IN_PROGRESS' })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .patch(`/api/tasks/${doneHighRes.body.id}/status`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ status: 'DONE' })
+      .expect(200);
+
+    const incompleteRes = await request(app.getHttpServer())
+      .get(`/api/tasks?teamId=${teamId}&status=INCOMPLETE`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+
+    const incompleteIds = (incompleteRes.body as Array<{ id: number }>).map((t) => t.id);
+    expect(incompleteIds).toContain(todoHighRes.body.id);
+    expect(incompleteIds).toContain(inProgressLowRes.body.id);
+    expect(incompleteIds).not.toContain(doneHighRes.body.id);
+    expect((incompleteRes.body as Array<{ status: string }>).every((t) => t.status !== 'DONE')).toBe(
+      true,
+    );
+
+    const incompleteHighRes = await request(app.getHttpServer())
+      .get(`/api/tasks?teamId=${teamId}&status=INCOMPLETE&priority=HIGH`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+
+    const incompleteHighIds = (incompleteHighRes.body as Array<{ id: number }>).map((t) => t.id);
+    expect(incompleteHighIds).toContain(todoHighRes.body.id);
+    expect(incompleteHighIds).not.toContain(inProgressLowRes.body.id);
+    expect(incompleteHighIds).not.toContain(doneHighRes.body.id);
+  });
 });

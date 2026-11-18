@@ -358,13 +358,18 @@ export function resolveDashboardNavigationTarget(
   const hasSpecificTeam =
     patch.teamFilter !== undefined && patch.teamFilter !== 'ALL';
   const isDashboardDueSoon = patch.deadlineFilter === 'due_soon';
+  const isIncompleteStatus = patch.statusFilter === 'INCOMPLETE';
 
-  if (!isMyWorkScope || hasSpecificTeam || isDashboardDueSoon) {
+  if (!isMyWorkScope || hasSpecificTeam || isDashboardDueSoon || isIncompleteStatus) {
     return { viewMode: 'table', preset: null };
   }
 
   const statusTab: MyTaskStatusTab =
-    patch.statusFilter && patch.statusFilter !== 'ALL' ? patch.statusFilter : 'ALL';
+    patch.statusFilter === 'TODO' ||
+    patch.statusFilter === 'IN_PROGRESS' ||
+    patch.statusFilter === 'DONE'
+      ? patch.statusFilter
+      : 'ALL';
   const deadlineCard: MyTaskDeadlineCardKey | null =
     patch.deadlineFilter === 'overdue' || patch.deadlineFilter === 'today'
       ? patch.deadlineFilter

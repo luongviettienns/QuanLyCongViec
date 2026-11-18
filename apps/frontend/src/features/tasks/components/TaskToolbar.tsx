@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo, useState } from 'react';
+import { useEffect, useRef, useMemo, useState, type ReactNode } from 'react';
 import { Input, Select, Button, Space, Tag, Badge } from 'antd';
 import {
   SearchOutlined,
@@ -13,6 +13,13 @@ import {
   MailOutlined,
   DownOutlined,
   UpOutlined,
+  ClockCircleOutlined,
+  ExclamationCircleOutlined,
+  CalendarOutlined,
+  FireOutlined,
+  SyncOutlined,
+  ThunderboltOutlined,
+  CloseOutlined,
 } from '@ant-design/icons';
 import type {
   TaskFilterState,
@@ -30,12 +37,18 @@ import type { Team } from '../../teams/types/team.types.ts';
 import { useResponsive } from '../../../shared/hooks';
 import {
   countActiveToolbarFilters,
-  hasAnyToolbarFilter,
   formatCountLabel,
-  shouldShowPendingInvitesShortcut,
   buildAssigneeOptions,
   filterCategoriesByTeamFilter,
 } from '../utils/task-filter.utils.ts';
+import {
+  buildQuickFilterChips,
+  toggleQuickFilterPatch,
+  buildActiveFilterChips,
+  type QuickFilterId,
+  type ActiveFilterChip,
+} from '../utils/quick-filters.utils.ts';
+import './task-toolbar.css';
 
 export interface TaskToolbarProps {
   filters: TaskFilterState;
@@ -46,6 +59,25 @@ export interface TaskToolbarProps {
   pendingInvitesCount?: number;
   onFiltersChange: (patch: TaskFilterPatch) => void;
   onReset: () => void;
+}
+
+function getQuickFilterIcon(id: QuickFilterId): ReactNode {
+  switch (id) {
+    case 'my_work':
+      return <SolutionOutlined />;
+    case 'today':
+      return <ClockCircleOutlined />;
+    case 'overdue':
+      return <ExclamationCircleOutlined />;
+    case 'due_soon':
+      return <CalendarOutlined />;
+    case 'high_priority':
+      return <FireOutlined />;
+    case 'incomplete':
+      return <SyncOutlined />;
+    case 'pending_invites':
+      return <MailOutlined />;
+  }
 }
 
 export default function TaskToolbar({
@@ -76,15 +108,20 @@ export default function TaskToolbar({
     [filters, isTrash],
   );
 
-  const hasAnyFilter = useMemo(
-    () => hasAnyToolbarFilter(filters, isTrash),
-    [filters, isTrash],
+  const quickFilterChips = useMemo(
+    () => buildQuickFilterChips(filters, { isTrash, pendingInvitesCount }),
+    [filters, isTrash, pendingInvitesCount],
   );
 
-  const showPendingShortcut = shouldShowPendingInvitesShortcut(
-    isTrash,
-    filters.scopeFilter,
-    pendingInvitesCount,
+  const activeFilterChips = useMemo(
+    () =>
+      buildActiveFilterChips(filters, {
+        isTrash,
+        teams,
+        categories,
+        currentUserId,
+      }),
+    [filters, isTrash, teams, categories, currentUserId],
   );
 
   const toolbarCategories = useMemo(
@@ -101,9 +138,11 @@ export default function TaskToolbar({
 
     if (timerRef.current) {
       clearTimeout(timerRef.current);
+      timerRef.current = null;
     }
 
     timerRef.current = setTimeout(() => {
+      timerRef.current = null;
       onFiltersChange({ searchText: val });
     }, 300);
   }
@@ -111,6 +150,7 @@ export default function TaskToolbar({
   function handleImmediateSearch(val: string) {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
+      timerRef.current = null;
     }
     onFiltersChange({ searchText: val });
   }
@@ -118,47 +158,45 @@ export default function TaskToolbar({
   function handleResetClick() {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
+      timerRef.current = null;
     }
     setSearchInput('');
     onReset();
+  }
+
+  function handleQuickFilterClick(id: QuickFilterId) {
+    onFiltersChange(toggleQuickFilterPatch(filters, id));
+  }
+
+  function handleRemoveActiveChip(chip: ActiveFilterChip) {
+    if (chip.key === 'search') {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      setSearchInput('');
+    }
+    onFiltersChange(chip.clearPatch);
   }
 
   useEffect(() => {
     return () => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
+        timerRef.current = null;
       }
     };
   }, []);
 
   return (
-    <div
-      style={{
-        background: '#ffffff',
-        padding: '12px 16px',
-        borderRadius: 8,
-        border: '1px solid #f0f0f0',
-        boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
-        marginBottom: 20,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-      }}
-    >
-      {/* Row 1: Search, Compact Scope, Team, Pending Invites Shortcut, Filter Toggle & Reset */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 10,
-        }}
-      >
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', flex: 1 }}>
+    <div className="task-toolbar-shell" data-testid="task-toolbar">
+      {/* Row 1: Search, Compact Scope, Team & Advanced Filter Toggle */}
+      <div className="task-toolbar-row-primary">
+        <div className="task-toolbar-primary-inputs">
           <Input
-            prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+            prefix={<SearchOutlined aria-hidden="true" style={{ color: '#bfbfbf' }} />}
             placeholder="Tìm kiếm công việc..."
+            aria-label="Tìm kiếm công việc"
             value={searchInput}
             onChange={(e) => handleInputChange(e.target.value)}
             onPressEnter={() => handleImmediateSearch(searchInput)}
@@ -170,6 +208,7 @@ export default function TaskToolbar({
             <Select<ScopeFilter>
               value={filters.scopeFilter}
               onChange={(sc) => onFiltersChange({ scopeFilter: sc })}
+              aria-label="Lọc theo phạm vi công việc"
               style={{ width: isMobile ? '100%' : 195 }}
               options={[
                 {
@@ -274,30 +313,15 @@ export default function TaskToolbar({
               })),
             ]}
           />
-
-          {showPendingShortcut && (
-            <Button
-              size="small"
-              type="dashed"
-              icon={<MailOutlined />}
-              onClick={() => onFiltersChange({ scopeFilter: 'pending_invites' })}
-              style={{ color: '#d46b08', borderColor: '#ffd591', background: '#fff7e6' }}
-            >
-              {formatCountLabel('Lời mời chờ', pendingInvitesCount)}
-            </Button>
-          )}
         </div>
 
-        <Space
-          size={8}
-          style={{
-            width: isMobile ? '100%' : undefined,
-            justifyContent: isMobile ? 'space-between' : 'flex-end',
-          }}
-        >
+        <div className="task-toolbar-primary-actions">
           <Button
-            icon={<FilterOutlined />}
+            icon={<FilterOutlined aria-hidden="true" />}
             onClick={() => setFiltersExpanded((prev) => !prev)}
+            aria-expanded={filtersExpanded}
+            aria-controls="task-toolbar-advanced-row"
+            data-testid="task-toolbar-advanced-toggle"
           >
             <Space size={6}>
               <span>Bộ lọc</span>
@@ -305,37 +329,53 @@ export default function TaskToolbar({
                 <Badge count={activeSecondaryCount} size="small" />
               )}
               {filtersExpanded ? (
-                <UpOutlined style={{ fontSize: 10 }} />
+                <UpOutlined aria-hidden="true" style={{ fontSize: 10 }} />
               ) : (
-                <DownOutlined style={{ fontSize: 10 }} />
+                <DownOutlined aria-hidden="true" style={{ fontSize: 10 }} />
               )}
             </Space>
           </Button>
-
-          {hasAnyFilter && (
-            <Button
-              icon={<ReloadOutlined />}
-              onClick={handleResetClick}
-              type="primary"
-              ghost
-            >
-              Đặt lại
-            </Button>
-          )}
-        </Space>
+        </div>
       </div>
 
-      {/* Row 2: Collapsible Secondary Filters (both desktop and mobile) */}
+      {/* Row 2: Composable 1-Click Quick Filters Strip */}
+      <div className="task-quick-filters-row" data-testid="task-quick-filters">
+        <span className="task-quick-filters-label">
+          <ThunderboltOutlined aria-hidden="true" style={{ color: '#faad14' }} />
+          <span>Lọc nhanh:</span>
+        </span>
+        <div
+          className="task-quick-filters-strip"
+          role="group"
+          aria-label="Bộ lọc nhanh công việc"
+        >
+          {quickFilterChips.map((chip) => (
+            <button
+              key={chip.id}
+              type="button"
+              aria-pressed={chip.active}
+              data-testid={`quick-filter-${chip.id}`}
+              className={`task-quick-filter-chip tone-${chip.tone}${chip.active ? ' is-active' : ''}`}
+              onClick={() => handleQuickFilterClick(chip.id)}
+            >
+              <span className="task-quick-filter-chip-icon" aria-hidden="true">
+                {getQuickFilterIcon(chip.id)}
+              </span>
+              <span>{chip.label}</span>
+              {chip.count !== undefined && (
+                <span className="task-quick-filter-count">{chip.count}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Row 3a: Collapsible Secondary Filters (both desktop and mobile) */}
       {filtersExpanded && (
         <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: 10,
-            paddingTop: 10,
-            borderTop: '1px solid #f5f5f5',
-          }}
+          id="task-toolbar-advanced-row"
+          className="task-toolbar-secondary-row"
+          data-testid="task-toolbar-advanced-row"
         >
           {/* Status Filter - Hidden in Trash */}
           {!isTrash && (
@@ -343,9 +383,18 @@ export default function TaskToolbar({
               value={filters.statusFilter}
               onChange={(status) => onFiltersChange({ statusFilter: status })}
               size="small"
-              style={{ width: isMobile ? 'calc(50% - 5px)' : 155 }}
+              aria-label="Lọc theo trạng thái"
+              style={{ width: isMobile ? 'calc(50% - 5px)' : 168 }}
               options={[
                 { value: 'ALL', label: 'Tất cả trạng thái' },
+                {
+                  value: 'INCOMPLETE',
+                  label: (
+                    <Tag color="geekblue" style={{ margin: 0 }}>
+                      Chưa hoàn thành
+                    </Tag>
+                  ),
+                },
                 { value: 'TODO', label: <Tag color="orange" style={{ margin: 0 }}>Cần làm</Tag> },
                 { value: 'IN_PROGRESS', label: <Tag color="blue" style={{ margin: 0 }}>Đang làm</Tag> },
                 { value: 'DONE', label: <Tag color="green" style={{ margin: 0 }}>Hoàn thành</Tag> },
@@ -358,6 +407,7 @@ export default function TaskToolbar({
             value={filters.priorityFilter}
             onChange={(priority) => onFiltersChange({ priorityFilter: priority })}
             size="small"
+            aria-label="Lọc theo mức ưu tiên"
             style={{ width: isMobile ? 'calc(50% - 5px)' : 145 }}
             options={[
               { value: 'ALL', label: 'Tất cả ưu tiên' },
@@ -372,6 +422,7 @@ export default function TaskToolbar({
             value={filters.categoryFilter}
             onChange={(catId) => onFiltersChange({ categoryFilter: catId })}
             size="small"
+            aria-label="Lọc theo danh mục"
             style={{ width: isMobile ? 'calc(50% - 5px)' : 165 }}
             options={[
               { value: 'ALL', label: 'Tất cả danh mục' },
@@ -403,6 +454,7 @@ export default function TaskToolbar({
             value={filters.assigneeFilter}
             onChange={(aId) => onFiltersChange({ assigneeFilter: aId })}
             size="small"
+            aria-label="Lọc theo người phụ trách"
             style={{ width: isMobile ? 'calc(50% - 5px)' : 180 }}
             options={assigneeOptions.map((opt) => ({
               value: opt.value,
@@ -416,6 +468,7 @@ export default function TaskToolbar({
               value={filters.deadlineFilter}
               onChange={(dl) => onFiltersChange({ deadlineFilter: dl })}
               size="small"
+              aria-label="Lọc theo hạn chót"
               style={{ width: isMobile ? 'calc(50% - 5px)' : 150 }}
               options={[
                 { value: 'ALL', label: 'Mọi hạn chót' },
@@ -433,6 +486,7 @@ export default function TaskToolbar({
               value={filters.sortBy}
               onChange={(sb) => onFiltersChange({ sortBy: sb })}
               size="small"
+              aria-label="Sắp xếp công việc"
               style={{ width: isMobile ? 'calc(50% - 5px)' : 165 }}
               options={[
                 { value: 'default', label: 'Sắp xếp mặc định' },
@@ -442,6 +496,43 @@ export default function TaskToolbar({
               ]}
             />
           )}
+        </div>
+      )}
+
+      {/* Row 3b: Active Filter Summary Chips (visible whenever any filter is active) */}
+      {activeFilterChips.length > 0 && (
+        <div className="task-active-filters-bar" data-testid="task-active-filters">
+          <span className="task-active-filters-label">Đang lọc:</span>
+          {activeFilterChips.map((chip) => (
+            <span
+              key={chip.key}
+              className="task-active-filter-chip"
+              data-testid={`active-filter-${chip.key}`}
+            >
+              <span className="task-active-filter-chip-text" title={chip.label}>
+                {chip.label}
+              </span>
+              <button
+                type="button"
+                className="task-active-filter-chip-close"
+                aria-label={`Bỏ lọc ${chip.label}`}
+                onClick={() => handleRemoveActiveChip(chip)}
+              >
+                <CloseOutlined aria-hidden="true" />
+              </button>
+            </span>
+          ))}
+
+          <Button
+            type="link"
+            size="small"
+            icon={<ReloadOutlined aria-hidden="true" />}
+            onClick={handleResetClick}
+            data-testid="task-toolbar-reset-all"
+            style={{ padding: '0 4px', height: 24, fontSize: 12 }}
+          >
+            Xóa tất cả
+          </Button>
         </div>
       )}
     </div>

@@ -383,6 +383,15 @@ describe('my-tasks.utils', () => {
       }),
       { viewMode: 'table', preset: null },
     );
+
+    // statusFilter INCOMPLETE falls back to table cleanly
+    assert.deepEqual(
+      resolveDashboardNavigationTarget({
+        scopeFilter: 'my_work',
+        statusFilter: 'INCOMPLETE',
+      }),
+      { viewMode: 'table', preset: null },
+    );
   });
 
   it('resolveOpenedModalTask preserves fresher openedTask subtasks when canonical listTask has same or older updatedAt', () => {
