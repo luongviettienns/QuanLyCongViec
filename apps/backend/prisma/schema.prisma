@@ -91,6 +91,25 @@ enum McpTokenScope {
   READ
 }
 
+enum AiMessageRole {
+  USER
+  ASSISTANT
+}
+
+enum AiActionType {
+  CREATE_TASK
+  UPDATE_TASK
+}
+
+enum AiPendingActionStatus {
+  PENDING
+  EXECUTING
+  EXECUTED
+  CANCELLED
+  EXPIRED
+  FAILED
+}
+
 model User {
   id                     Int            @id @default(autoincrement())
   email                  String         @unique
@@ -116,6 +135,8 @@ model User {
   teamActivityActorLogs  TeamActivityLog[]  @relation("TeamActivityActor")
   teamActivityTargetLogs TeamActivityLog[]  @relation("TeamActivityTarget")
   personalAccessTokens   PersonalAccessToken[]
+  aiConversations        AiConversation[]
+  aiPendingActions       AiPendingAction[]
 
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
@@ -374,4 +395,56 @@ model PersonalAccessToken {
 
   @@index([userId, revokedAt])
   @@map("PersonalAccessToken")
+}
+
+model AiConversation {
+  id             Int               @id @default(autoincrement())
+  userId         Int
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title          String            @default("Cuộc trò chuyện mới")
+  messages       AiMessage[]
+  pendingActions AiPendingAction[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([userId, updatedAt])
+  @@map("AiConversation")
+}
+
+model AiMessage {
+  id               Int               @id @default(autoincrement())
+  conversationId   Int
+  conversation     AiConversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role             AiMessageRole
+  content          String
+  toolCallsSummary Json?
+  pendingActions   AiPendingAction[]
+  createdAt        DateTime          @default(now())
+
+  @@index([conversationId, createdAt])
+  @@map("AiMessage")
+}
+
+model AiPendingAction {
+  id             Int                   @id @default(autoincrement())
+  userId         Int
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversationId Int
+  conversation   AiConversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  messageId      Int?
+  message        AiMessage?            @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  actionType     AiActionType
+  status         AiPendingActionStatus @default(PENDING)
+  payload        Json
+  preview        Json
+  executedTaskId Int?
+  errorMessage   String?
+  expiresAt      DateTime
+  confirmedAt    DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@index([userId, status, expiresAt])
+  @@index([conversationId, createdAt])
+  @@map("AiPendingAction")
 }

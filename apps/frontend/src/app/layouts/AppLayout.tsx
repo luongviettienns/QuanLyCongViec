@@ -23,11 +23,13 @@ import {
   TeamOutlined,
   SettingOutlined,
   TagsOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import AccountSettingsModal from '../../features/auth/components/AccountSettingsModal';
 import CategoryManagerModal from '../../features/categories/components/CategoryManagerModal';
 import { NotificationBell, type NotificationDestination } from '../../features/notifications';
+import { AiAssistantDrawer } from '../../features/ai';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -43,6 +45,8 @@ interface AppLayoutProps {
   currentNav?: AppNavKey;
   onNavChange?: (key: AppNavKey) => void;
   onNavigateNotification?: (dest: NotificationDestination) => void;
+  onAiTaskMutated?: () => void;
+  onOpenTaskFromAi?: (taskId: number) => void;
 }
 
 export default function AppLayout({
@@ -53,11 +57,14 @@ export default function AppLayout({
   currentNav = 'tasks',
   onNavChange,
   onNavigateNotification,
+  onAiTaskMutated,
+  onOpenTaskFromAi,
 }: AppLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const screens = useResponsive();
   const isMobile = !screens.md;
   const { user, logout } = useAuth();
@@ -296,6 +303,14 @@ export default function AppLayout({
 
             {user ? (
               <>
+                <Button
+                  icon={<RobotOutlined />}
+                  onClick={() => setAiDrawerOpen(true)}
+                  aria-label="Trợ lý AI"
+                  data-testid="ai-assistant-trigger"
+                >
+                  {screens.sm ? 'Trợ lý AI' : undefined}
+                </Button>
                 <NotificationBell
                   onNavigate={(dest) => {
                     if (onNavigateNotification) {
@@ -359,6 +374,15 @@ export default function AppLayout({
             open={categoryModalOpen}
             onClose={() => setCategoryModalOpen(false)}
             onChanged={onReload}
+          />
+          <AiAssistantDrawer
+            open={aiDrawerOpen}
+            onClose={() => setAiDrawerOpen(false)}
+            onTaskMutated={onAiTaskMutated}
+            onOpenTask={(taskId) => {
+              setAiDrawerOpen(false);
+              onOpenTaskFromAi?.(taskId);
+            }}
           />
         </>
       )}

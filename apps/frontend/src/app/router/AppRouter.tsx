@@ -370,6 +370,17 @@ function TaskAppShell() {
       currentNav={currentNav}
       onNavChange={(key) => navigate('/' + key)}
       onNavigateNotification={handleNotificationNavigate}
+      onAiTaskMutated={() => {
+        setMyTasksRefreshKey((k) => k + 1);
+        void refetch();
+        setDashboardReloadCounter((c) => c + 1);
+      }}
+      onOpenTaskFromAi={(taskId) => {
+        if (viewMode === 'trash') {
+          setViewMode(resolveTasksRouteViewMode(loadSavedViewMode()));
+        }
+        void openTaskFromNotification({ type: 'task', id: taskId });
+      }}
     >
       <ErrorBoundary key={location.pathname} variant="page" onReset={handleGlobalReload}>
         <Routes>

@@ -195,7 +195,10 @@ export function serializeNotificationItem(item: RawNotificationLike) {
   };
 }
 
-export function formatMcpErrorMessage(error: unknown): string {
+export function formatMcpErrorMessage(
+  error: unknown,
+  fallbackMessage = 'Không thể thực thi yêu cầu MCP lúc này',
+): string {
   if (error instanceof HttpException) {
     const response = error.getResponse();
     if (typeof response === 'string' && response.trim().length > 0) {
@@ -212,5 +215,5 @@ export function formatMcpErrorMessage(error: unknown): string {
     }
     return error.message || 'Yêu cầu không hợp lệ';
   }
-  return 'Không thể thực thi yêu cầu MCP lúc này';
+  return fallbackMessage;
 }
