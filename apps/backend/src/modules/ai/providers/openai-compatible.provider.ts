@@ -4,6 +4,12 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { AiConfig } from './ai-config.utils.js';
+import {
+  executeProviderFetch,
+  parseJsonResponse,
+  parseToolArguments,
+  readSseEvents,
+} from './ai-provider-http.utils.js';
 import type {
   AiCompletionInput,
   AiCompletionResult,
@@ -12,6 +18,16 @@ import type {
 } from './ai-provider.interface.js';
 
 interface OpenAiRawToolCall {
+  id?: unknown;
+  type?: unknown;
+  function?: {
+    name?: unknown;
+    arguments?: unknown;
+  };
+}
+
+interface OpenAiStreamToolCallDelta {
+  index?: unknown;
   id?: unknown;
   type?: unknown;
   function?: {
@@ -30,31 +46,14 @@ interface OpenAiChatCompletionResponse {
   }>;
 }
 
-function parseToolArguments(rawArguments: string): {
-  arguments: Record<string, unknown>;
-  parseError?: string;
-} {
-  if (!rawArguments.trim()) {
-    return { arguments: {} };
-  }
-
-  try {
-    const parsed: unknown = JSON.parse(rawArguments);
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      return {
-        arguments: {},
-        parseError: 'Tool arguments must be a JSON object',
-      };
-    }
-
-    return { arguments: parsed as Record<string, unknown> };
-  } catch (error) {
-    return {
-      arguments: {},
-      parseError:
-        error instanceof Error ? error.message : 'Malformed JSON tool arguments',
+interface OpenAiChatStreamChunk {
+  choices?: Array<{
+    finish_reason?: unknown;
+    delta?: {
+      content?: unknown;
+      tool_calls?: OpenAiStreamToolCallDelta[];
     };
-  }
+  }>;
 }
 
 function normalizeToolCalls(rawToolCalls: unknown): AiToolCall[] {
@@ -78,19 +77,6 @@ function normalizeToolCalls(rawToolCalls: unknown): AiToolCall[] {
   });
 }
 
-function mapHttpStatusError(status: number): Error {
-  if (status === 401 || status === 403) {
-    return new ServiceUnavailableException('AI provider authentication failed');
-  }
-  if (status === 429) {
-    return new ServiceUnavailableException('AI provider rate limit exceeded');
-  }
-  if (status >= 500) {
-    return new BadGatewayException('AI provider upstream error');
-  }
-  return new BadGatewayException('AI provider rejected the request');
-}
-
 /**
  * OpenAI-compatible HTTP chat completion provider using native fetch.
  */
@@ -100,14 +86,10 @@ export class OpenAiCompatibleProvider implements AiProvider {
 
   constructor(private readonly config: AiConfig) {}
 
-  async chatCompletion(input: AiCompletionInput): Promise<AiCompletionResult> {
-    if (!this.config.configured) {
-      throw new ServiceUnavailableException('AI assistant is not configured');
-    }
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
-
+  private buildRequestBody(
+    input: AiCompletionInput,
+    stream: boolean,
+  ): Record<string, unknown> {
     const requestBody: Record<string, unknown> = {
       model: this.config.model,
       messages: input.messages,
@@ -115,48 +97,44 @@ export class OpenAiCompatibleProvider implements AiProvider {
       temperature: input.temperature ?? 0.2,
     };
 
+    if (stream) {
+      requestBody.stream = true;
+    }
+
     if (input.tools && input.tools.length > 0) {
       requestBody.tools = input.tools;
       requestBody.tool_choice = 'auto';
     }
 
-    let response: Response;
-    try {
-      response = await globalThis.fetch(
-        `${this.config.baseUrl}/chat/completions`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.config.apiKey}`,
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal,
-        },
-      );
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        this.logger.warn('AI provider request timed out');
-        throw new ServiceUnavailableException('AI provider request timed out');
-      }
+    return requestBody;
+  }
 
-      this.logger.warn('AI provider request failed due to network error');
-      throw new ServiceUnavailableException('AI provider is unavailable');
-    } finally {
-      clearTimeout(timer);
+  private buildHeaders(): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${this.config.apiKey}`,
+    };
+  }
+
+  async chatCompletion(input: AiCompletionInput): Promise<AiCompletionResult> {
+    if (!this.config.configured) {
+      throw new ServiceUnavailableException('AI assistant is not configured');
     }
 
-    if (!response.ok) {
-      this.logger.warn(`AI provider returned HTTP status ${response.status}`);
-      await response.body?.cancel().catch(() => undefined);
-      throw mapHttpStatusError(response.status);
-    }
+    const { response, cleanup } = await executeProviderFetch(
+      `${this.config.baseUrl}/chat/completions`,
+      this.buildHeaders(),
+      this.buildRequestBody(input, false),
+      this.config.timeoutMs,
+      this.logger,
+      input.signal,
+    );
 
     let data: OpenAiChatCompletionResponse | null;
     try {
-      data = (await response.json()) as OpenAiChatCompletionResponse | null;
-    } catch {
-      throw new BadGatewayException('Invalid JSON response from AI provider');
+      data = await parseJsonResponse<OpenAiChatCompletionResponse | null>(response);
+    } finally {
+      cleanup();
     }
 
     const choice = data?.choices?.[0];
@@ -174,6 +152,132 @@ export class OpenAiCompatibleProvider implements AiProvider {
       toolCalls: normalizeToolCalls(message.tool_calls),
       finishReason:
         typeof choice.finish_reason === 'string' ? choice.finish_reason : null,
+    };
+  }
+
+  async chatCompletionStream(
+    input: AiCompletionInput,
+    onDelta: (text: string) => void,
+  ): Promise<AiCompletionResult> {
+    if (!this.config.configured) {
+      throw new ServiceUnavailableException('AI assistant is not configured');
+    }
+
+    const { response, signal, cleanup, getAbortSource } =
+      await executeProviderFetch(
+        `${this.config.baseUrl}/chat/completions`,
+        this.buildHeaders(),
+        this.buildRequestBody(input, true),
+        this.config.timeoutMs,
+        this.logger,
+        input.signal,
+      );
+
+    const contentParts: string[] = [];
+    const toolCallMap = new Map<
+      number,
+      { id: string; name: string; argumentsParts: string[] }
+    >();
+    let finishReason: string | null = null;
+    let streamDone = false;
+
+    try {
+      await readSseEvents(
+        response,
+        (event) => {
+          if (streamDone) {
+            return;
+          }
+
+          const rawData = event.data.trim();
+          if (!rawData) {
+            return;
+          }
+          if (rawData === '[DONE]') {
+            streamDone = true;
+            return;
+          }
+
+          let chunk: OpenAiChatStreamChunk;
+          try {
+            chunk = JSON.parse(rawData) as OpenAiChatStreamChunk;
+          } catch {
+            throw new BadGatewayException('Invalid JSON stream chunk from AI provider');
+          }
+
+          const choice = chunk.choices?.[0];
+          if (!choice) {
+            return;
+          }
+
+          if (typeof choice.finish_reason === 'string') {
+            finishReason = choice.finish_reason;
+          }
+
+          const delta = choice.delta;
+          if (!delta) {
+            return;
+          }
+
+          if (typeof delta.content === 'string' && delta.content.length > 0) {
+            contentParts.push(delta.content);
+            onDelta(delta.content);
+          }
+
+          if (Array.isArray(delta.tool_calls)) {
+            for (const deltaCall of delta.tool_calls) {
+              const index =
+                typeof deltaCall.index === 'number' ? deltaCall.index : 0;
+              let entry = toolCallMap.get(index);
+              if (!entry) {
+                entry = { id: '', name: '', argumentsParts: [] };
+                toolCallMap.set(index, entry);
+              }
+
+              if (typeof deltaCall.id === 'string' && deltaCall.id) {
+                entry.id = deltaCall.id;
+              }
+              if (
+                typeof deltaCall.function?.name === 'string' &&
+                deltaCall.function.name
+              ) {
+                entry.name = deltaCall.function.name;
+              }
+              if (typeof deltaCall.function?.arguments === 'string') {
+                entry.argumentsParts.push(deltaCall.function.arguments);
+              }
+            }
+          }
+        },
+        signal,
+        {
+          callerSignal: input.signal,
+          logger: this.logger,
+          getAbortSource,
+        },
+      );
+    } finally {
+      cleanup();
+    }
+
+    const toolCalls: AiToolCall[] = Array.from(toolCallMap.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([, entry]) => {
+        const rawArguments = entry.argumentsParts.join('');
+        const parsed = parseToolArguments(rawArguments);
+        return {
+          id: entry.id,
+          name: entry.name,
+          rawArguments,
+          arguments: parsed.arguments,
+          parseError: parsed.parseError,
+        };
+      });
+
+    return {
+      content: contentParts.length > 0 ? contentParts.join('') : null,
+      toolCalls,
+      finishReason,
     };
   }
 }

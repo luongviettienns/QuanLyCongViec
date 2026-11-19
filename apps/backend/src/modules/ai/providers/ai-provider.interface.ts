@@ -39,6 +39,7 @@ export interface AiCompletionInput {
   tools?: AiToolDefinition[];
   temperature?: number;
   maxTokens?: number;
+  signal?: AbortSignal;
 }
 
 export interface AiCompletionResult {
@@ -56,4 +57,8 @@ export interface AiProviderStatus {
 export interface AiProvider {
   readonly name: string;
   chatCompletion(input: AiCompletionInput): Promise<AiCompletionResult>;
+  chatCompletionStream(
+    input: AiCompletionInput,
+    onDelta: (text: string) => void,
+  ): Promise<AiCompletionResult>;
 }

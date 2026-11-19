@@ -5,17 +5,29 @@ import {
   ClockCircleOutlined,
   CloseCircleOutlined,
   CloseOutlined,
+  DeleteOutlined,
   EditOutlined,
   ExclamationCircleOutlined,
   LinkOutlined,
   PlusCircleOutlined,
+  RollbackOutlined,
   SyncOutlined,
+  UndoOutlined,
+  UserAddOutlined,
+  UserDeleteOutlined,
+  UserSwitchOutlined,
 } from '@ant-design/icons';
-import type { AiPendingActionItem, AiPendingActionStatus } from '../types/ai.types';
+import type {
+  AiActionType,
+  AiPendingActionItem,
+  AiPendingActionStatus,
+} from '../types/ai.types';
 import {
   buildAiPreviewFields,
   formatAiActionTitle,
   isAiActionPending,
+  isDangerAiAction,
+  isTaskLinkedAiAction,
 } from '../utils/ai-chat.utils';
 
 const { Text } = Typography;
@@ -26,6 +38,30 @@ export interface AiPendingActionCardProps {
   onConfirm: (actionId: number) => void | Promise<void>;
   onCancel: (actionId: number) => void | Promise<void>;
   onOpenTask?: (taskId: number) => void;
+}
+
+function renderActionIcon(actionType: AiActionType) {
+  switch (actionType) {
+    case 'CREATE_TASK':
+    case 'CREATE_SUBTASK':
+      return <PlusCircleOutlined style={{ color: '#1677ff' }} />;
+    case 'DELETE_TASK':
+    case 'DELETE_SUBTASK':
+      return <DeleteOutlined style={{ color: '#ff4d4f' }} />;
+    case 'REMOVE_TEAM_MEMBER':
+      return <UserDeleteOutlined style={{ color: '#ff4d4f' }} />;
+    case 'RESTORE_TASK':
+      return <UndoOutlined style={{ color: '#1677ff' }} />;
+    case 'RETURN_TASK':
+      return <RollbackOutlined style={{ color: '#fa8c16' }} />;
+    case 'ADD_TEAM_MEMBER':
+      return <UserAddOutlined style={{ color: '#1677ff' }} />;
+    case 'UPDATE_TEAM_MEMBER_ROLE':
+      return <UserSwitchOutlined style={{ color: '#1677ff' }} />;
+    case 'UPDATE_TASK':
+    case 'UPDATE_SUBTASK':
+      return <EditOutlined style={{ color: '#1677ff' }} />;
+  }
 }
 
 function getDisplayStatus(action: AiPendingActionItem): {
@@ -61,23 +97,25 @@ export function AiPendingActionCard({
   onOpenTask,
 }: AiPendingActionCardProps) {
   const canAct = isAiActionPending(action);
+  const isDanger = isDangerAiAction(action.actionType);
   const statusMeta = getDisplayStatus(action);
   const fields = buildAiPreviewFields(action.preview);
   const title = formatAiActionTitle(action);
   const isBusy = Boolean(busyAction);
 
+  const cardClassName = [
+    'ai-action-card',
+    canAct && isDanger ? 'ai-action-card--danger' : '',
+    canAct ? '' : 'ai-action-card--resolved',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <div
-      className={`ai-action-card ${canAct ? '' : 'ai-action-card--resolved'}`}
-      data-testid={`ai-action-card-${action.id}`}
-    >
+    <div className={cardClassName} data-testid={`ai-action-card-${action.id}`}>
       <div className="ai-action-card-header">
         <span className="ai-action-card-title">
-          {action.actionType === 'CREATE_TASK' ? (
-            <PlusCircleOutlined style={{ color: '#1677ff' }} />
-          ) : (
-            <EditOutlined style={{ color: '#1677ff' }} />
-          )}
+          {renderActionIcon(action.actionType)}
           <span>{title}</span>
         </span>
 
@@ -101,6 +139,14 @@ export function AiPendingActionCard({
           {statusMeta.label}
         </Tag>
       </div>
+
+      {isDanger && canAct && (
+        <div className="ai-action-danger-row" data-testid={`ai-action-danger-${action.id}`}>
+          <Tag color="error" icon={<ExclamationCircleOutlined />} style={{ margin: 0 }}>
+            Thao tác nhạy cảm
+          </Tag>
+        </div>
+      )}
 
       {action.preview.kind === 'UPDATE_TASK' && action.preview.taskTitle && (
         <div className="ai-action-card-subtitle">{action.preview.taskTitle}</div>
@@ -132,21 +178,24 @@ export function AiPendingActionCard({
       {action.status === 'EXECUTED' && (
         <div className="ai-action-executed-row">
           <Tag color="success" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>
-            {action.executedTaskId
+            {isTaskLinkedAiAction(action.actionType) && action.executedTaskId
               ? `Đã áp dụng (Công việc #${action.executedTaskId})`
               : 'Đã áp dụng'}
           </Tag>
-          {onOpenTask && action.executedTaskId !== null && (
-            <Button
-              size="small"
-              type="link"
-              icon={<LinkOutlined />}
-              onClick={() => onOpenTask(action.executedTaskId!)}
-              style={{ padding: '0 4px' }}
-            >
-              Mở công việc
-            </Button>
-          )}
+          {isTaskLinkedAiAction(action.actionType) &&
+            action.actionType !== 'DELETE_TASK' &&
+            onOpenTask &&
+            action.executedTaskId !== null && (
+              <Button
+                size="small"
+                type="link"
+                icon={<LinkOutlined />}
+                onClick={() => onOpenTask(action.executedTaskId!)}
+                style={{ padding: '0 4px' }}
+              >
+                Mở công việc
+              </Button>
+            )}
         </div>
       )}
 
@@ -166,6 +215,7 @@ export function AiPendingActionCard({
             <Button
               size="small"
               type="primary"
+              danger={isDanger}
               icon={<CheckOutlined />}
               loading={busyAction === 'confirm'}
               disabled={isBusy}

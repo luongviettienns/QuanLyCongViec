@@ -121,6 +121,7 @@ function TaskAppShell() {
 
   const { user } = useAuth();
   const [dashboardReloadCounter, setDashboardReloadCounter] = useState(0);
+  const [teamReloadCounter, setTeamReloadCounter] = useState(0);
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [myTasksPresetState, setMyTasksPresetState] = useState<{
@@ -374,6 +375,12 @@ function TaskAppShell() {
         setMyTasksRefreshKey((k) => k + 1);
         void refetch();
         setDashboardReloadCounter((c) => c + 1);
+        setTeamReloadCounter((c) => c + 1);
+      }}
+      onAiTeamMutated={() => {
+        setTeamReloadCounter((c) => c + 1);
+        setDashboardReloadCounter((c) => c + 1);
+        void refetch();
       }}
       onOpenTaskFromAi={(taskId) => {
         if (viewMode === 'trash') {
@@ -422,11 +429,21 @@ function TaskAppShell() {
           />
           <Route
             path="teams"
-            element={<TeamPage onTeamChanged={() => void refetch()} />}
+            element={
+              <TeamPage
+                refreshTrigger={teamReloadCounter}
+                onTeamChanged={() => void refetch()}
+              />
+            }
           />
           <Route
             path="teams/:teamId"
-            element={<TeamPage onTeamChanged={() => void refetch()} />}
+            element={
+              <TeamPage
+                refreshTrigger={teamReloadCounter}
+                onTeamChanged={() => void refetch()}
+              />
+            }
           />
           <Route
             path="categories"

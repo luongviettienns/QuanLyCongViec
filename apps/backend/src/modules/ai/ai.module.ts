@@ -8,7 +8,9 @@ import { AiController } from './ai.controller.js';
 import { AiProviderRegistry } from './providers/ai-provider.registry.js';
 import { AiActionService } from './services/ai-action.service.js';
 import { AiAgentService } from './services/ai-agent.service.js';
+import { AiExtendedValidatorService } from './services/ai-extended-validator.service.js';
 import { AiTaskValidatorService } from './services/ai-task-validator.service.js';
+import { AiTeamValidatorService } from './services/ai-team-validator.service.js';
 import { AiToolsService } from './services/ai-tools.service.js';
 
 @Module({
@@ -23,6 +25,8 @@ import { AiToolsService } from './services/ai-tools.service.js';
   providers: [
     AiProviderRegistry,
     AiTaskValidatorService,
+    AiExtendedValidatorService,
+    AiTeamValidatorService,
     AiToolsService,
     AiAgentService,
     AiActionService,

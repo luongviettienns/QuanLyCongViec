@@ -1,7 +1,7 @@
 import { BadGatewayException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { AiActionType, AiMessageRole, AiPendingActionStatus } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AiAgentService } from '../ai-agent.service.js';
+import { AiAgentService, type AiStreamEvent } from '../ai-agent.service.js';
 
 describe('AiAgentService', () => {
   let prisma: {
@@ -20,6 +20,7 @@ describe('AiAgentService', () => {
     };
     aiPendingAction: {
       findMany: ReturnType<typeof vi.fn>;
+      count: ReturnType<typeof vi.fn>;
       updateMany: ReturnType<typeof vi.fn>;
       deleteMany: ReturnType<typeof vi.fn>;
     };
@@ -28,6 +29,7 @@ describe('AiAgentService', () => {
   let provider: {
     name: string;
     chatCompletion: ReturnType<typeof vi.fn>;
+    chatCompletionStream: ReturnType<typeof vi.fn>;
   };
 
   let providerRegistry: {
@@ -73,6 +75,7 @@ describe('AiAgentService', () => {
       },
       aiPendingAction: {
         findMany: vi.fn().mockResolvedValue([]),
+        count: vi.fn().mockResolvedValue(0),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
@@ -81,6 +84,7 @@ describe('AiAgentService', () => {
     provider = {
       name: 'openai-compatible',
       chatCompletion: vi.fn(),
+      chatCompletionStream: vi.fn(),
     };
 
     providerRegistry = {
@@ -641,7 +645,7 @@ describe('AiAgentService', () => {
     );
 
     expect(prisma.aiPendingAction.deleteMany).toHaveBeenCalledWith({
-      where: { id: { in: [701] } },
+      where: { id: { in: [701] }, status: AiPendingActionStatus.PENDING },
     });
     expect(prisma.aiMessage.deleteMany).toHaveBeenCalledWith({
       where: { id: 501 },
@@ -712,11 +716,530 @@ describe('AiAgentService', () => {
     ).rejects.toThrow(BadGatewayException);
 
     expect(prisma.aiPendingAction.deleteMany).toHaveBeenCalledWith({
-      where: { id: { in: [702] } },
+      where: { id: { in: [702] }, status: AiPendingActionStatus.PENDING },
     });
     expect(prisma.aiMessage.deleteMany).toHaveBeenCalledWith({
       where: { id: 502 },
     });
     expect(prisma.aiConversation.deleteMany).not.toHaveBeenCalled();
+  });
+
+  describe('assertCanStartStream & chatStream', () => {
+    it('assertCanStartStream validates provider (503) and conversation ownership (404)', async () => {
+      providerRegistry.getProvider.mockImplementationOnce(() => {
+        throw new ServiceUnavailableException('AI assistant is not configured');
+      });
+
+      await expect(service.assertCanStartStream(7)).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+
+      prisma.aiConversation.findFirst.mockResolvedValueOnce(null);
+      await expect(service.assertCanStartStream(7, 999)).rejects.toThrow(
+        NotFoundException,
+      );
+
+      prisma.aiConversation.findFirst.mockResolvedValueOnce({ id: 12, userId: 7 });
+      await expect(service.assertCanStartStream(7, 12)).resolves.toBeUndefined();
+    });
+
+    it('throws 503 / 404 before emitting meta or creating DB rows in chatStream', async () => {
+      const events: AiStreamEvent[] = [];
+      providerRegistry.getProvider.mockImplementationOnce(() => {
+        throw new ServiceUnavailableException('AI assistant is not configured');
+      });
+
+      await expect(
+        service.chatStream(7, { message: 'Stream test' }, (evt) => events.push(evt)),
+      ).rejects.toThrow(ServiceUnavailableException);
+      expect(events).toEqual([]);
+      expect(prisma.aiConversation.create).not.toHaveBeenCalled();
+
+      prisma.aiConversation.findFirst.mockResolvedValueOnce(null);
+      await expect(
+        service.chatStream(
+          7,
+          { conversationId: 999, message: 'Stream test' },
+          (evt) => events.push(evt),
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(events).toEqual([]);
+      expect(prisma.aiMessage.create).not.toHaveBeenCalled();
+    });
+
+    it('emits meta, tool_start, tool_result, pending_action, delta, and done in order and passes tools: undefined on final round', async () => {
+      const now = new Date('2026-11-19T03:00:00.000Z');
+      const expiresAt = new Date('2026-11-19T03:10:00.000Z');
+      prisma.aiConversation.create.mockResolvedValueOnce({
+        id: 120,
+        userId: 7,
+        title: 'Cuộc trò chuyện mới',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const pendingRecord = {
+        id: 801,
+        userId: 7,
+        conversationId: 120,
+        messageId: null,
+        actionType: AiActionType.CREATE_TASK,
+        status: AiPendingActionStatus.PENDING,
+        payload: { title: 'Task Stream' },
+        preview: { kind: 'CREATE_TASK', title: 'Task Stream' },
+        executedTaskId: null,
+        errorMessage: null,
+        expiresAt,
+        confirmedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      let roundCounter = 0;
+      provider.chatCompletionStream.mockImplementation(async (input, onDelta) => {
+        roundCounter += 1;
+        if (roundCounter <= 5) {
+          if (roundCounter === 1) {
+            return {
+              content: null,
+              toolCalls: [
+                { id: 's_call_1', name: 'list_teams', rawArguments: '{}', arguments: {} },
+              ],
+            };
+          }
+          if (roundCounter === 2) {
+            return {
+              content: null,
+              toolCalls: [
+                {
+                  id: 's_call_2',
+                  name: 'create_task',
+                  rawArguments: '{"title":"Task Stream"}',
+                  arguments: { title: 'Task Stream' },
+                },
+              ],
+            };
+          }
+          onDelta('Đang ');
+          onDelta('hoàn tất.');
+          return {
+            content: 'Đang hoàn tất.',
+            toolCalls: [],
+          };
+        }
+        return { content: 'Done', toolCalls: [] };
+      });
+
+      aiToolsService.executeTool
+        .mockResolvedValueOnce({
+          ok: true,
+          data: { total: 1, teams: [{ id: 1, name: 'Core' }] },
+          summary: 'Đã liệt kê 1 nhóm làm việc',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          data: { ok: true, requiresConfirmation: true, actionId: 801 },
+          pendingAction: pendingRecord,
+          summary: 'Đã tạo đề xuất tạo công việc "Task Stream"',
+        });
+
+      prisma.aiMessage.create
+        .mockResolvedValueOnce({
+          id: 901,
+          conversationId: 120,
+          role: AiMessageRole.USER,
+          content: 'Tạo công việc stream',
+          toolCallsSummary: null,
+          createdAt: now,
+        })
+        .mockResolvedValueOnce({
+          id: 902,
+          conversationId: 120,
+          role: AiMessageRole.ASSISTANT,
+          content: 'Đang hoàn tất.',
+          toolCallsSummary: [
+            { name: 'list_teams', ok: true, summary: 'Đã liệt kê 1 nhóm làm việc' },
+            {
+              name: 'create_task',
+              ok: true,
+              summary: 'Đã tạo đề xuất tạo công việc "Task Stream"',
+            },
+          ],
+          createdAt: now,
+        });
+
+      const events: AiStreamEvent[] = [];
+      const controller = new AbortController();
+      const response = await service.chatStream(
+        7,
+        { message: 'Tạo công việc stream' },
+        (evt) => events.push(evt),
+        controller.signal,
+      );
+
+      expect(events.map((e) => e.event)).toEqual([
+        'meta',
+        'tool_start',
+        'tool_result',
+        'tool_start',
+        'tool_result',
+        'pending_action',
+        'delta',
+        'delta',
+        'done',
+      ]);
+      expect(events[0]).toEqual({ event: 'meta', data: { conversationId: 120 } });
+      expect(events[5]).toMatchObject({
+        event: 'pending_action',
+        data: { action: { id: 801, actionType: AiActionType.CREATE_TASK } },
+      });
+      expect(events[6]).toEqual({ event: 'delta', data: { text: 'Đang ' } });
+      expect(events[7]).toEqual({ event: 'delta', data: { text: 'hoàn tất.' } });
+      expect(events[8]).toEqual({ event: 'done', data: response });
+      expect(provider.chatCompletionStream.mock.calls[0]?.[0]?.signal).toBe(controller.signal);
+      expect(provider.chatCompletionStream.mock.calls[0]?.[0]?.tools).toEqual(sampleTools);
+      expect(prisma.aiPendingAction.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: [801] } },
+        data: { messageId: 902 },
+      });
+    });
+
+    it('passes tools: undefined on round MAX_AGENT_ROUNDS - 1 in chatStream', async () => {
+      const now = new Date('2026-11-19T03:00:00.000Z');
+      prisma.aiConversation.create.mockResolvedValueOnce({
+        id: 121,
+        userId: 7,
+        title: 'Cuộc trò chuyện mới',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      provider.chatCompletionStream.mockImplementation(async () => ({
+        content: null,
+        toolCalls: [{ id: 'loop', name: 'list_teams', rawArguments: '{}', arguments: {} }],
+      }));
+
+      aiToolsService.executeTool.mockResolvedValue({
+        ok: true,
+        data: { total: 0, teams: [] },
+        summary: 'OK',
+      });
+
+      prisma.aiMessage.create
+        .mockResolvedValueOnce({
+          id: 911,
+          conversationId: 121,
+          role: AiMessageRole.USER,
+          content: 'Loop stream',
+          toolCallsSummary: null,
+          createdAt: now,
+        })
+        .mockImplementationOnce(async ({ data }) => ({
+          id: 912,
+          conversationId: 121,
+          role: AiMessageRole.ASSISTANT,
+          content: data.content,
+          toolCallsSummary: data.toolCallsSummary ?? null,
+          createdAt: now,
+        }));
+
+      const events: AiStreamEvent[] = [];
+      const res = await service.chatStream(7, { message: 'Loop stream' }, (e) => events.push(e));
+
+      expect(provider.chatCompletionStream).toHaveBeenCalledTimes(6);
+      expect(provider.chatCompletionStream.mock.calls[4]?.[0]?.tools).toEqual(sampleTools);
+      expect(provider.chatCompletionStream.mock.calls[5]?.[0]?.tools).toBeUndefined();
+      expect(events[events.length - 1]?.event).toBe('done');
+      expect(res.assistantMessage.content.length).toBeGreaterThan(0);
+    });
+
+    it('aborts on AbortSignal mid-stream and cleans up newly created conversation, user message, and pending actions', async () => {
+      const now = new Date('2026-11-19T03:00:00.000Z');
+      const controller = new AbortController();
+
+      prisma.aiConversation.create.mockResolvedValueOnce({
+        id: 130,
+        userId: 7,
+        title: 'Cuộc trò chuyện mới',
+        createdAt: now,
+        updatedAt: now,
+      });
+      prisma.aiMessage.create.mockResolvedValueOnce({
+        id: 920,
+        conversationId: 130,
+        role: AiMessageRole.USER,
+        content: 'Abort test',
+        toolCallsSummary: null,
+        createdAt: now,
+      });
+
+      const pendingRecord = {
+        id: 820,
+        userId: 7,
+        conversationId: 130,
+        messageId: null,
+        actionType: AiActionType.CREATE_TASK,
+        status: AiPendingActionStatus.PENDING,
+        payload: { title: 'Orphan Task' },
+        preview: { kind: 'CREATE_TASK', title: 'Orphan Task' },
+        executedTaskId: null,
+        errorMessage: null,
+        expiresAt: now,
+        confirmedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      provider.chatCompletionStream
+        .mockResolvedValueOnce({
+          content: null,
+          toolCalls: [
+            {
+              id: 'call_orphan',
+              name: 'create_task',
+              rawArguments: '{"title":"Orphan Task"}',
+              arguments: { title: 'Orphan Task' },
+            },
+          ],
+        })
+        .mockImplementationOnce(async (_input, onDelta) => {
+          onDelta('Partial ');
+          controller.abort();
+          return { content: 'Partial ', toolCalls: [] };
+        });
+
+      aiToolsService.executeTool.mockResolvedValueOnce({
+        ok: true,
+        data: { ok: true, requiresConfirmation: true, actionId: 820 },
+        pendingAction: pendingRecord,
+        summary: 'Đã tạo đề xuất',
+      });
+
+      const events: AiStreamEvent[] = [];
+      await expect(
+        service.chatStream(
+          7,
+          { message: 'Abort test' },
+          (evt) => events.push(evt),
+          controller.signal,
+        ),
+      ).rejects.toThrow();
+
+      expect(events.some((e) => e.event === 'done')).toBe(false);
+      expect(prisma.aiPendingAction.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: [820] }, status: AiPendingActionStatus.PENDING },
+      });
+      expect(prisma.aiMessage.deleteMany).toHaveBeenCalledWith({
+        where: { id: 920 },
+      });
+      expect(prisma.aiConversation.deleteMany).toHaveBeenCalledWith({
+        where: { id: 130 },
+      });
+    });
+
+    it('cleans up user message and pending actions without deleting existing conversation on mid-stream provider failure', async () => {
+      const now = new Date('2026-11-19T03:00:00.000Z');
+      prisma.aiConversation.findFirst.mockResolvedValueOnce({
+        id: 140,
+        userId: 7,
+        title: 'Cuộc trò chuyện có sẵn',
+        createdAt: now,
+        updatedAt: now,
+      });
+      prisma.aiMessage.create.mockResolvedValueOnce({
+        id: 930,
+        conversationId: 140,
+        role: AiMessageRole.USER,
+        content: 'Mid-stream fail',
+        toolCallsSummary: null,
+        createdAt: now,
+      });
+
+      const pendingRecord = {
+        id: 830,
+        userId: 7,
+        conversationId: 140,
+        messageId: null,
+        actionType: AiActionType.CREATE_TASK,
+        status: AiPendingActionStatus.PENDING,
+        payload: { title: 'Orphan Stream Task' },
+        preview: { kind: 'CREATE_TASK', title: 'Orphan Stream Task' },
+        executedTaskId: null,
+        errorMessage: null,
+        expiresAt: now,
+        confirmedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      provider.chatCompletionStream
+        .mockResolvedValueOnce({
+          content: null,
+          toolCalls: [
+            {
+              id: 'call_orphan_2',
+              name: 'create_task',
+              rawArguments: '{"title":"Orphan Stream Task"}',
+              arguments: { title: 'Orphan Stream Task' },
+            },
+          ],
+        })
+        .mockRejectedValueOnce(new BadGatewayException('AI stream upstream failure'));
+
+      aiToolsService.executeTool.mockResolvedValueOnce({
+        ok: true,
+        data: { ok: true, requiresConfirmation: true, actionId: 830 },
+        pendingAction: pendingRecord,
+        summary: 'Đã tạo đề xuất',
+      });
+
+      const events: AiStreamEvent[] = [];
+      await expect(
+        service.chatStream(
+          7,
+          { conversationId: 140, message: 'Mid-stream fail' },
+          (evt) => events.push(evt),
+        ),
+      ).rejects.toThrow(BadGatewayException);
+
+      expect(events.some((e) => e.event === 'done')).toBe(false);
+      expect(prisma.aiPendingAction.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: [830] }, status: AiPendingActionStatus.PENDING },
+      });
+      expect(prisma.aiMessage.deleteMany).toHaveBeenCalledWith({
+        where: { id: 930 },
+      });
+      expect(prisma.aiConversation.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('preserves mid-stream EXECUTED action and newly created conversation on abort/error while still deleting PENDING actions', async () => {
+      const now = new Date('2026-11-19T03:00:00.000Z');
+      const controller = new AbortController();
+
+      prisma.aiConversation.create.mockResolvedValueOnce({
+        id: 150,
+        userId: 7,
+        title: 'Cuộc trò chuyện mới',
+        createdAt: now,
+        updatedAt: now,
+      });
+      prisma.aiMessage.create.mockResolvedValueOnce({
+        id: 940,
+        conversationId: 150,
+        role: AiMessageRole.USER,
+        content: 'Tạo hai công việc',
+        toolCallsSummary: null,
+        createdAt: now,
+      });
+
+      const actionExecuted = {
+        id: 840,
+        userId: 7,
+        conversationId: 150,
+        messageId: null,
+        actionType: AiActionType.CREATE_TASK,
+        status: AiPendingActionStatus.PENDING,
+        payload: { title: 'Task Executed Mid-Stream' },
+        preview: { kind: 'CREATE_TASK', title: 'Task Executed Mid-Stream' },
+        executedTaskId: null,
+        errorMessage: null,
+        expiresAt: now,
+        confirmedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const actionPending = {
+        ...actionExecuted,
+        id: 841,
+        payload: { title: 'Task Still Pending' },
+        preview: { kind: 'CREATE_TASK', title: 'Task Still Pending' },
+      };
+
+      const dbActions: Array<{
+        id: number;
+        conversationId: number;
+        status: AiPendingActionStatus;
+      }> = [
+        { id: 840, conversationId: 150, status: AiPendingActionStatus.PENDING },
+        { id: 841, conversationId: 150, status: AiPendingActionStatus.PENDING },
+      ];
+      prisma.aiPendingAction.deleteMany.mockImplementation(
+        async ({ where }: { where: { id?: { in: number[] }; status?: AiPendingActionStatus } }) => {
+          const ids = where.id?.in ?? [];
+          let deleted = 0;
+          for (let i = dbActions.length - 1; i >= 0; i--) {
+            const row = dbActions[i];
+            if (ids.includes(row.id) && (!where.status || row.status === where.status)) {
+              dbActions.splice(i, 1);
+              deleted += 1;
+            }
+          }
+          return { count: deleted };
+        },
+      );
+      prisma.aiPendingAction.count.mockImplementation(
+        async ({ where }: { where: { conversationId: number } }) =>
+          dbActions.filter((row) => row.conversationId === where.conversationId).length,
+      );
+
+      provider.chatCompletionStream
+        .mockResolvedValueOnce({
+          content: null,
+          toolCalls: [
+            {
+              id: 'call_exec_1',
+              name: 'create_task',
+              rawArguments: '{"title":"Task Executed Mid-Stream"}',
+              arguments: { title: 'Task Executed Mid-Stream' },
+            },
+            {
+              id: 'call_pend_2',
+              name: 'create_task',
+              rawArguments: '{"title":"Task Still Pending"}',
+              arguments: { title: 'Task Still Pending' },
+            },
+          ],
+        })
+        .mockImplementationOnce(async () => {
+          // Simulate user confirming action 840 mid-stream before aborting on round 2
+          dbActions[0].status = AiPendingActionStatus.EXECUTED;
+          controller.abort();
+          return { content: null, toolCalls: [] };
+        });
+
+      aiToolsService.executeTool
+        .mockResolvedValueOnce({
+          ok: true,
+          data: { ok: true, requiresConfirmation: true, actionId: 840 },
+          pendingAction: actionExecuted,
+          summary: 'Đã tạo đề xuất 1',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          data: { ok: true, requiresConfirmation: true, actionId: 841 },
+          pendingAction: actionPending,
+          summary: 'Đã tạo đề xuất 2',
+        });
+
+      await expect(
+        service.chatStream(
+          7,
+          { message: 'Tạo hai công việc' },
+          () => undefined,
+          controller.signal,
+        ),
+      ).rejects.toThrow();
+
+      expect(prisma.aiPendingAction.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: [840, 841] }, status: AiPendingActionStatus.PENDING },
+      });
+      expect(prisma.aiPendingAction.count).toHaveBeenCalledWith({
+        where: { conversationId: 150 },
+      });
+      expect(dbActions).toEqual([
+        { id: 840, conversationId: 150, status: AiPendingActionStatus.EXECUTED },
+      ]);
+      expect(prisma.aiConversation.deleteMany).not.toHaveBeenCalled();
+    });
   });
 });

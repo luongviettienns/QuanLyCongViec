@@ -92,6 +92,7 @@ const { useBreakpoint } = Grid;
 
 interface TeamPageProps {
   onTeamChanged?: () => void;
+  refreshTrigger?: number;
 }
 
 function getFilterLabel(filter: CommandFilterType): string {
@@ -111,7 +112,7 @@ function getFilterLabel(filter: CommandFilterType): string {
   }
 }
 
-export default function TeamPage({ onTeamChanged }: TeamPageProps) {
+export default function TeamPage({ onTeamChanged, refreshTrigger }: TeamPageProps) {
   const { user } = useAuth();
   const { teamId: routeTeamId } = useParams<{ teamId?: string }>();
   const navigate = useNavigate();
@@ -356,6 +357,35 @@ export default function TeamPage({ onTeamChanged }: TeamPageProps) {
       categoriesAbortRef.current?.abort();
     };
   }, [selectedTeamId, loadTeamDetail, loadTeamTasks, loadTeamCategories]);
+
+  // External refresh trigger (e.g. AI Assistant mutations)
+  const prevRefreshTriggerRef = useRef(refreshTrigger);
+  useEffect(() => {
+    if (
+      refreshTrigger === undefined ||
+      refreshTrigger <= 0 ||
+      refreshTrigger === prevRefreshTriggerRef.current
+    ) {
+      return;
+    }
+    prevRefreshTriggerRef.current = refreshTrigger;
+
+    let active = true;
+    void Promise.resolve().then(async () => {
+      if (!active) return;
+      const activeTeamId = selectedTeamRef.current?.id ?? selectedTeamIdRef.current ?? undefined;
+      const updatedTeams = await loadTeams(activeTeamId);
+      if (!active) return;
+      if (activeTeamId && updatedTeams.some((t) => t.id === activeTeamId)) {
+        void loadTeamDetail(activeTeamId);
+        void loadTeamTasks(activeTeamId);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [refreshTrigger, loadTeams, loadTeamDetail, loadTeamTasks]);
 
   // Realtime Team synchronization
   const pendingRealtimeSyncRef = useRef<{

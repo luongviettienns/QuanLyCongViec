@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { type AiConfig, loadAiConfig } from './ai-config.utils.js';
 import type { AiProvider, AiProviderStatus } from './ai-provider.interface.js';
+import { AnthropicProvider } from './anthropic.provider.js';
+import { GeminiProvider } from './gemini.provider.js';
 import { OpenAiCompatibleProvider } from './openai-compatible.provider.js';
 
 export const AI_PROVIDER_ENV = Symbol('AI_PROVIDER_ENV');
@@ -25,11 +27,17 @@ export class AiProviderRegistry {
   ) {
     this.config = loadAiConfig(env);
 
-    if (this.config.configured && this.config.provider === 'openai-compatible') {
-      this.providers.set(
-        'openai-compatible',
-        new OpenAiCompatibleProvider(this.config),
-      );
+    if (this.config.configured) {
+      if (this.config.provider === 'openai-compatible') {
+        this.providers.set(
+          'openai-compatible',
+          new OpenAiCompatibleProvider(this.config),
+        );
+      } else if (this.config.provider === 'anthropic') {
+        this.providers.set('anthropic', new AnthropicProvider(this.config));
+      } else if (this.config.provider === 'gemini') {
+        this.providers.set('gemini', new GeminiProvider(this.config));
+      }
     }
   }
 

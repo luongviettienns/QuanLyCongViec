@@ -6,6 +6,12 @@ export const DEFAULT_MAX_TOKENS = 2_048;
 export const MIN_MAX_TOKENS = 256;
 export const MAX_MAX_TOKENS = 8_192;
 
+const DEFAULT_PROVIDER_BASE_URLS: Record<string, string> = {
+  anthropic: 'https://api.anthropic.com/v1',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta',
+  'openai-compatible': '',
+};
+
 export interface AiConfig {
   configured: boolean;
   provider: string;
@@ -40,8 +46,9 @@ function clampInt(
  * Fails closed when any required credential or endpoint field is missing.
  */
 export function loadAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
-  const provider = env.LLM_PROVIDER?.trim() || DEFAULT_AI_PROVIDER;
-  const baseUrl = (env.LLM_BASE_URL?.trim() ?? '').replace(/\/+$/, '');
+  const provider = env.LLM_PROVIDER?.trim().toLowerCase() || DEFAULT_AI_PROVIDER;
+  const rawBaseUrl = (env.LLM_BASE_URL?.trim() ?? '').replace(/\/+$/, '');
+  const baseUrl = rawBaseUrl || (DEFAULT_PROVIDER_BASE_URLS[provider] ?? '');
   const apiKey = env.LLM_API_KEY?.trim() ?? '';
   const model = env.LLM_MODEL?.trim() ?? '';
 

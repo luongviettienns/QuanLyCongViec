@@ -46,6 +46,7 @@ interface AppLayoutProps {
   onNavChange?: (key: AppNavKey) => void;
   onNavigateNotification?: (dest: NotificationDestination) => void;
   onAiTaskMutated?: () => void;
+  onAiTeamMutated?: () => void;
   onOpenTaskFromAi?: (taskId: number) => void;
 }
 
@@ -58,6 +59,7 @@ export default function AppLayout({
   onNavChange,
   onNavigateNotification,
   onAiTaskMutated,
+  onAiTeamMutated,
   onOpenTaskFromAi,
 }: AppLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
@@ -379,6 +381,7 @@ export default function AppLayout({
             open={aiDrawerOpen}
             onClose={() => setAiDrawerOpen(false)}
             onTaskMutated={onAiTaskMutated}
+            onTeamMutated={onAiTeamMutated}
             onOpenTask={(taskId) => {
               setAiDrawerOpen(false);
               onOpenTaskFromAi?.(taskId);

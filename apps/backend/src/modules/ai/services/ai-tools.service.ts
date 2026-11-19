@@ -4,6 +4,8 @@ import {
   AiPendingActionStatus,
   Prisma,
   TaskPriority,
+  TaskStatus,
+  TeamRole,
   type AiPendingAction,
 } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service.js';
@@ -31,7 +33,10 @@ import {
 import { TasksService } from '../../tasks/tasks.service.js';
 import { TeamsService } from '../../teams/teams.service.js';
 import type { AiToolDefinition } from '../providers/ai-provider.interface.js';
+import { AiExtendedValidatorService } from './ai-extended-validator.service.js';
 import { AiTaskValidatorService } from './ai-task-validator.service.js';
+import { AiTeamValidatorService } from './ai-team-validator.service.js';
+import type { AiProposalPreview, ValidatedProposalResult } from './ai-validator.types.js';
 
 export interface AiToolExecutionContext {
   userId: number;
@@ -49,6 +54,8 @@ export interface AiToolExecutionResult {
 
 const PENDING_ACTION_TTL_MS = 10 * 60 * 1000;
 const TASK_PRIORITIES = [TaskPriority.LOW, TaskPriority.MEDIUM, TaskPriority.HIGH] as const;
+const TASK_STATUS_VALUES = [TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.DONE] as const;
+const TEAM_ROLES = [TeamRole.ADMIN, TeamRole.MEMBER] as const;
 const TASK_STATS_SCOPES = [
   'all',
   'my_work',
@@ -59,6 +66,34 @@ const TASK_STATS_SCOPES = [
 ] as const;
 const CATEGORY_SCOPES = ['all', 'personal', 'team'] as const;
 const NOTIFICATION_FILTERS = ['all', 'unread', 'important'] as const;
+
+const WRITE_PROPOSAL_TOOL_LIST = [
+  'create_task',
+  'update_task',
+  'delete_task',
+  'restore_task',
+  'return_task',
+  'create_subtask',
+  'update_subtask',
+  'delete_subtask',
+  'add_team_member',
+  'update_team_member_role',
+  'remove_team_member',
+] as const;
+
+type WriteProposalToolName = (typeof WRITE_PROPOSAL_TOOL_LIST)[number];
+
+const WRITE_PROPOSAL_TOOL_NAMES: ReadonlySet<WriteProposalToolName> =
+  new Set<WriteProposalToolName>(WRITE_PROPOSAL_TOOL_LIST);
+
+function isWriteProposalToolName(name: string): name is WriteProposalToolName {
+  for (const toolName of WRITE_PROPOSAL_TOOL_NAMES) {
+    if (toolName === name) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function readOptionalEnum<T extends string>(
   value: unknown,
@@ -103,6 +138,8 @@ export class AiToolsService {
     private readonly categoriesService: CategoriesService,
     private readonly notificationsService: NotificationsService,
     private readonly validator: AiTaskValidatorService,
+    private readonly extendedValidator: AiExtendedValidatorService,
+    private readonly teamValidator: AiTeamValidatorService,
   ) {}
 
   getToolDefinitions(): AiToolDefinition[] {
@@ -355,6 +392,45 @@ export class AiToolsService {
       {
         type: 'function',
         function: {
+          name: 'list_trash_tasks',
+          description:
+            'Liệt kê các công việc đang nằm trong Thùng rác (đã xóa mềm, có thể khôi phục). Hỗ trợ lọc theo nhóm, cá nhân, ưu tiên và từ khóa. Chỉ đọc.',
+          parameters: {
+            type: 'object',
+            properties: {
+              teamId: {
+                type: 'integer',
+                minimum: 1,
+                description: 'Lọc theo mã nhóm (không kết hợp cùng personalOnly=true)',
+              },
+              personalOnly: {
+                type: 'boolean',
+                description: 'Chỉ lấy công việc cá nhân trong thùng rác',
+              },
+              priority: {
+                type: 'string',
+                enum: [...TASK_PRIORITIES],
+                description: 'Độ ưu tiên: LOW, MEDIUM, HIGH',
+              },
+              search: {
+                type: 'string',
+                maxLength: 100,
+                description: 'Tìm theo tiêu đề công việc (tối đa 100 ký tự)',
+              },
+              limit: {
+                type: 'integer',
+                minimum: 1,
+                maximum: 100,
+                description: 'Giới hạn số bản ghi (mặc định 30, tối đa 100)',
+              },
+            },
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
           name: 'create_task',
           description:
             'Tạo ĐỀ XUẤT (proposal) tạo công việc mới và trả về thẻ xác nhận cho người dùng. Tool này CHỈ kiểm tra quyền và tạo hành động chờ xác nhận, KHÔNG lưu trực tiếp vào cơ sở dữ liệu cho đến khi người dùng bấm "Xác nhận".',
@@ -474,6 +550,256 @@ export class AiToolsService {
           },
         },
       },
+      {
+        type: 'function',
+        function: {
+          name: 'delete_task',
+          description:
+            'Tạo ĐỀ XUẤT (proposal) xóa mềm công việc vào Thùng rác (Trash, có thể khôi phục sau) và trả về thẻ xác nhận cho người dùng. Tool này CHỈ kiểm tra quyền và tạo hành động chờ xác nhận, KHÔNG xóa trực tiếp trước khi người dùng bấm "Xác nhận".',
+          parameters: {
+            type: 'object',
+            properties: {
+              taskId: {
+                type: 'integer',
+                minimum: 1,
+                description: 'Mã công việc cần chuyển vào Thùng rác',
+              },
+            },
+            required: ['taskId'],
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'restore_task',
+          description:
+            'Tạo ĐỀ XUẤT (proposal) khôi phục một công việc từ Thùng rác và trả về thẻ xác nhận cho người dùng. Tool này CHỈ kiểm tra quyền và xung đột tiêu đề, KHÔNG khôi phục trực tiếp trước khi người dùng bấm "Xác nhận".',
+          parameters: {
+            type: 'object',
+            properties: {
+              taskId: {
+                type: 'integer',
+                minimum: 1,
+                description: 'Mã công việc trong Thùng rác cần khôi phục',
+              },
+            },
+            required: ['taskId'],
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'return_task',
+          description:
+            'Tạo ĐỀ XUẤT (proposal) trả lại công việc nhóm từ người được phân công về cho người tạo công việc kèm lý do và trả về thẻ xác nhận cho người dùng. KHÔNG thực thi trước khi người dùng bấm "Xác nhận".',
+          parameters: {
+            type: 'object',
+            properties: {
+              taskId: {
+                type: 'integer',
+                minimum: 1,
+                description: 'Mã công việc nhóm cần trả lại',
+              },
+              reason: {
+                type: 'string',
+                description: 'Lý do trả lại công việc (từ 1 đến 500 ký tự)',
+              },
+            },
+            required: ['taskId', 'reason'],
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'create_subtask',
+          description:
+            'Tạo ĐỀ XUẤT (proposal) thêm công việc con (subtask) cho một công việc chưa hoàn thành và trả về thẻ xác nhận. KHÔNG lưu trực tiếp trước khi người dùng bấm "Xác nhận".',
+          parameters: {
+            type: 'object',
+            properties: {
+              taskId: {
+                type: 'integer',
+                minimum: 1,
+                description: 'Mã công việc cha',
+              },
+              title: {
+                type: 'string',
+                description: 'Tiêu đề công việc con (từ 2 đến 255 ký tự)',
+              },
+              description: {
+                type: ['string', 'null'],
+                description: 'Mô tả chi tiết công việc con (tối đa 1000 ký tự, hoặc null)',
+              },
+              assigneeId: {
+                type: ['integer', 'null'],
+                minimum: 1,
+                description:
+                  'Mã người thực hiện công việc con (phải là người phụ trách chính hoặc người phối hợp đã chấp nhận, hoặc null)',
+              },
+            },
+            required: ['taskId', 'title'],
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'update_subtask',
+          description:
+            'Tạo ĐỀ XUẤT (proposal) cập nhật nội dung, người thực hiện hoặc trạng thái công việc con và trả về thẻ xác nhận. KHÔNG lưu trực tiếp trước khi người dùng bấm "Xác nhận".',
+          parameters: {
+            type: 'object',
+            properties: {
+              taskId: {
+                type: 'integer',
+                minimum: 1,
+                description: 'Mã công việc cha',
+              },
+              subtaskId: {
+                type: 'integer',
+                minimum: 1,
+                description: 'Mã công việc con cần cập nhật',
+              },
+              title: {
+                type: 'string',
+                description: 'Tiêu đề mới (từ 2 đến 255 ký tự)',
+              },
+              description: {
+                type: ['string', 'null'],
+                description: 'Mô tả mới (hoặc null để xóa mô tả)',
+              },
+              assigneeId: {
+                type: ['integer', 'null'],
+                minimum: 1,
+                description: 'Mã người thực hiện mới (hoặc null để hủy phân công)',
+              },
+              status: {
+                type: 'string',
+                enum: [...TASK_STATUS_VALUES],
+                description: 'Trạng thái mới: TODO, IN_PROGRESS hoặc DONE',
+              },
+            },
+            required: ['taskId', 'subtaskId'],
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'delete_subtask',
+          description:
+            'Tạo ĐỀ XUẤT (proposal) xóa công việc con và trả về thẻ xác nhận cho người dùng. KHÔNG xóa trực tiếp trước khi người dùng bấm "Xác nhận".',
+          parameters: {
+            type: 'object',
+            properties: {
+              taskId: {
+                type: 'integer',
+                minimum: 1,
+                description: 'Mã công việc cha',
+              },
+              subtaskId: {
+                type: 'integer',
+                minimum: 1,
+                description: 'Mã công việc con cần xóa',
+              },
+            },
+            required: ['taskId', 'subtaskId'],
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'add_team_member',
+          description:
+            'Tạo ĐỀ XUẤT (proposal) thêm thành viên mới vào nhóm làm việc qua email và trả về thẻ xác nhận cho người dùng. KHÔNG thêm trực tiếp trước khi người dùng bấm "Xác nhận".',
+          parameters: {
+            type: 'object',
+            properties: {
+              teamId: {
+                type: 'integer',
+                minimum: 1,
+                description: 'Mã nhóm làm việc',
+              },
+              email: {
+                type: 'string',
+                description: 'Email của người dùng cần thêm vào nhóm',
+              },
+              role: {
+                type: 'string',
+                enum: [...TEAM_ROLES],
+                description: 'Vai trò trong nhóm: ADMIN hoặc MEMBER (mặc định MEMBER)',
+              },
+            },
+            required: ['teamId', 'email'],
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'update_team_member_role',
+          description:
+            'Tạo ĐỀ XUẤT (proposal) thay đổi vai trò của thành viên trong nhóm và trả về thẻ xác nhận cho người dùng. KHÔNG thay đổi trực tiếp trước khi người dùng bấm "Xác nhận".',
+          parameters: {
+            type: 'object',
+            properties: {
+              teamId: {
+                type: 'integer',
+                minimum: 1,
+                description: 'Mã nhóm làm việc',
+              },
+              memberUserId: {
+                type: 'integer',
+                minimum: 1,
+                description: 'Mã tài khoản người dùng của thành viên trong nhóm',
+              },
+              role: {
+                type: 'string',
+                enum: [...TEAM_ROLES],
+                description: 'Vai trò mới: ADMIN hoặc MEMBER',
+              },
+            },
+            required: ['teamId', 'memberUserId', 'role'],
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'remove_team_member',
+          description:
+            'Tạo ĐỀ XUẤT (proposal) xóa thành viên khỏi nhóm (hoặc tự rời nhóm) và trả về thẻ xác nhận cho người dùng. KHÔNG thực thi trực tiếp trước khi người dùng bấm "Xác nhận".',
+          parameters: {
+            type: 'object',
+            properties: {
+              teamId: {
+                type: 'integer',
+                minimum: 1,
+                description: 'Mã nhóm làm việc',
+              },
+              memberUserId: {
+                type: 'integer',
+                minimum: 1,
+                description: 'Mã tài khoản người dùng của thành viên cần xóa hoặc rời nhóm',
+              },
+            },
+            required: ['teamId', 'memberUserId'],
+            additionalProperties: false,
+          },
+        },
+      },
     ];
   }
 
@@ -500,11 +826,12 @@ export class AiToolsService {
           return await this.handleListCategories(ctx.userId, rawArgs);
         case 'list_notifications':
           return await this.handleListNotifications(ctx.userId, rawArgs);
-        case 'create_task':
-          return await this.handleWriteProposal(ctx, 'create_task', rawArgs);
-        case 'update_task':
-          return await this.handleWriteProposal(ctx, 'update_task', rawArgs);
+        case 'list_trash_tasks':
+          return await this.handleListTrashTasks(ctx.userId, rawArgs);
         default:
+          if (isWriteProposalToolName(name)) {
+            return await this.handleWriteProposal(ctx, name, rawArgs);
+          }
           return failTool(`Công cụ '${name}' không tồn tại`);
       }
     } catch (error) {
@@ -711,25 +1038,50 @@ export class AiToolsService {
     };
   }
 
-  private async handleWriteProposal(
-    ctx: AiToolExecutionContext,
-    toolName: 'create_task' | 'update_task',
+  private async handleListTrashTasks(
+    userId: number,
     rawArgs: Record<string, unknown>,
   ): Promise<AiToolExecutionResult> {
-    const validation =
-      toolName === 'create_task'
-        ? await this.validator.validateCreateTaskProposal(ctx.userId, rawArgs)
-        : await this.validator.validateUpdateTaskProposal(ctx.userId, rawArgs);
+    const limit = clampLimit(
+      typeof rawArgs.limit === 'number' ? rawArgs.limit : undefined,
+      30,
+      100,
+    );
+    const tasks = await this.tasksService.findTrash(
+      {
+        teamId: readOptionalPositiveInt(rawArgs.teamId),
+        personalOnly: typeof rawArgs.personalOnly === 'boolean' ? rawArgs.personalOnly : undefined,
+        priority: readOptionalEnum<TaskPriority>(rawArgs.priority, TASK_PRIORITIES),
+        search: readOptionalString(rawArgs.search, 100),
+      },
+      userId,
+    );
+    const sliced = tasks.slice(0, limit).map((t) => serializeTaskSummary(t));
+    return {
+      ok: true,
+      data: {
+        totalMatched: tasks.length,
+        returned: sliced.length,
+        truncated: tasks.length > sliced.length,
+        tasks: sliced,
+      },
+      summary: `Đã liệt kê ${sliced.length}/${tasks.length} công việc trong thùng rác`,
+    };
+  }
+
+  private async handleWriteProposal(
+    ctx: AiToolExecutionContext,
+    toolName: WriteProposalToolName,
+    rawArgs: Record<string, unknown>,
+  ): Promise<AiToolExecutionResult> {
+    const validation = await this.validateWriteProposal(toolName, ctx.userId, rawArgs);
 
     if (!validation.ok) {
       return failTool(validation.reason, validation.code);
     }
 
     const expiresAt = new Date(Date.now() + PENDING_ACTION_TTL_MS);
-    const actionType =
-      validation.actionType === 'CREATE_TASK'
-        ? AiActionType.CREATE_TASK
-        : AiActionType.UPDATE_TASK;
+    const actionType: AiActionType = validation.actionType;
 
     const pendingAction = await this.prisma.aiPendingAction.create({
       data: {
@@ -743,11 +1095,6 @@ export class AiToolsService {
       },
     });
 
-    const summary =
-      validation.preview.kind === 'CREATE_TASK'
-        ? `Đã tạo đề xuất tạo công việc "${validation.preview.title}"`
-        : `Đã tạo đề xuất cập nhật công việc #${validation.preview.taskId}`;
-
     return {
       ok: true,
       data: {
@@ -759,7 +1106,62 @@ export class AiToolsService {
         preview: validation.preview,
       },
       pendingAction,
-      summary,
+      summary: this.formatProposalSummary(validation.preview),
     };
+  }
+
+  private async validateWriteProposal(
+    toolName: WriteProposalToolName,
+    userId: number,
+    rawArgs: Record<string, unknown>,
+  ): Promise<ValidatedProposalResult> {
+    const dispatch: Record<
+      WriteProposalToolName,
+      (uid: number, args: Record<string, unknown>) => Promise<ValidatedProposalResult>
+    > = {
+      create_task: (uid, args) => this.validator.validateCreateTaskProposal(uid, args),
+      update_task: (uid, args) => this.validator.validateUpdateTaskProposal(uid, args),
+      delete_task: (uid, args) => this.extendedValidator.validateDeleteTaskProposal(uid, args),
+      restore_task: (uid, args) => this.extendedValidator.validateRestoreTaskProposal(uid, args),
+      return_task: (uid, args) => this.extendedValidator.validateReturnTaskProposal(uid, args),
+      create_subtask: (uid, args) => this.extendedValidator.validateCreateSubtaskProposal(uid, args),
+      update_subtask: (uid, args) => this.extendedValidator.validateUpdateSubtaskProposal(uid, args),
+      delete_subtask: (uid, args) => this.extendedValidator.validateDeleteSubtaskProposal(uid, args),
+      add_team_member: (uid, args) => this.teamValidator.validateAddTeamMemberProposal(uid, args),
+      update_team_member_role: (uid, args) =>
+        this.teamValidator.validateUpdateTeamMemberRoleProposal(uid, args),
+      remove_team_member: (uid, args) =>
+        this.teamValidator.validateRemoveTeamMemberProposal(uid, args),
+    };
+    return dispatch[toolName](userId, rawArgs);
+  }
+
+  private formatProposalSummary(preview: AiProposalPreview): string {
+    switch (preview.kind) {
+      case 'CREATE_TASK':
+        return `Đã tạo đề xuất tạo công việc "${preview.title}"`;
+      case 'UPDATE_TASK':
+        return `Đã tạo đề xuất cập nhật công việc #${preview.taskId}`;
+      case 'DELETE_TASK':
+        return `Đã tạo đề xuất chuyển công việc #${preview.taskId} vào thùng rác`;
+      case 'RESTORE_TASK':
+        return `Đã tạo đề xuất khôi phục công việc #${preview.taskId}`;
+      case 'RETURN_TASK':
+        return `Đã tạo đề xuất trả lại công việc #${preview.taskId}`;
+      case 'CREATE_SUBTASK':
+        return `Đã tạo đề xuất thêm công việc con "${preview.title}" cho công việc #${preview.taskId}`;
+      case 'UPDATE_SUBTASK':
+        return `Đã tạo đề xuất cập nhật công việc con #${preview.subtaskId}`;
+      case 'DELETE_SUBTASK':
+        return `Đã tạo đề xuất xóa công việc con #${preview.subtaskId}`;
+      case 'ADD_TEAM_MEMBER':
+        return `Đã tạo đề xuất thêm ${preview.targetUser.email} vào nhóm #${preview.teamId}`;
+      case 'UPDATE_TEAM_MEMBER_ROLE':
+        return `Đã tạo đề xuất đổi vai trò thành viên #${preview.memberUser.id} trong nhóm #${preview.teamId}`;
+      case 'REMOVE_TEAM_MEMBER':
+        return preview.isSelfLeaving
+          ? `Đã tạo đề xuất rời khỏi nhóm #${preview.teamId}`
+          : `Đã tạo đề xuất xóa thành viên #${preview.memberUser.id} khỏi nhóm #${preview.teamId}`;
+    }
   }
 }

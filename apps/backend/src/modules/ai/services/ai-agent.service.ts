@@ -53,6 +53,28 @@ export interface AiChatResponseDto {
   pendingActions: AiPendingActionDto[];
 }
 
+export type AiStreamEvent =
+  | { event: 'meta'; data: { conversationId: number } }
+  | { event: 'tool_start'; data: { name: string } }
+  | { event: 'tool_result'; data: { name: string; ok: boolean; summary: string } }
+  | { event: 'delta'; data: { text: string } }
+  | { event: 'pending_action'; data: { action: AiPendingActionDto } }
+  | { event: 'done'; data: AiChatResponseDto }
+  | { event: 'error'; data: { statusCode: number; message: string } };
+
+interface RunChatTurnOptions {
+  emit?: (evt: AiStreamEvent) => void;
+  signal?: AbortSignal;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    const abortError = new Error('AI stream was aborted');
+    abortError.name = 'AbortError';
+    throw abortError;
+  }
+}
+
 function getVietnamToday(): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Ho_Chi_Minh',
@@ -68,8 +90,8 @@ function buildSystemPrompt(user: { id: number; name: string }, vnToday: string):
     `Thông tin phiên hiện tại: Ngày hôm nay tại Việt Nam (Asia/Ho_Chi_Minh) là ${vnToday}. Người dùng hiện tại có ID = ${user.id}, tên = "${user.name}".`,
     '',
     'Quy tắc bắt buộc khi sử dụng công cụ:',
-    '1. Luôn tra cứu và xác định ID chính xác qua các công cụ chỉ đọc (`list_teams`, `get_team_detail`, `list_tasks`, `get_my_tasks`, `get_task_detail`, `list_categories`) trước khi gọi `create_task` hoặc `update_task`. Tuyệt đối không tự bịa hoặc đoán ID.',
-    '2. Các công cụ `create_task` và `update_task` CHỈ tạo thẻ đề xuất chờ người dùng bấm "Xác nhận", KHÔNG tự lưu thay đổi vào hệ thống. Không bao giờ khẳng định công việc đã được tạo hoặc đã được cập nhật trước khi người dùng bấm "Xác nhận". Hãy thông báo rõ để người dùng kiểm tra thẻ xem trước và bấm "Xác nhận".',
+    '1. Luôn tra cứu và xác định ID chính xác qua các công cụ chỉ đọc (`list_teams`, `get_team_detail`, `list_tasks`, `get_my_tasks`, `get_task_detail`, `list_categories`, `list_trash_tasks`) trước khi gọi các công cụ ghi đề xuất (`create_task`, `update_task`, `delete_task`, `restore_task`, `return_task`, `create_subtask`, `update_subtask`, `delete_subtask`, `add_team_member`, `update_team_member_role`, `remove_team_member`). Tuyệt đối không tự bịa hoặc đoán ID.',
+    '2. Tất cả công cụ ghi (tạo/cập nhật/xóa/khôi phục/trả lại công việc, quản lý công việc con `subtask`, và thêm/đổi vai trò/xóa thành viên nhóm) CHỈ tạo thẻ đề xuất chờ người dùng bấm "Xác nhận", KHÔNG tự lưu thay đổi vào hệ thống. Không bao giờ khẳng định hành động đã được thực thi trước khi người dùng bấm "Xác nhận". Hãy thông báo rõ để người dùng kiểm tra thẻ xem trước và bấm "Xác nhận".',
     '3. Khi công cụ ghi đề xuất trả về `{ ok: false, reason }`, hãy giải thích chính xác lý do phân quyền (RBAC) hoặc lỗi dữ liệu đó bằng tiếng Việt cho người dùng, tuyệt đối không che giấu lỗi hoặc bịa kết quả thành công.',
   ].join('\n');
 }
@@ -219,9 +241,45 @@ export class AiAgentService {
     return { deleted: true, id: conversationId };
   }
 
+  /** Pre-validates AI provider configuration and conversation ownership before flushing SSE headers. */
+  async assertCanStartStream(userId: number, conversationId?: number): Promise<void> {
+    this.providerRegistry.getProvider();
+
+    if (conversationId !== undefined) {
+      const conversation = await this.prisma.aiConversation.findFirst({
+        where: { id: conversationId, userId },
+        select: { id: true },
+      });
+      if (!conversation) {
+        throw new NotFoundException('Không tìm thấy cuộc trò chuyện');
+      }
+    }
+  }
+
   async chat(userId: number, dto: SendAiChatDto): Promise<AiChatResponseDto> {
+    return this.runChatTurn(userId, dto);
+  }
+
+  /** Streams a single AI conversation turn token-by-token via SSE events. */
+  async chatStream(
+    userId: number,
+    dto: SendAiChatDto,
+    emit: (evt: AiStreamEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<AiChatResponseDto> {
+    return this.runChatTurn(userId, dto, { emit, signal });
+  }
+
+  private async runChatTurn(
+    userId: number,
+    dto: SendAiChatDto,
+    options: RunChatTurnOptions = {},
+  ): Promise<AiChatResponseDto> {
+    const { emit, signal } = options;
     const provider = this.providerRegistry.getProvider();
     const trimmedPrompt = dto.message.trim();
+
+    throwIfAborted(signal);
 
     let createdNewConversationId: number | null = null;
     let createdUserMessageId: number | null = null;
@@ -257,6 +315,8 @@ export class AiAgentService {
         }),
       ]);
 
+      throwIfAborted(signal);
+
       const historyMessages: AiChatMessage[] = [...recentMessagesDesc]
         .reverse()
         .map((msg) => ({
@@ -272,6 +332,9 @@ export class AiAgentService {
         },
       });
       createdUserMessageId = userMessageRecord.id;
+
+      throwIfAborted(signal);
+      emit?.({ event: 'meta', data: { conversationId: conversation.id } });
 
       const systemPrompt = buildSystemPrompt(
         {
@@ -294,13 +357,32 @@ export class AiAgentService {
       let finalContent = '';
 
       for (let round = 0; round < MAX_AGENT_ROUNDS; round++) {
-        const completion = await provider.chatCompletion({
-          messages: loopMessages,
-          tools:
-            round < MAX_AGENT_ROUNDS - 1 && toolExecutions < MAX_TOOL_EXECUTIONS
-              ? tools
-              : undefined,
-        });
+        throwIfAborted(signal);
+
+        const roundTools =
+          round < MAX_AGENT_ROUNDS - 1 && toolExecutions < MAX_TOOL_EXECUTIONS
+            ? tools
+            : undefined;
+
+        const completion = emit
+          ? await provider.chatCompletionStream(
+              {
+                messages: loopMessages,
+                tools: roundTools,
+                signal,
+              },
+              (delta) => {
+                if (!signal?.aborted && delta) {
+                  emit({ event: 'delta', data: { text: delta } });
+                }
+              },
+            )
+          : await provider.chatCompletion({
+              messages: loopMessages,
+              tools: roundTools,
+            });
+
+        throwIfAborted(signal);
 
         const toolCalls = completion.toolCalls ?? [];
         if (toolCalls.length === 0) {
@@ -334,6 +416,8 @@ export class AiAgentService {
         });
 
         for (const tc of toolCalls) {
+          throwIfAborted(signal);
+
           if (toolExecutions >= MAX_TOOL_EXECUTIONS) {
             const limitReason =
               'Đã đạt giới hạn tối đa 15 lần gọi công cụ trong một lượt hỏi.';
@@ -361,11 +445,20 @@ export class AiAgentService {
             continue;
           }
 
+          emit?.({ event: 'tool_start', data: { name: tc.name } });
+
           const execResult = await this.aiToolsService.executeTool(
             { userId, conversationId: conversation.id },
             tc.name,
             tc.arguments,
           );
+
+          if (execResult.pendingAction) {
+            createdPendingActions.push(execResult.pendingAction);
+            createdPendingActionIds.push(execResult.pendingAction.id);
+          }
+
+          throwIfAborted(signal);
 
           toolSummaries.push({
             name: tc.name,
@@ -373,9 +466,20 @@ export class AiAgentService {
             summary: execResult.summary,
           });
 
+          emit?.({
+            event: 'tool_result',
+            data: {
+              name: tc.name,
+              ok: execResult.ok,
+              summary: execResult.summary,
+            },
+          });
+
           if (execResult.pendingAction) {
-            createdPendingActions.push(execResult.pendingAction);
-            createdPendingActionIds.push(execResult.pendingAction.id);
+            emit?.({
+              event: 'pending_action',
+              data: { action: serializeAiPendingAction(execResult.pendingAction) },
+            });
           }
 
           loopMessages.push({
@@ -386,6 +490,8 @@ export class AiAgentService {
           });
         }
       }
+
+      throwIfAborted(signal);
 
       const assistantMessageRecord = await this.prisma.aiMessage.create({
         data: {
@@ -422,7 +528,7 @@ export class AiAgentService {
         serializeAiPendingAction(action, assistantMessageRecord.id),
       );
 
-      return {
+      const response: AiChatResponseDto = {
         conversationId: conversation.id,
         userMessage: serializeAiMessage(userMessageRecord, []),
         assistantMessage: serializeAiMessage(
@@ -431,11 +537,19 @@ export class AiAgentService {
         ),
         pendingActions: serializedPendingActions,
       };
+
+      throwIfAborted(signal);
+      emit?.({ event: 'done', data: response });
+
+      return response;
     } catch (err) {
       try {
         if (createdPendingActionIds.length > 0) {
           await this.prisma.aiPendingAction.deleteMany({
-            where: { id: { in: createdPendingActionIds } },
+            where: {
+              id: { in: createdPendingActionIds },
+              status: AiPendingActionStatus.PENDING,
+            },
           });
         }
 
@@ -454,9 +568,14 @@ export class AiAgentService {
         }
 
         if (createdNewConversationId !== null) {
-          await this.prisma.aiConversation.deleteMany({
-            where: { id: createdNewConversationId },
+          const remainingActions = await this.prisma.aiPendingAction.count({
+            where: { conversationId: createdNewConversationId },
           });
+          if (remainingActions === 0) {
+            await this.prisma.aiConversation.deleteMany({
+              where: { id: createdNewConversationId },
+            });
+          }
         }
       } catch (cleanupErr) {
         this.logger.warn(

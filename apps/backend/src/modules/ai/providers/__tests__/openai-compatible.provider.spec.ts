@@ -388,7 +388,7 @@ describe('AiProviderRegistry', () => {
 
   it('returns isConfigured() === false, masks model: null, and throws ServiceUnavailableException when provider is unsupported', () => {
     const registry = new AiProviderRegistry({
-      LLM_PROVIDER: 'anthropic',
+      LLM_PROVIDER: 'unsupported-provider',
       LLM_BASE_URL: 'https://api.example.com/v1',
       LLM_API_KEY: 'sk-test',
       LLM_MODEL: 'claude-3-5-sonnet',
@@ -397,7 +397,7 @@ describe('AiProviderRegistry', () => {
     expect(registry.isConfigured()).toBe(false);
     expect(registry.getStatus()).toEqual({
       configured: false,
-      provider: 'anthropic',
+      provider: 'unsupported-provider',
       model: null,
     });
     expect(() => registry.getProvider()).toThrow(ServiceUnavailableException);

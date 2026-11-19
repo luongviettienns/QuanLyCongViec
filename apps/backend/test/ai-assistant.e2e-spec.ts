@@ -7,7 +7,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { AppModule } from '../src/app.module.js';
 import { CustomThrottlerGuard } from '../src/common/index.js';
 import { PrismaService } from '../src/database/prisma.service.js';
-import type { AiCompletionInput, AiCompletionResult } from '../src/modules/ai/providers/ai-provider.interface.js';
+import type {
+  AiCompletionInput,
+  AiCompletionResult,
+  AiProvider,
+} from '../src/modules/ai/providers/ai-provider.interface.js';
 import { AiProviderRegistry } from '../src/modules/ai/providers/ai-provider.registry.js';
 
 describe('AI Assistant Agent, Atomic Actions & RBAC (e2e)', () => {
@@ -19,6 +23,7 @@ describe('AI Assistant Agent, Atomic Actions & RBAC (e2e)', () => {
 
   let mockConfigured = true;
   const chatCompletionMock = vi.fn<(input: AiCompletionInput) => Promise<AiCompletionResult>>();
+  const chatCompletionStreamMock = vi.fn<AiProvider['chatCompletionStream']>();
 
   const mockProviderRegistry = {
     isConfigured: () => mockConfigured,
@@ -27,13 +32,14 @@ describe('AI Assistant Agent, Atomic Actions & RBAC (e2e)', () => {
       provider: 'openai-compatible',
       model: mockConfigured ? 'mock-gpt-4o-mini' : null,
     }),
-    getProvider: () => {
+    getProvider: (): AiProvider => {
       if (!mockConfigured) {
         throw new ServiceUnavailableException('AI assistant is not configured');
       }
       return {
         name: 'openai-compatible',
         chatCompletion: chatCompletionMock,
+        chatCompletionStream: chatCompletionStreamMock,
       };
     },
   };
@@ -165,6 +171,7 @@ describe('AI Assistant Agent, Atomic Actions & RBAC (e2e)', () => {
   beforeEach(() => {
     mockConfigured = true;
     chatCompletionMock.mockReset();
+    chatCompletionStreamMock.mockReset();
   });
 
   afterAll(async () => {

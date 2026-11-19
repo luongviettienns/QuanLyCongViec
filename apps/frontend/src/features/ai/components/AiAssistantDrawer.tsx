@@ -21,9 +21,11 @@ import {
   RightOutlined,
   RobotOutlined,
   SendOutlined,
+  StopOutlined,
+  SyncOutlined,
   ToolOutlined,
 } from '@ant-design/icons';
-import { isAbortError, isUnauthorizedError } from '../../../shared/api';
+import { isAbortError, isNetworkError, isUnauthorizedError } from '../../../shared/api';
 import { useResponsive } from '../../../shared/hooks';
 import {
   cancelAiAction,
@@ -33,17 +35,21 @@ import {
   getAiConversation,
   getAiStatus,
   listAiConversations,
-  sendAiChat,
+  sendAiChatStream,
 } from '../api/ai.api';
 import type {
   AiConversationListItem,
   AiMessageItem,
+  AiPendingActionItem,
   AiStatusResponse,
   AiToolCallSummaryItem,
+  SendAiChatResponse,
 } from '../types/ai.types';
 import {
   applyResolvedActionToList,
   formatAiRelativeError,
+  isTeamMutatingAiAction,
+  mergeResolvedActionsIntoChatResponse,
 } from '../utils/ai-chat.utils';
 import { AiPendingActionCard } from './AiPendingActionCard';
 import './ai-assistant.css';
@@ -60,6 +66,7 @@ export interface AiAssistantDrawerProps {
   open: boolean;
   onClose: () => void;
   onTaskMutated?: () => void;
+  onTeamMutated?: () => void;
   onOpenTask?: (taskId: number) => void;
 }
 
@@ -115,6 +122,7 @@ export function AiAssistantDrawer({
   open,
   onClose,
   onTaskMutated,
+  onTeamMutated,
   onOpenTask,
 }: AiAssistantDrawerProps) {
   const screens = useResponsive();
@@ -132,36 +140,77 @@ export function AiAssistantDrawer({
 
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [streamingText, setStreamingText] = useState('');
+  const [liveTools, setLiveTools] = useState<AiToolCallSummaryItem[]>([]);
+  const [activeToolName, setActiveToolName] = useState<string | null>(null);
+  const [streamingPendingActions, setStreamingPendingActions] = useState<AiPendingActionItem[]>([]);
   const [creatingConversation, setCreatingConversation] = useState(false);
   const [deletingConversation, setDeletingConversation] = useState(false);
   const [actionBusyMap, setActionBusyMap] = useState<Record<number, 'confirm' | 'cancel'>>({});
 
   const initAbortRef = useRef<AbortController | null>(null);
   const convAbortRef = useRef<AbortController | null>(null);
-  const chatAbortRef = useRef<AbortController | null>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
   const listAbortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
   const creatingRef = useRef(false);
   const deletingRef = useRef(false);
   const actionInFlightRef = useRef<Set<number>>(new Set());
   const activeConversationIdRef = useRef<number | null>(null);
+  const streamingPendingActionsRef = useRef<AiPendingActionItem[]>([]);
+  const resolvedStreamActionsRef = useRef<Map<number, AiPendingActionItem>>(new Map());
   const optimisticSeqRef = useRef(-1);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  const resetStreamingState = useCallback(() => {
+    setStreamingText('');
+    setLiveTools([]);
+    setActiveToolName(null);
+    streamingPendingActionsRef.current = [];
+    setStreamingPendingActions([]);
+    resolvedStreamActionsRef.current.clear();
+  }, []);
+
+  const syncResolvedAction = useCallback((resolved: AiPendingActionItem) => {
+    if (
+      sendingRef.current ||
+      streamingPendingActionsRef.current.some((a) => a.id === resolved.id)
+    ) {
+      resolvedStreamActionsRef.current.set(resolved.id, resolved);
+    }
+    if (streamingPendingActionsRef.current.some((a) => a.id === resolved.id)) {
+      const nextStream = streamingPendingActionsRef.current.map((a) =>
+        a.id === resolved.id ? resolved : a,
+      );
+      streamingPendingActionsRef.current = nextStream;
+      setStreamingPendingActions(nextStream);
+    }
+    setMessages((prev) => applyResolvedActionToList(prev, resolved));
+  }, []);
 
   const updateActiveConversationId = useCallback((nextId: number | null) => {
     activeConversationIdRef.current = nextId;
     setActiveConversationId(nextId);
   }, []);
 
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, []);
-
   useEffect(() => {
-    if (open && messages.length > 0) {
-      scrollToBottom();
+    if (!open) {
+      return;
     }
-  }, [open, messages.length, scrollToBottom]);
+    if (messages.length > 0 || sending) {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: sending ? 'auto' : 'smooth',
+        block: 'end',
+      });
+    }
+  }, [
+    open,
+    messages.length,
+    sending,
+    streamingText,
+    liveTools.length,
+    streamingPendingActions.length,
+  ]);
 
   const loadConversationDetail = useCallback(async (conversationId: number) => {
     convAbortRef.current?.abort();
@@ -272,7 +321,7 @@ export function AiAssistantDrawer({
     if (!open) {
       initAbortRef.current?.abort();
       convAbortRef.current?.abort();
-      chatAbortRef.current?.abort();
+      streamAbortRef.current?.abort();
       listAbortRef.current?.abort();
       return;
     }
@@ -288,7 +337,7 @@ export function AiAssistantDrawer({
       cancelled = true;
       initAbortRef.current?.abort();
       convAbortRef.current?.abort();
-      chatAbortRef.current?.abort();
+      streamAbortRef.current?.abort();
       listAbortRef.current?.abort();
     };
   }, [open, loadInitial]);
@@ -357,6 +406,10 @@ export function AiAssistantDrawer({
     }
   };
 
+  const handleStopStream = useCallback(() => {
+    streamAbortRef.current?.abort();
+  }, []);
+
   const handleSendMessage = async (textOverride?: string) => {
     const rawText = textOverride ?? draft;
     const trimmed = rawText.trim();
@@ -374,12 +427,13 @@ export function AiAssistantDrawer({
     sendingRef.current = true;
     setSending(true);
     setConversationError(null);
+    resetStreamingState();
     if (textOverride === undefined) {
       setDraft('');
     }
 
     const controller = new AbortController();
-    chatAbortRef.current = controller;
+    streamAbortRef.current = controller;
 
     const optimisticId = optimisticSeqRef.current;
     optimisticSeqRef.current -= 1;
@@ -394,40 +448,107 @@ export function AiAssistantDrawer({
     };
     setMessages((prev) => [...prev, optimisticUserMsg]);
 
+    let finalizedByDone = false;
+
+    const restoreDraftIfEmpty = () => {
+      if (textOverride === undefined) {
+        setDraft((prev) => (prev.trim().length === 0 ? trimmed : prev));
+      }
+    };
+
+    const applyDoneResponse = (response: SendAiChatResponse) => {
+      if (finalizedByDone) {
+        return;
+      }
+      finalizedByDone = true;
+      const mergedResponse = mergeResolvedActionsIntoChatResponse(
+        response,
+        resolvedStreamActionsRef.current,
+      );
+      updateActiveConversationId(mergedResponse.conversationId);
+      setMessages((prev) => {
+        const withoutOptimistic = prev.filter((m) => m.id !== optimisticId);
+        return [
+          ...withoutOptimistic,
+          mergedResponse.userMessage,
+          mergedResponse.assistantMessage,
+        ];
+      });
+      resetStreamingState();
+      void refreshConversationsList().catch(() => {
+        // Non-critical sidebar refresh
+      });
+    };
+
     try {
-      const response = await sendAiChat(
+      const response = await sendAiChatStream(
         {
           ...(activeConversationId ? { conversationId: activeConversationId } : {}),
           message: trimmed,
         },
+        {
+          onToolStart: ({ name }) => {
+            setStreamingText('');
+            setActiveToolName(name);
+          },
+          onToolResult: ({ name, ok, summary }) => {
+            setActiveToolName((prev) => (prev === name ? null : prev));
+            setLiveTools((prev) => [...prev, { name, ok, summary }]);
+          },
+          onDelta: ({ text }) => {
+            setStreamingText((prev) => prev + text);
+          },
+          onPendingAction: ({ action }) => {
+            const resolved = resolvedStreamActionsRef.current.get(action.id) ?? action;
+            if (!streamingPendingActionsRef.current.some((item) => item.id === resolved.id)) {
+              const nextStream = [...streamingPendingActionsRef.current, resolved];
+              streamingPendingActionsRef.current = nextStream;
+              setStreamingPendingActions(nextStream);
+            }
+          },
+          onDone: (doneData) => {
+            applyDoneResponse(doneData);
+          },
+        },
         controller.signal,
       );
 
-      updateActiveConversationId(response.conversationId);
-      setMessages((prev) => {
-        const withoutOptimistic = prev.filter((m) => m.id !== optimisticId);
-        return [...withoutOptimistic, response.userMessage, response.assistantMessage];
-      });
-
-      void refreshConversationsList().catch(() => {
-        // Non-critical sidebar refresh
-      });
-    } catch (error) {
-      if (isAbortError(error) || isUnauthorizedError(error)) {
+      if (response && !finalizedByDone) {
+        applyDoneResponse(response);
+      } else if (!response && !finalizedByDone) {
         setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+        resetStreamingState();
+        if (controller.signal.aborted) {
+          restoreDraftIfEmpty();
+          return;
+        }
+        if (textOverride === undefined) {
+          setDraft(trimmed);
+        }
+        message.error('Luồng phản hồi AI kết thúc bất ngờ, vui lòng thử lại.');
+      }
+    } catch (error) {
+      if (!finalizedByDone) {
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+        resetStreamingState();
+      }
+      if (isAbortError(error) || controller.signal.aborted || isUnauthorizedError(error)) {
+        if (!finalizedByDone && !isUnauthorizedError(error)) {
+          restoreDraftIfEmpty();
+        }
         return;
       }
-      setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
       if (textOverride === undefined) {
         setDraft(trimmed);
       }
       message.error(formatAiRelativeError(error, 'Không thể gửi tin nhắn tới Trợ lý AI'));
     } finally {
-      if (chatAbortRef.current === controller) {
-        chatAbortRef.current = null;
+      if (streamAbortRef.current === controller) {
+        streamAbortRef.current = null;
+        sendingRef.current = false;
+        setSending(false);
+        resetStreamingState();
       }
-      sendingRef.current = false;
-      setSending(false);
     }
   };
 
@@ -447,15 +568,31 @@ export function AiAssistantDrawer({
 
     try {
       const result = await confirmAiAction(actionId);
-      setMessages((prev) => applyResolvedActionToList(prev, result.action));
+      syncResolvedAction(result.action);
       message.success('Đã thực thi đề xuất');
-      onTaskMutated?.();
+      if (isTeamMutatingAiAction(result.action.actionType)) {
+        onTeamMutated?.();
+      } else {
+        onTaskMutated?.();
+      }
       void refreshConversationsList().catch(() => {});
     } catch (error) {
       if (!isAbortError(error) && !isUnauthorizedError(error)) {
-        message.error(formatAiRelativeError(error, 'Không thể thực thi đề xuất'));
-        if (activeConversationId) {
-          void loadConversationDetail(activeConversationId);
+        const errorMessage = formatAiRelativeError(error, 'Không thể thực thi đề xuất');
+        message.error(errorMessage);
+        if (sendingRef.current) {
+          const streamAction = streamingPendingActionsRef.current.find(
+            (a) => a.id === actionId,
+          );
+          if (streamAction && !isNetworkError(error)) {
+            syncResolvedAction({
+              ...streamAction,
+              status: 'FAILED',
+              errorMessage,
+            });
+          }
+        } else if (activeConversationIdRef.current !== null && !sendingRef.current) {
+          void loadConversationDetail(activeConversationIdRef.current);
         }
       }
     } finally {
@@ -477,14 +614,14 @@ export function AiAssistantDrawer({
 
     try {
       const result = await cancelAiAction(actionId);
-      setMessages((prev) => applyResolvedActionToList(prev, result.action));
+      syncResolvedAction(result.action);
       message.info('Đã hủy đề xuất');
       void refreshConversationsList().catch(() => {});
     } catch (error) {
       if (!isAbortError(error) && !isUnauthorizedError(error)) {
         message.error(formatAiRelativeError(error, 'Không thể hủy đề xuất'));
-        if (activeConversationId) {
-          void loadConversationDetail(activeConversationId);
+        if (activeConversationIdRef.current !== null && !sendingRef.current) {
+          void loadConversationDetail(activeConversationIdRef.current);
         }
       }
     } finally {
@@ -525,6 +662,7 @@ export function AiAssistantDrawer({
           flexDirection: 'column',
           height: '100%',
           overflow: 'hidden',
+          minWidth: 0,
         },
       }}
     >
@@ -705,15 +843,72 @@ export function AiAssistantDrawer({
               })}
 
               {sending && (
-                <div className="ai-message-row ai-message-row--assistant">
-                  <div className="ai-message-bubble ai-message-bubble--assistant">
-                    <Space size={8}>
-                      <Spin size="small" />
-                      <Text type="secondary" style={{ fontSize: 12.5 }}>
-                        Trợ lý AI đang xử lý...
-                      </Text>
-                    </Space>
+                <div
+                  className="ai-message-row ai-message-row--assistant"
+                  data-testid="ai-streaming-message"
+                >
+                  {(activeToolName !== null || liveTools.length > 0) && (
+                    <div className="ai-live-tools-wrap" data-testid="ai-live-tools">
+                      {liveTools.map((tool, idx) => {
+                        const label = tool.name ?? tool.toolName ?? 'tool';
+                        return (
+                          <Tag
+                            key={`${label}-${idx}`}
+                            color={tool.ok ? 'green' : 'red'}
+                            icon={tool.ok ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
+                            className="ai-live-tool-pill"
+                          >
+                            {label}
+                          </Tag>
+                        );
+                      })}
+                      {activeToolName !== null && (
+                        <Tag
+                          color="processing"
+                          icon={<SyncOutlined spin />}
+                          className="ai-live-tool-pill"
+                        >
+                          Đang chạy: {activeToolName}
+                        </Tag>
+                      )}
+                    </div>
+                  )}
+
+                  <div
+                    className="ai-message-bubble ai-message-bubble--assistant"
+                    data-testid="ai-streaming-bubble"
+                  >
+                    {streamingText.length > 0 ? (
+                      <>
+                        {streamingText}
+                        <span className="ai-streaming-cursor" aria-hidden="true" />
+                      </>
+                    ) : (
+                      <Space size={8}>
+                        <Spin size="small" />
+                        <Text type="secondary" style={{ fontSize: 12.5 }}>
+                          {activeToolName
+                            ? `Đang tra cứu (${activeToolName})...`
+                            : 'Trợ lý AI đang xử lý...'}
+                        </Text>
+                      </Space>
+                    )}
                   </div>
+
+                  {streamingPendingActions.length > 0 && (
+                    <div className="ai-action-list">
+                      {streamingPendingActions.map((action) => (
+                        <AiPendingActionCard
+                          key={action.id}
+                          action={action}
+                          busyAction={actionBusyMap[action.id] ?? null}
+                          onConfirm={handleConfirmAction}
+                          onCancel={handleCancelAction}
+                          onOpenTask={onOpenTask}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -741,17 +936,30 @@ export function AiAssistantDrawer({
             <span className="ai-composer-hint">
               Enter để gửi · Shift+Enter xuống dòng
             </span>
-            <Button
-              type="primary"
-              size="small"
-              icon={<SendOutlined />}
-              loading={sending}
-              disabled={composerDisabled || draft.trim().length === 0}
-              onClick={() => void handleSendMessage()}
-              data-testid="ai-composer-send-btn"
-            >
-              Gửi
-            </Button>
+            <Space size={8}>
+              {sending && (
+                <Button
+                  danger
+                  size="small"
+                  icon={<StopOutlined />}
+                  onClick={handleStopStream}
+                  data-testid="ai-composer-stop-btn"
+                >
+                  Dừng
+                </Button>
+              )}
+              <Button
+                type="primary"
+                size="small"
+                icon={<SendOutlined />}
+                loading={sending}
+                disabled={composerDisabled || draft.trim().length === 0}
+                onClick={() => void handleSendMessage()}
+                data-testid="ai-composer-send-btn"
+              >
+                Gửi
+              </Button>
+            </Space>
           </div>
         </div>
       </div>

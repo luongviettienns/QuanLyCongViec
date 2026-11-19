@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, TaskPriority, TaskStatus, type TeamMember } from '@prisma/client';
+import { Prisma, TaskPriority, TaskStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service.js';
 import { formatDateOnly } from '../../mcp/utils/mcp-serializers.js';
-import { TaskPolicyService, type TaskWithTeamAndMembers } from '../../tasks/policies/task-policy.service.js';
+import { TaskPolicyService } from '../../tasks/policies/task-policy.service.js';
 import { TaskWorkflowPolicy } from '../../tasks/policies/task-workflow-policy.service.js';
 import { TaskQueryService } from '../../tasks/services/task-query.service.js';
 import {
@@ -10,83 +10,44 @@ import {
   parseDateOnly,
   validateScopedCategory,
 } from '../../tasks/services/task-validation.utils.js';
+import {
+  fail,
+  parseOptionalPositiveInt,
+  resolveTeamOrDbUserRef,
+  TASK_STATUS_LABELS as STATUS_LABELS,
+  VALID_TASK_STATUSES as VALID_STATUSES,
+  type AiCreateTaskPreview,
+  type AiUpdateTaskChange,
+  type AiUpdateTaskPreview,
+  type LoadedTask,
+  type TeamWithMembersAndOwner,
+  type ValidatedProposalResult,
+  type ValidationFailure,
+} from './ai-validator.types.js';
 
-export type AiProposalErrorCode = 'FORBIDDEN' | 'BAD_REQUEST' | 'NOT_FOUND' | 'CONFLICT';
-
-export interface AiCreateTaskPreview {
-  kind: 'CREATE_TASK';
-  title: string;
-  description: string | null;
-  status: TaskStatus;
-  priority: TaskPriority;
-  startDate: string | null;
-  dueDate: string | null;
-  team: { id: number; name: string } | null;
-  assignee: { id: number; name: string } | null;
-  category: { id: number; name: string } | null;
-  collaborators: Array<{ id: number; name: string }>;
-}
-
-export interface AiUpdateTaskChange {
-  field: string;
-  label: string;
-  before: string | null;
-  after: string | null;
-}
-
-export interface AiUpdateTaskPreview {
-  kind: 'UPDATE_TASK';
-  taskId: number;
-  taskTitle: string;
-  changes: AiUpdateTaskChange[];
-}
-
-export type AiProposalPreview = AiCreateTaskPreview | AiUpdateTaskPreview;
-
-export type ValidatedProposalResult =
-  | {
-      ok: true;
-      actionType: 'CREATE_TASK' | 'UPDATE_TASK';
-      payload: Record<string, unknown>;
-      preview: AiProposalPreview;
-    }
-  | {
-      ok: false;
-      code: AiProposalErrorCode;
-      reason: string;
-    };
-
-type TeamWithMembersAndOwner = {
-  id: number;
-  name: string;
-  ownerId: number;
-  owner?: { id: number; name: string } | null;
-  members: Array<TeamMember & { user?: { id: number; name: string } | null }>;
-};
-
-type LoadedTask = TaskWithTeamAndMembers & {
-  team?: TeamWithMembersAndOwner | null;
-  category?: { id: number; name: string } | null;
-  assignee?: { id: number; name: string; email?: string } | null;
-};
-
-const VALID_STATUSES = new Set<string>([
-  TaskStatus.TODO,
-  TaskStatus.IN_PROGRESS,
-  TaskStatus.DONE,
-]);
+export type {
+  AiAddTeamMemberPreview,
+  AiCreateSubtaskPreview,
+  AiCreateTaskPreview,
+  AiDeleteSubtaskPreview,
+  AiDeleteTaskPreview,
+  AiProposalErrorCode,
+  AiProposalPreview,
+  AiRemoveTeamMemberPreview,
+  AiRestoreTaskPreview,
+  AiReturnTaskPreview,
+  AiUpdateSubtaskPreview,
+  AiUpdateTaskChange,
+  AiUpdateTaskPreview,
+  AiUpdateTeamMemberRolePreview,
+  ValidatedProposalResult,
+} from './ai-validator.types.js';
 
 const VALID_PRIORITIES = new Set<string>([
   TaskPriority.LOW,
   TaskPriority.MEDIUM,
   TaskPriority.HIGH,
 ]);
-
-const STATUS_LABELS: Record<TaskStatus, string> = {
-  [TaskStatus.TODO]: 'Cần làm',
-  [TaskStatus.IN_PROGRESS]: 'Đang làm',
-  [TaskStatus.DONE]: 'Hoàn thành',
-};
 
 const PRIORITY_LABELS: Record<TaskPriority, string> = {
   [TaskPriority.LOW]: 'Thấp',
@@ -105,25 +66,6 @@ const UPDATABLE_FIELDS = [
   'assigneeId',
   'status',
 ] as const;
-
-type ValidationFailure = { ok: false; code: AiProposalErrorCode; reason: string };
-
-function fail(code: AiProposalErrorCode, reason: string): ValidationFailure {
-  return { ok: false, code, reason };
-}
-
-function parseOptionalPositiveInt(
-  value: unknown,
-  fieldLabel: string,
-): { ok: true; value: number | null } | ValidationFailure {
-  if (value === undefined || value === null) {
-    return { ok: true, value: null };
-  }
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
-    return fail('BAD_REQUEST', `${fieldLabel} phải là số nguyên dương`);
-  }
-  return { ok: true, value };
-}
 
 function parseOptionalDateInput(
   value: unknown,
@@ -190,7 +132,7 @@ export class AiTaskValidatorService {
   async validateCreateTaskProposal(
     userId: number,
     rawArgs: Record<string, unknown>,
-  ): Promise<ValidatedProposalResult> {
+  ): Promise<ValidatedProposalResult<AiCreateTaskPreview, 'CREATE_TASK'>> {
     const titleCheck = validateTitleString(
       rawArgs.title,
       'Tiêu đề công việc phải có ít nhất 3 ký tự (không tính khoảng trắng thừa)',
@@ -332,7 +274,7 @@ export class AiTaskValidatorService {
   async validateUpdateTaskProposal(
     userId: number,
     rawArgs: Record<string, unknown>,
-  ): Promise<ValidatedProposalResult> {
+  ): Promise<ValidatedProposalResult<AiUpdateTaskPreview, 'UPDATE_TASK'>> {
     const taskIdCheck = parseOptionalPositiveInt(rawArgs.taskId, 'Mã công việc (ID)');
     if (!taskIdCheck.ok) return taskIdCheck;
     if (taskIdCheck.value === null) {
@@ -813,24 +755,7 @@ export class AiTaskValidatorService {
     targetUserId: number,
     team: TeamWithMembersAndOwner | null,
   ): Promise<{ id: number; name: string }> {
-    if (team) {
-      if (team.owner && team.owner.id === targetUserId) {
-        return { id: team.owner.id, name: team.owner.name };
-      }
-      const member = team.members.find((m) => m.userId === targetUserId);
-      if (member?.user) {
-        return { id: member.user.id, name: member.user.name };
-      }
-    }
-
-    const user = await this.prisma.user?.findUnique?.({
-      where: { id: targetUserId },
-      select: { id: true, name: true },
-    });
-    return {
-      id: targetUserId,
-      name: user?.name ?? `Người dùng #${targetUserId}`,
-    };
+    return resolveTeamOrDbUserRef(this.prisma, targetUserId, team);
   }
 
   private async resolveCategoryRef(categoryId: number): Promise<{ id: number; name: string }> {
