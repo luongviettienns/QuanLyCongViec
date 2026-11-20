@@ -24,6 +24,8 @@ import {
   isTaskLinkedAiAction,
   isTeamMutatingAiAction,
   mergeResolvedActionsIntoChatResponse,
+  parseAiInlineMarkdown,
+  parseAiMarkdownBlocks,
   parseSseChunk,
 } from '../ai-chat.utils.ts';
 
@@ -991,5 +993,32 @@ describe('ai-chat.utils', () => {
     assert.equal(merged.pendingActions[0].status, 'EXECUTED');
     assert.equal(merged.pendingActions[2].status, 'FAILED');
     assert.equal(donePayload.assistantMessage.pendingActions[0].status, 'PENDING');
+  });
+
+  it('parseAiInlineMarkdown and parseAiMarkdownBlocks parse bold, italic, code, and lists cleanly', () => {
+    const inline = parseAiInlineMarkdown('Bấm **"Xác nhận"** để tạo `task_1` *ngay*.');
+    assert.deepEqual(inline, [
+      { type: 'text', text: 'Bấm ' },
+      { type: 'bold', text: '"Xác nhận"' },
+      { type: 'text', text: ' để tạo ' },
+      { type: 'code', text: 'task_1' },
+      { type: 'text', text: ' ' },
+      { type: 'italic', text: 'ngay' },
+      { type: 'text', text: '.' },
+    ]);
+
+    const blocks = parseAiMarkdownBlocks(
+      '- **Công việc:** Báo cáo tuần\n- **Ưu tiên:** Cao\n\nVui lòng kiểm tra thẻ bên dưới.',
+    );
+    assert.deepEqual(blocks, [
+      {
+        type: 'ul',
+        items: ['**Công việc:** Báo cáo tuần', '**Ưu tiên:** Cao'],
+      },
+      {
+        type: 'paragraph',
+        lines: ['Vui lòng kiểm tra thẻ bên dưới.'],
+      },
+    ]);
   });
 });

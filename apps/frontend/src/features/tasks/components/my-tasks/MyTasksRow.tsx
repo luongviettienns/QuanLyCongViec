@@ -46,15 +46,15 @@ const ROLE_BADGE_MAP: Record<MyTaskRoleKind, { label: string; color: string }> =
 
 function renderStatusIcon(status: TaskStatus) {
   if (status === 'DONE') {
-    return <CheckCircleFilled style={{ color: '#52c41a', fontSize: 16 }} />;
+    return <CheckCircleFilled style={{ color: '#52c41a', fontSize: 18 }} />;
   }
   if (status === 'IN_PROGRESS') {
     return (
       <span
         aria-hidden="true"
         style={{
-          width: 15,
-          height: 15,
+          width: 17,
+          height: 17,
           borderRadius: '50%',
           border: '2px solid #1677ff',
           display: 'inline-flex',
@@ -64,8 +64,8 @@ function renderStatusIcon(status: TaskStatus) {
       >
         <span
           style={{
-            width: 6,
-            height: 6,
+            width: 7,
+            height: 7,
             borderRadius: '50%',
             backgroundColor: '#1677ff',
           }}
@@ -77,8 +77,8 @@ function renderStatusIcon(status: TaskStatus) {
     <span
       aria-hidden="true"
       style={{
-        width: 15,
-        height: 15,
+        width: 17,
+        height: 17,
         borderRadius: '50%',
         border: '2px solid #bfbfbf',
         display: 'inline-block',
@@ -134,8 +134,8 @@ export const MyTasksRow: React.FC<MyTasksRowProps> = ({
         aria-label={`Đổi trạng thái công việc ${task.title}`}
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 26,
-          height: 26,
+          width: 30,
+          height: 30,
           padding: 0,
           display: 'inline-flex',
           alignItems: 'center',
@@ -186,7 +186,7 @@ export const MyTasksRow: React.FC<MyTasksRowProps> = ({
 
             <Tag
               color={roleBadge.color}
-              style={{ margin: 0, fontSize: 11, lineHeight: '18px', borderRadius: 6 }}
+              style={{ margin: 0, fontSize: 12, lineHeight: '20px', padding: '1px 8px', borderRadius: 6 }}
             >
               {roleBadge.label}
             </Tag>
@@ -196,8 +196,9 @@ export const MyTasksRow: React.FC<MyTasksRowProps> = ({
                 icon={<TeamOutlined />}
                 style={{
                   margin: 0,
-                  fontSize: 11,
-                  lineHeight: '18px',
+                  fontSize: 12,
+                  lineHeight: '20px',
+                  padding: '1px 8px',
                   borderRadius: 6,
                   background: '#f5f7fa',
                   borderColor: '#e6e8eb',
@@ -207,7 +208,7 @@ export const MyTasksRow: React.FC<MyTasksRowProps> = ({
                 {task.team.name}
               </Tag>
             ) : (
-              <span style={{ fontSize: 11, color: '#8c8c8c', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+              <span style={{ fontSize: 12, color: '#8c8c8c', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <UserOutlined /> Không gian cá nhân
               </span>
             )}
@@ -292,9 +293,9 @@ export const MyTasksRow: React.FC<MyTasksRowProps> = ({
             color={priorityConfig.color}
             style={{
               margin: 0,
-              fontSize: 11,
-              lineHeight: '18px',
-              padding: '0 6px',
+              fontSize: 12,
+              lineHeight: '20px',
+              padding: '1px 8px',
               borderRadius: 6,
             }}
           >
@@ -305,7 +306,7 @@ export const MyTasksRow: React.FC<MyTasksRowProps> = ({
         {/* Quick 1-click advance */}
         {quickAction && (
           <Button
-            size="small"
+            size="middle"
             type={quickAction.targetStatus === 'DONE' ? 'primary' : 'default'}
             ghost={quickAction.targetStatus === 'DONE'}
             icon={
@@ -324,7 +325,7 @@ export const MyTasksRow: React.FC<MyTasksRowProps> = ({
           </Button>
         )}
 
-        <RightOutlined style={{ fontSize: 11, color: '#bfbfbf' }} />
+        <RightOutlined style={{ fontSize: 13, color: '#bfbfbf' }} />
       </div>
     </div>
   );

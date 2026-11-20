@@ -50,9 +50,74 @@ import {
   formatAiRelativeError,
   isTeamMutatingAiAction,
   mergeResolvedActionsIntoChatResponse,
+  parseAiInlineMarkdown,
+  parseAiMarkdownBlocks,
 } from '../utils/ai-chat.utils';
 import { AiPendingActionCard } from './AiPendingActionCard';
 import './ai-assistant.css';
+
+function renderInlineTokens(text: string, keyPrefix: string) {
+  return parseAiInlineMarkdown(text).map((token, idx) => {
+    const key = `${keyPrefix}-${idx}`;
+    if (token.type === 'bold') {
+      return <strong key={key}>{token.text}</strong>;
+    }
+    if (token.type === 'italic') {
+      return <em key={key}>{token.text}</em>;
+    }
+    if (token.type === 'code') {
+      return (
+        <code key={key} className="ai-md-code">
+          {token.text}
+        </code>
+      );
+    }
+    return <span key={key}>{token.text}</span>;
+  });
+}
+
+function renderAiMarkdown(content: string) {
+  const blocks = parseAiMarkdownBlocks(content);
+  if (blocks.length === 0) {
+    return content;
+  }
+
+  return blocks.map((block, blockIdx) => {
+    const blockKey = `b-${blockIdx}`;
+    if (block.type === 'ul') {
+      return (
+        <ul key={blockKey} className="ai-md-list">
+          {block.items.map((item, itemIdx) => (
+            <li key={`${blockKey}-li-${itemIdx}`}>
+              {renderInlineTokens(item, `${blockKey}-${itemIdx}`)}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+    if (block.type === 'ol') {
+      return (
+        <ol key={blockKey} className="ai-md-list ai-md-list--ordered">
+          {block.items.map((item, itemIdx) => (
+            <li key={`${blockKey}-li-${itemIdx}`}>
+              {renderInlineTokens(item, `${blockKey}-${itemIdx}`)}
+            </li>
+          ))}
+        </ol>
+      );
+    }
+    return (
+      <p key={blockKey} className="ai-md-p">
+        {block.lines.map((line, lineIdx) => (
+          <span key={`${blockKey}-l-${lineIdx}`}>
+            {lineIdx > 0 && <br />}
+            {renderInlineTokens(line, `${blockKey}-${lineIdx}`)}
+          </span>
+        ))}
+      </p>
+    );
+  });
+}
 
 const { Text } = Typography;
 
@@ -821,7 +886,7 @@ export function AiAssistantDrawer({
                         isUser ? 'ai-message-bubble--user' : 'ai-message-bubble--assistant'
                       }`}
                     >
-                      {msg.content}
+                      {isUser ? msg.content : renderAiMarkdown(msg.content)}
                     </div>
 
                     {!isUser && msg.pendingActions.length > 0 && (
@@ -880,7 +945,7 @@ export function AiAssistantDrawer({
                   >
                     {streamingText.length > 0 ? (
                       <>
-                        {streamingText}
+                        {renderAiMarkdown(streamingText)}
                         <span className="ai-streaming-cursor" aria-hidden="true" />
                       </>
                     ) : (

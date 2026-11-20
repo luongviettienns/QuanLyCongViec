@@ -4,15 +4,15 @@ services:
     container_name: taskflow-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: taskflow_user
-      POSTGRES_PASSWORD: taskflow_secure_password_123
-      POSTGRES_DB: taskflow
+      POSTGRES_USER: ${POSTGRES_USER:-taskflow_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskflow_secure_password_123}
+      POSTGRES_DB: ${POSTGRES_DB:-taskflow}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U taskflow_user -d taskflow"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-taskflow_user} -d ${POSTGRES_DB:-taskflow}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -29,13 +29,25 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://taskflow_user:taskflow_secure_password_123@postgres:5432/taskflow?schema=public
-      JWT_SECRET: taskflow_jwt_secret_change_me_in_production_min32chars
-      JWT_EXPIRATION: 7d
-      INTERNAL_API_KEY: taskflow_internal_cron_key_change_me
-      CORS_ORIGINS: "*"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-taskflow_user}:${POSTGRES_PASSWORD:-taskflow_secure_password_123}@postgres:5432/${POSTGRES_DB:-taskflow}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-taskflow_jwt_secret_change_me_in_production_min32chars}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-7d}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-taskflow_internal_cron_key_change_me}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai-compatible}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-30000}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-2048}
     ports:
       - "3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
 
   frontend:
     build:
@@ -44,7 +56,8 @@ services:
     container_name: taskflow-frontend
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "80:80"
 

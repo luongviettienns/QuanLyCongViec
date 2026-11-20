@@ -45,6 +45,7 @@ export const MyTasksQuickAdd: React.FC<MyTasksQuickAddProps> = ({
   return (
     <div className="my-tasks-quick-add">
       <Input
+        size="large"
         prefix={<PlusOutlined style={{ color: '#8c8c8c' }} />}
         placeholder="Tạo nhanh công việc cá nhân... (nhấn Enter để lưu)"
         value={title}
@@ -58,14 +59,14 @@ export const MyTasksQuickAdd: React.FC<MyTasksQuickAddProps> = ({
           }
         }}
         onPressEnter={() => void handleSubmit()}
-        style={{ flex: 1, minWidth: 180 }}
+        style={{ flex: 1, minWidth: 200 }}
         aria-label="Tạo nhanh công việc cá nhân"
       />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
         <Tooltip title={dueToday ? 'Đặt hạn chót: Hôm nay (bấm để bỏ)' : 'Đặt nhanh hạn chót hôm nay'}>
           <Button
-            size="small"
+            size="large"
             type={dueToday ? 'primary' : 'default'}
             ghost={dueToday}
             icon={<CalendarOutlined />}
@@ -77,11 +78,11 @@ export const MyTasksQuickAdd: React.FC<MyTasksQuickAddProps> = ({
         </Tooltip>
 
         <Select<TaskPriority>
-          size="small"
+          size="large"
           value={priority}
           disabled={loading}
           onChange={setPriority}
-          style={{ width: 112 }}
+          style={{ width: 128 }}
           aria-label="Độ ưu tiên khi tạo nhanh"
           options={[
             { value: 'HIGH', label: 'Cao' },
@@ -91,7 +92,7 @@ export const MyTasksQuickAdd: React.FC<MyTasksQuickAddProps> = ({
         />
 
         <Button
-          size="small"
+          size="large"
           type="primary"
           loading={loading}
           disabled={title.trim().length === 0}

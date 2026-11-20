@@ -1,5 +1,5 @@
-import React from 'react';
-import { Button, Empty, Input, Segmented, Select, Spin } from 'antd';
+import React, { useState } from 'react';
+import { Button, Empty, Input, Pagination, Segmented, Select, Spin } from 'antd';
 import {
   SearchOutlined,
   ReloadOutlined,
@@ -48,6 +48,8 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
   onExternalSync,
 }) => {
   const { isMobile } = useResponsive();
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const {
     allMyTasks,
     visibleTasks,
@@ -85,6 +87,13 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
     onExternalSync,
   });
 
+  const totalPages = Math.max(1, Math.ceil(visibleTasks.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedTasks = visibleTasks.slice(
+    (safePage - 1) * pageSize,
+    safePage * pageSize,
+  );
+
   const fallbackVariant = resolveErrorFallbackVariant(error, allMyTasks.length);
 
   if (fallbackVariant === 'page') {
@@ -115,16 +124,22 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
       <MyTasksStatCards
         stats={stats}
         activeCard={filterState.deadlineCard}
-        onToggleCard={toggleDeadlineCard}
+        onToggleCard={(card) => {
+          setCurrentPage(1);
+          toggleDeadlineCard(card);
+        }}
       />
 
       {/* Status Group Tabs + Compact Inline Controls */}
       <div className="my-tasks-controls-bar">
         <div className="my-tasks-segmented-wrap">
           <Segmented<MyTaskStatusTab>
-            size="small"
+            size="middle"
             value={filterState.statusTab}
-            onChange={selectStatusTab}
+            onChange={(tab) => {
+              setCurrentPage(1);
+              selectStatusTab(tab);
+            }}
             options={[
               { value: 'ALL', label: `Tất cả (${stats.all})` },
               { value: 'TODO', label: `Cần xử lý (${stats.todo})` },
@@ -136,20 +151,26 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
 
         <div className="my-tasks-controls-filters" style={{ width: isMobile ? '100%' : undefined }}>
           <Input
-            size="small"
+            size="middle"
             prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
             placeholder="Tìm trong việc của tôi..."
             value={filterState.searchText}
-            onChange={(e) => setSearchText(e.target.value)}
+            onChange={(e) => {
+              setCurrentPage(1);
+              setSearchText(e.target.value);
+            }}
             allowClear
-            style={{ width: isMobile ? '100%' : 190 }}
+            style={{ width: isMobile ? '100%' : 210 }}
           />
 
           <Select<MyTaskRoleFilter>
-            size="small"
+            size="middle"
             value={filterState.roleFilter}
-            onChange={setRoleFilter}
-            style={{ width: isMobile ? 'calc(50% - 4px)' : 145 }}
+            onChange={(role) => {
+              setCurrentPage(1);
+              setRoleFilter(role);
+            }}
+            style={{ width: isMobile ? 'calc(50% - 4px)' : 155 }}
             aria-label="Lọc theo vai trò trong công việc"
             options={[
               { value: 'all', label: 'Tất cả vai trò' },
@@ -161,10 +182,13 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
           />
 
           <Select<MyTaskSortKey>
-            size="small"
+            size="middle"
             value={filterState.sortBy}
-            onChange={setSortBy}
-            style={{ width: isMobile ? 'calc(50% - 4px)' : 155 }}
+            onChange={(sort) => {
+              setCurrentPage(1);
+              setSortBy(sort);
+            }}
+            style={{ width: isMobile ? 'calc(50% - 4px)' : 165 }}
             aria-label="Sắp xếp công việc của tôi"
             options={[
               { value: 'smart_deadline', label: 'Ưu tiên theo hạn' },
@@ -176,9 +200,12 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
 
           {hasActiveFilters && (
             <Button
-              size="small"
+              size="middle"
               icon={<ReloadOutlined />}
-              onClick={resetFilters}
+              onClick={() => {
+                setCurrentPage(1);
+                resetFilters();
+              }}
             >
               Xóa lọc
             </Button>
@@ -228,19 +255,41 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
                 </Empty>
               </div>
             ) : (
-              <div>
-                {visibleTasks.map((task) => (
-                  <MyTasksRow
-                    key={task.id}
-                    task={task}
-                    teams={teams}
-                    currentUser={currentUser}
-                    selected={selectedTaskId === task.id}
-                    onSelect={selectTask}
-                    onUpdateStatus={updateTaskStatusQuick}
+              <>
+                <div>
+                  {paginatedTasks.map((task) => (
+                    <MyTasksRow
+                      key={task.id}
+                      task={task}
+                      teams={teams}
+                      currentUser={currentUser}
+                      selected={selectedTaskId === task.id}
+                      onSelect={selectTask}
+                      onUpdateStatus={updateTaskStatusQuick}
+                    />
+                  ))}
+                </div>
+
+                <div className="my-tasks-pagination">
+                  <Pagination
+                    current={safePage}
+                    pageSize={pageSize}
+                    total={visibleTasks.length}
+                    showSizeChanger
+                    pageSizeOptions={['10', '20', '50']}
+                    size={isMobile ? 'small' : undefined}
+                    showTotal={(total, range) => `${range[0]}-${range[1]} / ${total} công việc`}
+                    onChange={(page, nextSize) => {
+                      if (nextSize !== pageSize) {
+                        setPageSize(nextSize);
+                        setCurrentPage(1);
+                      } else {
+                        setCurrentPage(page);
+                      }
+                    }}
                   />
-                ))}
-              </div>
+                </div>
+              </>
             )}
           </div>
         </div>

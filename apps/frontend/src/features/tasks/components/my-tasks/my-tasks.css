@@ -167,8 +167,8 @@
 .my-tasks-quick-add {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
+  gap: 10px;
+  padding: 14px 18px;
   background: #fafbfc;
   border-bottom: 1px solid #f0f0f0;
   flex-wrap: wrap;
@@ -176,10 +176,10 @@
 
 .my-tasks-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: 14px;
+  padding: 16px 18px;
   border-bottom: 1px solid #f5f5f5;
   background: #ffffff;
   cursor: pointer;
@@ -207,7 +207,7 @@
 .my-tasks-row-main {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 12px;
   flex: 1;
   min-width: 0;
 }
@@ -217,22 +217,22 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .my-tasks-row-title-line {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
 .my-tasks-row-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   color: #1f1f1f;
-  line-height: 1.4;
+  line-height: 1.45;
   word-break: break-word;
 }
 
@@ -247,12 +247,12 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  font-size: 12px;
+  font-size: 13px;
   color: #595959;
   background: #f6f8fa;
   border: 1px solid #edf0f3;
   border-radius: 6px;
-  padding: 3px 8px;
+  padding: 4px 10px;
   max-width: 100%;
   cursor: pointer;
   transition: background-color 0.15s ease, border-color 0.15s ease;
@@ -267,17 +267,26 @@
 .my-tasks-row-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
 }
 
 .my-tasks-deadline {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 12px;
+  gap: 5px;
+  font-size: 13px;
   white-space: nowrap;
   color: #595959;
+}
+
+.my-tasks-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 12px 18px;
+  border-top: 1px solid #f0f0f0;
+  background: #fafbfc;
 }
 
 .my-tasks-deadline--overdue {
@@ -349,5 +358,10 @@
     padding-left: 34px;
     flex-wrap: wrap;
     box-sizing: border-box;
+  }
+
+  .my-tasks-pagination {
+    justify-content: center;
+    padding: 12px;
   }
 }

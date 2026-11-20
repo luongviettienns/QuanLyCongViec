@@ -447,3 +447,123 @@ export function formatAiRelativeError(
 
   return getFriendlyErrorMessage(error, fallback);
 }
+
+export type AiInlineToken =
+  | { type: 'text'; text: string }
+  | { type: 'bold'; text: string }
+  | { type: 'italic'; text: string }
+  | { type: 'code'; text: string };
+
+export type AiMarkdownBlock =
+  | { type: 'paragraph'; lines: string[] }
+  | { type: 'ul'; items: string[] }
+  | { type: 'ol'; items: string[] };
+
+const INLINE_MD_PATTERN = /(`[^`\n]+`|\*\*[^*\n]+?\*\*|\*[^*\n]+?\*)/g;
+
+/**
+ * Parses lightweight inline markdown (**bold**, *italic*, `code`) into safe tokens.
+ */
+export function parseAiInlineMarkdown(text: string): AiInlineToken[] {
+  if (!text) {
+    return [];
+  }
+
+  const tokens: AiInlineToken[] = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(INLINE_MD_PATTERN)) {
+    const idx = match.index ?? 0;
+    if (idx > lastIndex) {
+      tokens.push({ type: 'text', text: text.slice(lastIndex, idx) });
+    }
+
+    const raw = match[0];
+    if (raw.startsWith('`') && raw.endsWith('`') && raw.length >= 2) {
+      tokens.push({ type: 'code', text: raw.slice(1, -1) });
+    } else if (raw.startsWith('**') && raw.endsWith('**') && raw.length >= 4) {
+      tokens.push({ type: 'bold', text: raw.slice(2, -2) });
+    } else if (raw.startsWith('*') && raw.endsWith('*') && raw.length >= 2) {
+      tokens.push({ type: 'italic', text: raw.slice(1, -1) });
+    } else {
+      tokens.push({ type: 'text', text: raw });
+    }
+
+    lastIndex = idx + raw.length;
+  }
+
+  if (lastIndex < text.length) {
+    tokens.push({ type: 'text', text: text.slice(lastIndex) });
+  }
+
+  return tokens;
+}
+
+/**
+ * Splits assistant response text into paragraphs and bullet/numbered lists.
+ */
+export function parseAiMarkdownBlocks(content: string): AiMarkdownBlock[] {
+  if (!content) {
+    return [];
+  }
+
+  const lines = content.replace(/\r\n?/g, '\n').split('\n');
+  const blocks: AiMarkdownBlock[] = [];
+  let paragraphLines: string[] = [];
+  let listType: 'ul' | 'ol' | null = null;
+  let listItems: string[] = [];
+
+  const flushParagraph = () => {
+    if (paragraphLines.length > 0) {
+      blocks.push({ type: 'paragraph', lines: paragraphLines });
+      paragraphLines = [];
+    }
+  };
+
+  const flushList = () => {
+    if (listType && listItems.length > 0) {
+      blocks.push({ type: listType, items: listItems });
+    }
+    listType = null;
+    listItems = [];
+  };
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const ulMatch = /^[-*]\s+(.+)$/.exec(trimmed);
+    if (ulMatch) {
+      flushParagraph();
+      if (listType !== 'ul') {
+        flushList();
+        listType = 'ul';
+      }
+      listItems.push(ulMatch[1]);
+      continue;
+    }
+
+    const olMatch = /^\d+\.\s+(.+)$/.exec(trimmed);
+    if (olMatch) {
+      flushParagraph();
+      if (listType !== 'ol') {
+        flushList();
+        listType = 'ol';
+      }
+      listItems.push(olMatch[1]);
+      continue;
+    }
+
+    flushList();
+    paragraphLines.push(rawLine);
+  }
+
+  flushParagraph();
+  flushList();
+
+  return blocks;
+}

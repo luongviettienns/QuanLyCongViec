@@ -1,0 +1,35 @@
+# Dependencies & caches
+node_modules
+**/node_modules
+.npm
+.turbo
+
+# Build outputs
+dist
+**/dist
+build
+coverage
+**/coverage
+*.tsbuildinfo
+
+# Git & editor metadata
+.git
+.gitignore
+.vscode
+.idea
+.superpowers
+
+# Environment & secrets (never bake into image layers)
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!apps/backend/.env.example
+
+# Docs, logs & test artifacts
+docs
+*.log
+npm-debug.log*
+playwright-report
+test-results

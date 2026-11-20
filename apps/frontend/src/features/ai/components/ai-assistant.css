@@ -112,6 +112,36 @@
   border: 1px solid #e5e7eb;
   border-bottom-left-radius: 4px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  white-space: normal;
+}
+
+.ai-md-p {
+  margin: 0;
+}
+
+.ai-md-p + .ai-md-p,
+.ai-md-p + .ai-md-list,
+.ai-md-list + .ai-md-p,
+.ai-md-list + .ai-md-list {
+  margin-top: 8px;
+}
+
+.ai-md-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ai-md-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  background-color: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: #0f172a;
 }
 
 .ai-tool-summary-wrap {
