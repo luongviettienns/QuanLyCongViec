@@ -166,6 +166,15 @@ export class AiActionService {
     }
   }
 
+  /** Executes a pre-validated write payload directly (used by MCP READ_WRITE tools). */
+  executeDirectAction(
+    userId: number,
+    actionType: AiActionType,
+    rawPayload: Record<string, unknown>,
+  ): Promise<{ executedTaskId: number | null; task: SerializedTaskDetail | null }> {
+    return this.executeActionPayload(userId, actionType, rawPayload);
+  }
+
   private async executeActionPayload(
     userId: number,
     actionType: AiActionType,

@@ -89,6 +89,7 @@ enum TeamActivityAction {
 
 enum McpTokenScope {
   READ
+  READ_WRITE
 }
 
 enum AiMessageRole {

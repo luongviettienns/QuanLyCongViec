@@ -27,7 +27,7 @@ export class McpController {
 
   @Post()
   @Throttle({ default: { ttl: 60_000, limit: 120 } })
-  @ApiOperation({ summary: 'TaskFlow Read-Only MCP Server (Streamable HTTP JSON-RPC)' })
+  @ApiOperation({ summary: 'TaskFlow MCP Server (Streamable HTTP JSON-RPC)' })
   async handlePost(@Req() req: McpAuthenticatedRequest, @Res() res: Response): Promise<void> {
     const authUser = req.mcpAuth;
     if (!authUser) {
@@ -39,7 +39,7 @@ export class McpController {
       return;
     }
 
-    const server = this.mcpServerService.createReadOnlyServer(authUser);
+    const server = this.mcpServerService.createServerForAuthUser(authUser);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

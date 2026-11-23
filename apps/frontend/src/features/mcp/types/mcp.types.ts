@@ -1,4 +1,4 @@
-export type McpTokenScope = 'READ';
+export type McpTokenScope = 'READ' | 'READ_WRITE';
 
 export interface McpTokenRecord {
   id: number;
@@ -14,6 +14,7 @@ export interface McpTokenRecord {
 export interface CreateMcpTokenPayload {
   name: string;
   expiresInDays?: number | null;
+  scope?: McpTokenScope;
 }
 
 export interface CreateMcpTokenResponse {

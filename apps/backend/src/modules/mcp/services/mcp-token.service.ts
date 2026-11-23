@@ -96,7 +96,7 @@ export class McpTokenService {
           name: trimmedName,
           tokenPrefix,
           tokenHash,
-          scope: McpTokenScope.READ,
+          scope: dto.scope ?? McpTokenScope.READ,
           expiresAt,
         },
         select: TOKEN_PUBLIC_SELECT,

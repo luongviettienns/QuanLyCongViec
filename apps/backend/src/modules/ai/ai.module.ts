@@ -33,6 +33,9 @@ import { AiToolsService } from './services/ai-tools.service.js';
   ],
   exports: [
     AiProviderRegistry,
+    AiTaskValidatorService,
+    AiExtendedValidatorService,
+    AiTeamValidatorService,
     AiAgentService,
     AiActionService,
   ],

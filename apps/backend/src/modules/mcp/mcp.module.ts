@@ -4,6 +4,7 @@ import { TaskModule } from '../tasks/task.module.js';
 import { TeamsModule } from '../teams/teams.module.js';
 import { CategoriesModule } from '../categories/categories.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
+import { AiModule } from '../ai/ai.module.js';
 import { McpTokenService } from './services/mcp-token.service.js';
 import { McpServerService } from './services/mcp-server.service.js';
 import { McpAuthGuard } from './guards/mcp-auth.guard.js';
@@ -17,6 +18,7 @@ import { McpController } from './controllers/mcp.controller.js';
     TeamsModule,
     CategoriesModule,
     NotificationsModule,
+    AiModule,
   ],
   controllers: [McpTokensController, McpController],
   providers: [McpTokenService, McpServerService, McpAuthGuard],

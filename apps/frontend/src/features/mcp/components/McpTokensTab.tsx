@@ -28,7 +28,7 @@ import {
   isUnauthorizedError,
 } from '../../../shared/api';
 import { createMcpToken, listMcpTokens, revokeMcpToken } from '../api/mcp.api';
-import type { McpTokenRecord } from '../types/mcp.types';
+import type { McpTokenRecord, McpTokenScope } from '../types/mcp.types';
 import {
   buildMcpClientConfigSnippet,
   buildMcpEndpointUrl,
@@ -41,6 +41,7 @@ const { Text } = Typography;
 interface CreateTokenFormValues {
   name: string;
   expiresInDays?: number;
+  scope?: McpTokenScope;
 }
 
 interface McpTokensTabProps {
@@ -187,12 +188,17 @@ export default function McpTokensTab({ active, onBusyChange }: McpTokensTabProps
       const res = await createMcpToken({
         name: values.name.trim(),
         expiresInDays: values.expiresInDays && values.expiresInDays > 0 ? values.expiresInDays : null,
+        scope: values.scope ?? 'READ',
       });
       setRevealedToken({ id: res.record.id, token: res.token });
       setTokens((prev) => [res.record, ...prev]);
       setLoadError(null);
       form.resetFields();
-      message.success('Đã tạo API token MCP chỉ đọc');
+      message.success(
+        res.record.scope === 'READ_WRITE'
+          ? 'Đã tạo API token MCP (Đọc & Ghi)'
+          : 'Đã tạo API token MCP (Chỉ đọc)',
+      );
     } catch (error) {
       if (isAbortError(error) || isUnauthorizedError(error)) {
         return;
@@ -249,11 +255,12 @@ export default function McpTokensTab({ active, onBusyChange }: McpTokensTabProps
         />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontWeight: 600, fontSize: 13, color: '#1f1f1f' }}>
-            MCP Server chỉ đọc (Read-Only)
+            MCP Server (Streamable HTTP)
           </div>
           <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 2 }}>
-            Cho phép AI client (Antigravity, Cursor, Claude Desktop...) đọc công việc, thống kê,
-            nhóm, danh mục và thông báo của bạn theo đúng quyền RBAC. Không cho phép sửa/xóa dữ liệu.
+            Cho phép AI client (Antigravity, Cursor, Claude Desktop...) kết nối tới TaskFlow theo
+            đúng quyền RBAC. Chọn quyền <strong>Chỉ đọc</strong> hoặc <strong>Đọc &amp; Ghi</strong>{' '}
+            (tạo/sửa/xóa mềm task, subtask, thành viên nhóm) khi cấp token.
           </Text>
           <div
             style={{
@@ -290,11 +297,11 @@ export default function McpTokensTab({ active, onBusyChange }: McpTokensTabProps
         </div>
       </div>
 
-      {/* Create Read-Only Token Form */}
+      {/* Create Token Form */}
       <Form
         form={form}
         layout="vertical"
-        initialValues={{ expiresInDays: 90 }}
+        initialValues={{ expiresInDays: 90, scope: 'READ' }}
         onFinish={(values) => void handleCreateToken(values)}
       >
         <div
@@ -307,8 +314,8 @@ export default function McpTokensTab({ active, onBusyChange }: McpTokensTabProps
         >
           <Form.Item
             name="name"
-            label="Tạo API Token mới (chỉ đọc)"
-            style={{ flex: '1 1 210px', marginBottom: 8 }}
+            label="Tạo API Token mới"
+            style={{ flex: '1 1 180px', marginBottom: 8 }}
             rules={[
               { required: true, message: 'Vui lòng nhập tên gợi nhớ' },
               {
@@ -331,6 +338,22 @@ export default function McpTokensTab({ active, onBusyChange }: McpTokensTabProps
               maxLength={60}
               disabled={isMutating}
               data-testid="mcp-token-name-input"
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="scope"
+            label="Quyền"
+            style={{ width: 135, marginBottom: 8 }}
+          >
+            <Select
+              aria-label="Chọn quyền token MCP"
+              disabled={isMutating}
+              data-testid="mcp-token-scope-select"
+              options={[
+                { value: 'READ', label: 'Chỉ đọc' },
+                { value: 'READ_WRITE', label: 'Đọc & Ghi' },
+              ]}
             />
           </Form.Item>
 
@@ -518,8 +541,11 @@ export default function McpTokensTab({ active, onBusyChange }: McpTokensTabProps
                       <Text strong style={{ fontSize: 13, overflowWrap: 'anywhere' }}>
                         {item.name}
                       </Text>
-                      <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>
-                        Chỉ đọc
+                      <Tag
+                        color={item.scope === 'READ_WRITE' ? 'volcano' : 'blue'}
+                        style={{ margin: 0, fontSize: 11 }}
+                      >
+                        {item.scope === 'READ_WRITE' ? 'Đọc & Ghi' : 'Chỉ đọc'}
                       </Tag>
                       <Tag color={status.color} style={{ margin: 0, fontSize: 11 }}>
                         {status.label}

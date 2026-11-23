@@ -1,10 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpTokenScope } from '@prisma/client';
 import { z } from 'zod';
+import { AiActionService } from '../../ai/services/ai-action.service.js';
+import { AiExtendedValidatorService } from '../../ai/services/ai-extended-validator.service.js';
+import { AiTaskValidatorService } from '../../ai/services/ai-task-validator.service.js';
+import { AiTeamValidatorService } from '../../ai/services/ai-team-validator.service.js';
 import { TasksService } from '../../tasks/tasks.service.js';
 import { TeamsService } from '../../teams/teams.service.js';
 import { CategoriesService } from '../../categories/categories.service.js';
 import { NotificationsService } from '../../notifications/services/notifications.service.js';
+import { registerReadWriteMcpTools } from './mcp-write-tools.js';
 import {
   DEADLINE_FILTERS,
   TASK_SCOPES,
@@ -71,7 +77,38 @@ export class McpServerService {
     private readonly teamsService: TeamsService,
     private readonly categoriesService: CategoriesService,
     private readonly notificationsService: NotificationsService,
+    @Optional() private readonly taskValidator?: AiTaskValidatorService,
+    @Optional() private readonly extendedValidator?: AiExtendedValidatorService,
+    @Optional() private readonly teamValidator?: AiTeamValidatorService,
+    @Optional() private readonly aiActionService?: AiActionService,
   ) {}
+
+  /**
+   * Creates a stateless McpServer scoped to the authenticated user's token permissions.
+   * READ tokens only receive the 8 read-only tools; READ_WRITE tokens also receive
+   * list_trash_tasks and the 11 safe-tier write tools.
+   */
+  createServerForAuthUser(authUser: AuthenticatedMcpUser): McpServer {
+    const server = this.createReadOnlyServer(authUser);
+
+    if (
+      authUser.scope === McpTokenScope.READ_WRITE &&
+      this.taskValidator &&
+      this.extendedValidator &&
+      this.teamValidator &&
+      this.aiActionService
+    ) {
+      registerReadWriteMcpTools(server, authUser.userId, {
+        tasksService: this.tasksService,
+        taskValidator: this.taskValidator,
+        extendedValidator: this.extendedValidator,
+        teamValidator: this.teamValidator,
+        aiActionService: this.aiActionService,
+      });
+    }
+
+    return server;
+  }
 
   /**
    * Creates a fresh stateless read-only McpServer bound to the authenticated user's identity.

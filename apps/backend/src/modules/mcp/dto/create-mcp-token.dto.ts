@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
-import { IsIn, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEnum, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { McpTokenScope } from '@prisma/client';
 
 export const ALLOWED_MCP_TOKEN_EXPIRY_DAYS = [7, 30, 90, 365] as const;
 
@@ -27,4 +28,15 @@ export class CreateMcpTokenDto {
     message: 'Thời hạn token chỉ hỗ trợ 7, 30, 90 hoặc 365 ngày',
   })
   expiresInDays?: number | null;
+
+  @ApiPropertyOptional({
+    description: 'Phạm vi quyền của API Token MCP (READ hoặc READ_WRITE, mặc định READ)',
+    enum: McpTokenScope,
+    default: McpTokenScope.READ,
+  })
+  @IsOptional()
+  @IsEnum(McpTokenScope, {
+    message: 'Phạm vi quyền token chỉ hỗ trợ READ hoặc READ_WRITE',
+  })
+  scope?: McpTokenScope;
 }
