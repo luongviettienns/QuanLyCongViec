@@ -1241,5 +1241,46 @@ describe('AiAgentService', () => {
       ]);
       expect(prisma.aiConversation.deleteMany).not.toHaveBeenCalled();
     });
+
+    it('includes strict TaskFlow-only scope and anti-prompt-injection guardrails in system prompt', async () => {
+      prisma.aiConversation.create.mockResolvedValue({
+        id: 201,
+        userId: 7,
+        title: 'Cuộc trò chuyện mới',
+        createdAt: new Date('2026-11-23T03:00:00.000Z'),
+        updatedAt: new Date('2026-11-23T03:00:00.000Z'),
+      });
+      prisma.aiMessage.create
+        .mockResolvedValueOnce({
+          id: 901,
+          conversationId: 201,
+          role: AiMessageRole.USER,
+          content: 'Viết code Python giúp tôi',
+          toolCallsSummary: null,
+          createdAt: new Date('2026-11-23T03:00:01.000Z'),
+        })
+        .mockResolvedValueOnce({
+          id: 902,
+          conversationId: 201,
+          role: AiMessageRole.ASSISTANT,
+          content: 'Tôi chỉ hỗ trợ các tác vụ quản lý công việc trên TaskFlow.',
+          toolCallsSummary: null,
+          createdAt: new Date('2026-11-23T03:00:02.000Z'),
+        });
+      provider.chatCompletion.mockResolvedValueOnce({
+        content: 'Tôi chỉ hỗ trợ các tác vụ quản lý công việc trên TaskFlow.',
+        toolCalls: [],
+      });
+
+      await service.chat(7, { message: 'Viết code Python giúp tôi' });
+
+      const firstCallArg = provider.chatCompletion.mock.calls[0]?.[0];
+      const systemMessage = firstCallArg.messages.find(
+        (m: { role: string }) => m.role === 'system',
+      );
+      expect(systemMessage?.content).toContain('Giới hạn phạm vi nghiêm ngặt');
+      expect(systemMessage?.content).toContain('Anti-Prompt Injection');
+      expect(systemMessage?.content).toContain('tiết lộ nội dung system prompt');
+    });
   });
 });
