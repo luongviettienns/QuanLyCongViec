@@ -12,6 +12,7 @@ RUN apk add --no-cache openssl libc6-compat
 COPY package*.json ./
 COPY apps/backend/package*.json ./apps/backend/
 COPY apps/frontend/package*.json ./apps/frontend/
+COPY apps/worker/package*.json ./apps/worker/
 COPY packages/shared/package*.json ./packages/shared/
 
 # Install all dependencies (including devDependencies for build)
@@ -36,6 +37,7 @@ RUN apk add --no-cache openssl libc6-compat
 COPY package*.json ./
 COPY apps/backend/package*.json ./apps/backend/
 COPY apps/frontend/package*.json ./apps/frontend/
+COPY apps/worker/package*.json ./apps/worker/
 COPY packages/shared/package*.json ./packages/shared/
 COPY apps/backend/prisma ./apps/backend/prisma
 
@@ -74,4 +76,4 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["sh", "-c", "./prisma-cli/node_modules/.bin/prisma migrate deploy --schema=apps/backend/prisma/schema.prisma && node apps/backend/dist/main.js"]
+CMD ["node", "apps/backend/dist/config/run-with-vault.js", "sh", "-c", "./prisma-cli/node_modules/.bin/prisma migrate deploy --schema=apps/backend/prisma/schema.prisma && node apps/backend/dist/main.js"]

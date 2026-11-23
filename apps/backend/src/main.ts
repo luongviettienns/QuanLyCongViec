@@ -6,15 +6,18 @@ import type { NextFunction, Request, Response } from 'express';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ExpressAdapter, type NestExpressApplication } from '@nestjs/platform-express';
-import { AppModule, ObserveInstrument } from './app.module.js';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { PrismaClientExceptionFilter } from './common/index.js';
+import { loadVaultEnv } from './config/vault-env.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config();
 
 async function bootstrap() {
+  await loadVaultEnv();
+  const { AppModule, ObserveInstrument } = await import('./app.module.js');
+
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule,
     new ExpressAdapter(),

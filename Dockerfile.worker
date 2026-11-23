@@ -1,0 +1,62 @@
+# ==========================================
+# TaskFlow Worker Dockerfile (Cron / Background Jobs)
+# ==========================================
+FROM node:24-alpine AS builder
+
+WORKDIR /app
+
+RUN apk add --no-cache openssl libc6-compat
+
+COPY package*.json ./
+COPY apps/backend/package*.json ./apps/backend/
+COPY apps/frontend/package*.json ./apps/frontend/
+COPY apps/worker/package*.json ./apps/worker/
+COPY packages/shared/package*.json ./packages/shared/
+
+RUN npm ci
+
+COPY packages/shared ./packages/shared
+COPY apps/backend/prisma ./apps/backend/prisma
+COPY apps/worker ./apps/worker
+
+RUN npx prisma generate --schema=apps/backend/prisma/schema.prisma
+RUN npm run build:shared
+RUN npm run build --workspace=@taskflow/worker
+
+FROM node:24-alpine AS prod-deps
+
+WORKDIR /app
+
+RUN apk add --no-cache openssl libc6-compat
+
+COPY package*.json ./
+COPY apps/backend/package*.json ./apps/backend/
+COPY apps/frontend/package*.json ./apps/frontend/
+COPY apps/worker/package*.json ./apps/worker/
+COPY packages/shared/package*.json ./packages/shared/
+COPY apps/backend/prisma ./apps/backend/prisma
+
+RUN npm ci --omit=dev --workspace=@taskflow/worker --workspace=@taskflow/shared --include-workspace-root && \
+    npm install --prefix /opt/prisma-cli --no-save --no-audit --no-fund prisma@6.19.3 && \
+    /opt/prisma-cli/node_modules/.bin/prisma generate --schema=apps/backend/prisma/schema.prisma
+
+FROM node:24-alpine AS runner
+
+WORKDIR /app
+
+RUN apk add --no-cache openssl dumb-init
+
+ENV NODE_ENV=production
+
+COPY --from=prod-deps --chown=node:node /app/package*.json ./
+COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
+COPY --from=prod-deps --chown=node:node /app/apps/worker/node_modules ./apps/worker/node_modules
+COPY --from=prod-deps --chown=node:node /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=builder --chown=node:node /app/packages/shared ./packages/shared
+COPY --from=builder --chown=node:node /app/apps/worker/package*.json ./apps/worker/
+COPY --from=builder --chown=node:node /app/apps/worker/dist ./apps/worker/dist
+
+USER node
+
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "apps/worker/dist/main.js"]

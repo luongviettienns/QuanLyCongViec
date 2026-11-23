@@ -1,5 +1,4 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
 import { PrismaService, POST_COMMIT_HOOKS } from '../../database/prisma.service.js';
 import { Prisma, TeamActivityAction, TeamRole, TeamActivityLog } from '@prisma/client';
 import { GetTeamActivityLogsDto } from './dto/get-activity-logs.dto.js';
@@ -167,7 +166,6 @@ export class TeamActivityService {
    * Cleans up logs older than retention period (default 12 months)
    * Scheduled nightly at 03:00 AM Asia/Ho_Chi_Minh
    */
-  @Cron('0 3 * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
   async scheduledCleanup(retentionMonths: number = 12): Promise<number> {
     const cutoffDate = new Date();
     cutoffDate.setMonth(cutoffDate.getMonth() - retentionMonths);

@@ -1,0 +1,28 @@
+{
+  "name": "@taskflow/worker",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "start:dev": "node --watch dist/main.js",
+    "lint": "oxlint src/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nestjs/common": "^12.0.1",
+    "@nestjs/core": "^12.0.1",
+    "@nestjs/schedule": "^12.0.3",
+    "@prisma/client": "^6.19.3",
+    "@taskflow/shared": "*",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "oxlint": "^1.58.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
+  }
+}

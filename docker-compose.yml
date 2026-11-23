@@ -17,19 +17,48 @@ services:
       timeout: 5s
       retries: 5
 
-  backend:
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
-    container_name: taskflow-backend
+  redis:
+    image: redis:7-alpine
+    container_name: taskflow-redis
     restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  vault:
+    image: hashicorp/vault:1.18
+    container_name: taskflow-vault
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_ADDR: http://127.0.0.1:8200
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID:-taskflow-dev-root}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  vault-init:
+    image: hashicorp/vault:1.18
+    container_name: taskflow-vault-init
+    restart: "no"
     depends_on:
-      postgres:
+      vault:
         condition: service_healthy
     environment:
-      NODE_ENV: production
-      PORT: 3000
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_DEV_ROOT_TOKEN_ID:-taskflow-dev-root}
       DATABASE_URL: postgresql://${POSTGRES_USER:-taskflow_user}:${POSTGRES_PASSWORD:-taskflow_secure_password_123}@postgres:5432/${POSTGRES_DB:-taskflow}?schema=public
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       JWT_SECRET: ${JWT_SECRET:-taskflow_jwt_secret_change_me_in_production_min32chars}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-7d}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-taskflow_internal_cron_key_change_me}
@@ -40,6 +69,33 @@ services:
       LLM_MODEL: ${LLM_MODEL:-}
       LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-30000}
       LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-2048}
+    volumes:
+      - ./infra/vault/init-vault.sh:/init-vault.sh:ro
+      - vault_auth:/vault-auth
+    command: ["sh", "-c", "tr -d '\\r' < /init-vault.sh | sh"]
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: taskflow-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      VAULT_ADDR: http://vault:8200
+      VAULT_SECRET_PATH: secret/data/taskflow/backend
+      VAULT_ROLE_ID_FILE: /vault-auth/role_id
+      VAULT_SECRET_ID_FILE: /vault-auth/secret_id
+    volumes:
+      - vault_auth:/vault-auth:ro
     ports:
       - "3000:3000"
     healthcheck:
@@ -61,5 +117,29 @@ services:
     ports:
       - "80:80"
 
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: taskflow-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      BACKEND_INTERNAL_URL: http://backend:3000
+      VAULT_ADDR: http://vault:8200
+      VAULT_SECRET_PATH: secret/data/taskflow/backend
+      VAULT_ROLE_ID_FILE: /vault-auth/role_id
+      VAULT_SECRET_ID_FILE: /vault-auth/secret_id
+    volumes:
+      - vault_auth:/vault-auth:ro
+
 volumes:
   postgres_data:
+  vault_auth:

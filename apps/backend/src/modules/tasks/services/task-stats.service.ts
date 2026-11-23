@@ -1,15 +1,19 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service.js';
+import { RedisService } from '../../redis/redis.service.js';
 import { FilterTasksDto } from '../dto/filter-tasks.dto.js';
 import { TaskPolicyService } from '../policies/task-policy.service.js';
 import { Prisma } from '@prisma/client';
 import { getVietnamTodayDate } from './task-validation.utils.js';
+
+const TASK_STATS_CACHE_TTL_SEC = 60;
 
 @Injectable()
 export class TaskStatsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly policy: TaskPolicyService,
+    @Optional() private readonly redisService?: RedisService,
   ) {}
 
   async getStats(userId: number, query?: FilterTasksDto) {
@@ -42,6 +46,33 @@ export class TaskStatsService {
         )
       `;
     }
+
+    const statsVersion = await this.redisService?.getStatsVersion(userId);
+    const cacheKey = statsVersion
+      ? `taskflow:stats:v${statsVersion}:u:${userId}:t:${query?.teamId ?? 'all'}:s:${query?.scope ?? 'all'}`
+      : null;
+
+    if (cacheKey) {
+      const cached = await this.redisService?.getJson<Awaited<ReturnType<TaskStatsService['computeStats']>>>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    }
+
+    const result = await this.computeStats(userId, query, todayDate, next7Days, teamAccessSql);
+    if (cacheKey) {
+      await this.redisService?.setJson(cacheKey, result, TASK_STATS_CACHE_TTL_SEC);
+    }
+    return result;
+  }
+
+  private async computeStats(
+    userId: number,
+    query: FilterTasksDto | undefined,
+    todayDate: Date,
+    next7Days: Date,
+    teamAccessSql: Prisma.Sql,
+  ) {
 
     let scopeSql = Prisma.sql`1=1`;
     if (query?.scope === 'created_by_me') {

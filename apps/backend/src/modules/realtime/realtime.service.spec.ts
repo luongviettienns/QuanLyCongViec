@@ -171,4 +171,28 @@ describe('RealtimeService', () => {
     expect(completed).toBe(true);
     sub.unsubscribe();
   });
+
+  it('invalidates cached task stats for affected users on TASK_/SUBTASK_/TEAM_ events only', async () => {
+    const redisMock = {
+      invalidateTaskStatsForUsers: vi.fn().mockResolvedValue(undefined),
+    };
+    const serviceWithRedis = new RealtimeService(mockPrisma, redisMock as never);
+
+    await serviceWithRedis.emit({
+      type: 'TASK_CREATED',
+      actorId: 1,
+      targetUserIds: [1, 2],
+      payload: { taskId: 10 },
+    });
+    expect(redisMock.invalidateTaskStatsForUsers).toHaveBeenCalledWith([1, 2]);
+
+    redisMock.invalidateTaskStatsForUsers.mockClear();
+    await serviceWithRedis.emit({
+      type: 'NOTIFICATION_NEW',
+      actorId: 1,
+      targetUserIds: [2],
+      payload: { id: 99 },
+    });
+    expect(redisMock.invalidateTaskStatsForUsers).not.toHaveBeenCalled();
+  });
 });

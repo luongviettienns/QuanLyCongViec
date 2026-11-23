@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../../database/prisma.service.js';
 import { NotificationEventService } from './notification-event.service.js';
 import { TaskStatus } from '@prisma/client';
@@ -179,7 +178,6 @@ export class DeadlineReminderService {
     };
   }
 
-  @Cron('0 8 * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
   async scheduledScan() {
     return this.checkAndSendReminders();
   }

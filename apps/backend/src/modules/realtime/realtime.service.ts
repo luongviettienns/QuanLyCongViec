@@ -1,15 +1,27 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Subject, Observable, interval, merge, map, filter, timer, takeUntil } from 'rxjs';
 import type { MessageEvent } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service.js';
+import { RedisService } from '../redis/redis.service.js';
 import type { RealtimeBroadcastEvent } from './realtime.types.js';
+
+function shouldInvalidateTaskStats(eventType: string): boolean {
+  return (
+    eventType.startsWith('TASK_') ||
+    eventType.startsWith('SUBTASK_') ||
+    eventType.startsWith('TEAM_')
+  );
+}
 
 @Injectable()
 export class RealtimeService {
   private readonly logger = new Logger(RealtimeService.name);
   private readonly eventBus$ = new Subject<RealtimeBroadcastEvent>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly redisService?: RedisService,
+  ) {}
 
   /**
    * Broadcast an event to target users or team members
@@ -36,6 +48,16 @@ export class RealtimeService {
         targetUserIds: targetUserIds.length > 0 ? Array.from(new Set(targetUserIds)) : undefined,
         timestamp: Date.now(),
       };
+
+      if (shouldInvalidateTaskStats(event.type) && this.redisService) {
+        const affectedUserIds = Array.from(
+          new Set([
+            ...(fullEvent.targetUserIds ?? []),
+            ...(event.actorId ? [event.actorId] : []),
+          ]),
+        );
+        await this.redisService.invalidateTaskStatsForUsers(affectedUserIds);
+      }
 
       this.eventBus$.next(fullEvent);
     } catch (err) {
