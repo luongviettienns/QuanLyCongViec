@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { ROUTING_KEY_DEADLINE_REMINDER } from '@taskflow/shared/rabbitmq';
 import { WorkerJobsService } from '../worker-jobs.service.js';
 
 describe('WorkerJobsService', () => {
@@ -90,5 +91,55 @@ describe('WorkerJobsService', () => {
         },
       },
     });
+  });
+
+  it('publishes deadline reminder job to RabbitMQ when enabled and falls back to HTTP on publish failure', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ scanned: 1, deadlineSoonSent: 1, overdueSent: 0 }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    const prismaMock = {
+      teamActivityLog: { deleteMany: vi.fn() },
+      $disconnect: vi.fn(),
+    };
+    const rabbitMock = {
+      isEnabled: vi.fn().mockReturnValue(true),
+      publish: vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const service = new WorkerJobsService({
+      prisma: prismaMock as never,
+      fetchFn: fetchMock,
+      backendUrl: 'http://backend:3000',
+      internalApiKey: 'secret-key',
+      rabbitMq: rabbitMock,
+    });
+
+    await expect(service.triggerDeadlineReminders()).resolves.toEqual({
+      ok: true,
+      queued: true,
+    });
+    expect(rabbitMock.publish).toHaveBeenCalledWith(
+      ROUTING_KEY_DEADLINE_REMINDER,
+      expect.objectContaining({
+        type: 'DEADLINE_REMINDER_SCAN',
+        triggeredAt: expect.any(String),
+      }),
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await expect(service.triggerDeadlineReminders()).resolves.toEqual({
+      ok: true,
+      scanned: 1,
+      deadlineSoonSent: 1,
+      overdueSent: 0,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await service.onModuleDestroy();
+    expect(rabbitMock.close).toHaveBeenCalledTimes(1);
   });
 });

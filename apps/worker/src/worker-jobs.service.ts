@@ -1,12 +1,18 @@
 import { Injectable, Logger, Optional, type OnModuleDestroy } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaClient } from '@prisma/client';
+import {
+  ROUTING_KEY_DEADLINE_REMINDER,
+  RabbitMqClient,
+  type DeadlineReminderJobPayload,
+} from '@taskflow/shared/rabbitmq';
 
 export interface WorkerJobsOptions {
   prisma?: Pick<PrismaClient, 'teamActivityLog' | '$disconnect'>;
   fetchFn?: typeof fetch;
   backendUrl?: string;
   internalApiKey?: string;
+  rabbitMq?: Pick<RabbitMqClient, 'isEnabled' | 'publish' | 'close'>;
 }
 
 @Injectable()
@@ -16,6 +22,7 @@ export class WorkerJobsService implements OnModuleDestroy {
   private readonly fetchFn: typeof fetch;
   private readonly backendUrl: string;
   private readonly internalApiKey: string;
+  private readonly rabbitMq: Pick<RabbitMqClient, 'isEnabled' | 'publish' | 'close'>;
   private readonly ownsPrisma: boolean;
 
   constructor(@Optional() options?: WorkerJobsOptions) {
@@ -30,19 +37,39 @@ export class WorkerJobsService implements OnModuleDestroy {
       .trim()
       .replace(/\/+$/, '');
     this.internalApiKey = (options?.internalApiKey ?? process.env.INTERNAL_API_KEY ?? '').trim();
+    this.rabbitMq = options?.rabbitMq ?? new RabbitMqClient({
+      logger: {
+        warn: (msg) => this.logger.warn(msg),
+        error: (msg) => this.logger.error(msg),
+      },
+    });
   }
 
   /**
-   * Triggers deadline reminders via backend internal API so SSE events are delivered to online users.
+   * Triggers deadline reminders via RabbitMQ (with HTTP internal API fallback).
    * Scheduled daily at 08:00 AM Asia/Ho_Chi_Minh.
    */
   @Cron('0 8 * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
   async triggerDeadlineReminders(): Promise<{
     ok: boolean;
+    queued?: boolean;
     scanned?: number;
     deadlineSoonSent?: number;
     overdueSent?: number;
   }> {
+    if (this.rabbitMq.isEnabled()) {
+      const payload: DeadlineReminderJobPayload = {
+        type: 'DEADLINE_REMINDER_SCAN',
+        triggeredAt: new Date().toISOString(),
+      };
+      const published = await this.rabbitMq.publish(ROUTING_KEY_DEADLINE_REMINDER, payload);
+      if (published) {
+        this.logger.log('Deadline reminder job published to RabbitMQ.');
+        return { ok: true, queued: true };
+      }
+      this.logger.warn('RabbitMQ publish failed; falling back to HTTP internal trigger.');
+    }
+
     if (!this.internalApiKey) {
       this.logger.error('INTERNAL_API_KEY is missing; skipping deadline reminder trigger.');
       return { ok: false };
@@ -114,6 +141,7 @@ export class WorkerJobsService implements OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
+    await this.rabbitMq.close();
     if (this.ownsPrisma) {
       await this.prisma.$disconnect().catch(() => undefined);
     }

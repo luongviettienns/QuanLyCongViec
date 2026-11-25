@@ -23,6 +23,7 @@ echo "[vault-init] Seeding backend secrets into secret/taskflow/backend..."
 vault kv put secret/taskflow/backend \
   DATABASE_URL="${DATABASE_URL}" \
   REDIS_URL="${REDIS_URL:-redis://redis:6379}" \
+  RABBITMQ_URL="${RABBITMQ_URL:-amqp://taskflow:taskflow_rabbit_123@rabbitmq:5672}" \
   JWT_SECRET="${JWT_SECRET}" \
   JWT_EXPIRATION="${JWT_EXPIRATION:-7d}" \
   INTERNAL_API_KEY="${INTERNAL_API_KEY}" \

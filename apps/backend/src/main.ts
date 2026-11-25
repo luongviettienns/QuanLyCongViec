@@ -7,6 +7,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ExpressAdapter, type NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import helmet from 'helmet';
 import { PrismaClientExceptionFilter } from './common/index.js';
 import { loadVaultEnv } from './config/vault-env.js';
 
@@ -27,6 +28,12 @@ async function bootstrap() {
   );
 
   app.set('trust proxy', 1);
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
 
   const frontendDistDir = process.env.FRONTEND_DIST_DIR;
   if (frontendDistDir) {
@@ -82,6 +89,7 @@ async function bootstrap() {
     SwaggerModule.setup('docs', app, swaggerDocument);
   }
 
+  app.enableShutdownHooks();
   await app.listen(process.env.PORT ?? 3000);
 }
 await bootstrap();

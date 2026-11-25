@@ -4,6 +4,7 @@ import { NotificationsService } from './services/notifications.service.js';
 import { NotificationEventService } from './services/notification-event.service.js';
 import { NotificationRecipientService } from './services/notification-recipient.service.js';
 import { DeadlineReminderService } from './services/deadline-reminder.service.js';
+import { DeadlineReminderConsumer } from './services/deadline-reminder.consumer.js';
 import { AuthModule } from '../auth/auth.module.js';
 
 @Module({
@@ -14,6 +15,7 @@ import { AuthModule } from '../auth/auth.module.js';
     NotificationEventService,
     NotificationRecipientService,
     DeadlineReminderService,
+    DeadlineReminderConsumer,
   ],
   exports: [
     NotificationsService,

@@ -6,6 +6,7 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { DatabaseModule } from './database/database.module.js';
 import { RedisModule } from './modules/redis/redis.module.js';
+import { RabbitMqModule } from './modules/rabbitmq/rabbitmq.module.js';
 import { TaskModule } from './modules/tasks/task.module.js';
 import { CategoriesModule } from './modules/categories/categories.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
@@ -34,6 +35,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     }),
     DatabaseModule,
     RedisModule,
+    RabbitMqModule,
     AuthModule,
     RealtimeModule,
     TaskModule,

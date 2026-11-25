@@ -29,6 +29,24 @@ services:
       timeout: 5s
       retries: 5
 
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: taskflow-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-taskflow}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-taskflow_rabbit_123}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   vault:
     image: hashicorp/vault:1.18
     container_name: taskflow-vault
@@ -59,6 +77,7 @@ services:
       VAULT_TOKEN: ${VAULT_DEV_ROOT_TOKEN_ID:-taskflow-dev-root}
       DATABASE_URL: postgresql://${POSTGRES_USER:-taskflow_user}:${POSTGRES_PASSWORD:-taskflow_secure_password_123}@postgres:5432/${POSTGRES_DB:-taskflow}?schema=public
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://${RABBITMQ_USER:-taskflow}:${RABBITMQ_PASS:-taskflow_rabbit_123}@rabbitmq:5672}
       JWT_SECRET: ${JWT_SECRET:-taskflow_jwt_secret_change_me_in_production_min32chars}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-7d}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-taskflow_internal_cron_key_change_me}
@@ -84,6 +103,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
       vault-init:
         condition: service_completed_successfully
@@ -126,6 +147,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
       vault-init:
         condition: service_completed_successfully
       backend:
@@ -142,4 +165,5 @@ services:
 
 volumes:
   postgres_data:
+  rabbitmq_data:
   vault_auth:
