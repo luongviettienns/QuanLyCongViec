@@ -11,6 +11,7 @@ export interface RealtimeNotificationPayload {
   content?: string;
   taskId?: number | null;
   subtaskId?: number | null;
+  commentId?: number | null;
   teamId?: number | null;
   isRead?: boolean;
   createdAt?: string;
@@ -20,7 +21,8 @@ export interface NotificationDestination {
   type: 'task' | 'team';
   id: number;
   subtaskId?: number | null;
-  targetTab?: 'info' | 'collaborators' | 'subtasks';
+  commentId?: number | null;
+  targetTab?: 'info' | 'collaborators' | 'subtasks' | 'comments';
 }
 
 export type NotificationTimeGroupKey = 'today' | 'yesterday' | 'earlier';
@@ -41,7 +43,7 @@ export interface NotificationVisualStyle {
 }
 
 /**
- * Mirrors backend IMPORTANT_NOTIFICATION_TYPES (14 types) for consistent
+ * Mirrors backend IMPORTANT_NOTIFICATION_TYPES (16 types) for consistent
  * "Quan trọng" filtering across cursor queries and live SSE arrivals.
  */
 export const IMPORTANT_NOTIFICATION_TYPES: ReadonlySet<NotificationType> = new Set([
@@ -59,6 +61,8 @@ export const IMPORTANT_NOTIFICATION_TYPES: ReadonlySet<NotificationType> = new S
   'TEAM_MEMBER_REMOVED',
   'TEAM_ROLE_CHANGED',
   'TEAM_DELETED',
+  'TASK_COMMENT_MENTIONED',
+  'TASK_COMMENT_REPLIED',
 ]);
 
 const VN_CALENDAR_FORMATTER = new Intl.DateTimeFormat('en-CA', {
@@ -193,13 +197,21 @@ export function getNotificationVisualStyle(type: NotificationType): Notification
 
 /**
  * Resolves which modal tab to focus when opening a task from a notification.
- * Prioritizes subtask navigation if a subtaskId is present, then checks for collaborator
+ * Prioritizes comment navigation, then subtask navigation, then collaborator
  * events, falling back to 'info'.
  */
 export function resolveNotificationModalTab(
   type?: NotificationType,
   subtaskId?: number | null,
-): 'info' | 'collaborators' | 'subtasks' {
+  commentId?: number | null,
+): 'info' | 'collaborators' | 'subtasks' | 'comments' {
+  if (
+    commentId ||
+    type === 'TASK_COMMENT_MENTIONED' ||
+    type === 'TASK_COMMENT_REPLIED'
+  ) {
+    return 'comments';
+  }
   if (subtaskId) {
     return 'subtasks';
   }
@@ -275,6 +287,7 @@ export function mergeRealtimeNotificationState(
     readAt: null,
     taskId: payload.taskId ?? null,
     subtaskId: payload.subtaskId ?? null,
+    commentId: payload.commentId ?? null,
     teamId: payload.teamId ?? null,
     eventKey: null,
     createdAt: nowIso,
@@ -305,13 +318,14 @@ export function appendPaginatedNotifications(
  * so the router can deep-link directly to the subtask tab and highlight it.
  */
 export function buildNotificationDestination(
-  notification: Pick<Notification, 'taskId' | 'subtaskId' | 'teamId'>,
+  notification: Pick<Notification, 'taskId' | 'subtaskId' | 'commentId' | 'teamId'>,
 ): NotificationDestination | null {
   if (notification.taskId) {
     return {
       type: 'task',
       id: notification.taskId,
       subtaskId: notification.subtaskId ?? null,
+      ...(notification.commentId ? { commentId: notification.commentId } : {}),
     };
   }
 

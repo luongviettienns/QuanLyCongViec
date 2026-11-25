@@ -14,6 +14,7 @@ import { TaskPolicyService } from './policies/task-policy.service.js';
 import { TaskWorkflowPolicy } from './policies/task-workflow-policy.service.js';
 import { TaskCollaboratorService } from './services/task-collaborator.service.js';
 import { SubtaskService } from './services/subtask.service.js';
+import { TaskCommentService } from './services/task-comment.service.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { TeamActivityModule } from '../team-activity/team-activity.module.js';
@@ -36,6 +37,7 @@ import { TeamActivityModule } from '../team-activity/team-activity.module.js';
     TaskWorkflowPolicy,
     TaskCollaboratorService,
     SubtaskService,
+    TaskCommentService,
   ],
   exports: [
     TasksService,
@@ -43,6 +45,7 @@ import { TeamActivityModule } from '../team-activity/team-activity.module.js';
     TaskWorkflowPolicy,
     TaskCollaboratorService,
     SubtaskService,
+    TaskCommentService,
     TaskWorkflowService,
     TaskStatusService,
     TaskAssignmentService,

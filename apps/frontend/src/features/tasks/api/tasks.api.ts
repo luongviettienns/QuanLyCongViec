@@ -3,6 +3,9 @@ import type {
   TrashTask,
   TaskCollaborator,
   Subtask,
+  TaskComment,
+  CreateTaskCommentPayload,
+  UpdateTaskCommentPayload,
   CreateTaskPayload,
   UpdateTaskPayload,
   UpdateTaskContentPayload,
@@ -421,4 +424,67 @@ export async function reorderSubtasks(taskId: number, subtaskIds: number[]): Pro
   });
 
   return handleApiResponse<Subtask[]>(response, 'Không thể sắp xếp công việc con');
+}
+
+// ==================== COMMENT & @MENTION APIs ====================
+
+export async function getTaskComments(taskId: number, signal?: AbortSignal): Promise<TaskComment[]> {
+  const response = await safeFetch(`/api/tasks/${taskId}/comments`, {
+    headers: {
+      ...getAuthHeaders(),
+    },
+    signal,
+  });
+
+  return handleApiResponse<TaskComment[]>(response, 'Không thể tải danh sách bình luận');
+}
+
+export async function createTaskComment(
+  taskId: number,
+  data: CreateTaskCommentPayload,
+): Promise<TaskComment> {
+  const response = await safeFetch(`/api/tasks/${taskId}/comments`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify(data),
+  });
+
+  return handleApiResponse<TaskComment>(response, 'Không thể gửi bình luận');
+}
+
+export async function updateTaskComment(
+  taskId: number,
+  commentId: number,
+  data: UpdateTaskCommentPayload,
+): Promise<TaskComment> {
+  const response = await safeFetch(`/api/tasks/${taskId}/comments/${commentId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify(data),
+  });
+
+  return handleApiResponse<TaskComment>(response, 'Không thể cập nhật bình luận');
+}
+
+export async function deleteTaskComment(
+  taskId: number,
+  commentId: number,
+): Promise<{ success: boolean; deletedId: number }> {
+  const response = await safeFetch(`/api/tasks/${taskId}/comments/${commentId}`, {
+    method: 'DELETE',
+    headers: {
+      ...getAuthHeaders(),
+    },
+  });
+
+  return handleApiResponse<{ success: boolean; deletedId: number }>(
+    response,
+    'Không thể xoá bình luận',
+  );
 }

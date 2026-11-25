@@ -17,7 +17,7 @@ import {
   TeamOutlined,
   HistoryOutlined,
 } from '@ant-design/icons';
-import type { Subtask, Task, TaskPriority, TaskStatus } from '../../../tasks/types/task.types.ts';
+import type { Subtask, Task, TaskModalTab, TaskPriority, TaskStatus } from '../../../tasks/types/task.types.ts';
 import type { Team, TeamMember } from '../../types/team.types.ts';
 import type { User } from '../../../auth/types/auth.types.ts';
 import type {
@@ -44,7 +44,7 @@ export interface TeamCommandPanelProps {
   team: Team | null;
   currentUser: User | null;
   contextMode?: 'tasks' | 'members' | 'activity';
-  onOpenFullModal: (task: Task) => void;
+  onOpenFullModal: (task: Task, tab?: TaskModalTab) => void;
   onUpdateStatus?: (taskId: number, status: TaskStatus) => Promise<boolean | void>;
   onUpdateAssignee?: (taskId: number, assigneeId: number | null) => Promise<boolean | void>;
   onUpdateDueDate?: (taskId: number, dueDate: string | null) => Promise<boolean | void>;

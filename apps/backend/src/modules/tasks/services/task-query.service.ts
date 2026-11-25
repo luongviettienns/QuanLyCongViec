@@ -281,6 +281,9 @@ export class TaskQueryService {
           },
           orderBy: { position: 'asc' },
         },
+        _count: {
+          select: { comments: true },
+        },
       },
       orderBy: this.buildOrderBy(query?.sortBy),
     });
@@ -334,6 +337,9 @@ export class TaskQueryService {
         },
         team: {
           include: {
+            owner: {
+              select: { id: true, name: true, email: true },
+            },
             members: {
               include: {
                 user: {
@@ -368,6 +374,9 @@ export class TaskQueryService {
             },
           },
           orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+        },
+        _count: {
+          select: { comments: true },
         },
       },
     });

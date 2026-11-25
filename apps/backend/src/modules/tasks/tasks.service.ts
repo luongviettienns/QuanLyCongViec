@@ -8,6 +8,7 @@ import { TaskReorderService } from './services/task-reorder.service.js';
 import { TaskStatsService } from './services/task-stats.service.js';
 import { TaskCollaboratorService } from './services/task-collaborator.service.js';
 import { SubtaskService } from './services/subtask.service.js';
+import { TaskCommentService } from './services/task-comment.service.js';
 import { RealtimeService } from '../realtime/realtime.service.js';
 import { CreateTaskDto } from './dto/create-task.dto.js';
 import { UpdateTaskDto } from './dto/update-task.dto.js';
@@ -24,6 +25,8 @@ import { CreateSubtaskDto } from './dto/create-subtask.dto.js';
 import { UpdateSubtaskDto } from './dto/update-subtask.dto.js';
 import { UpdateSubtaskStatusDto } from './dto/update-subtask-status.dto.js';
 import { ReorderSubtasksDto } from './dto/reorder-subtasks.dto.js';
+import { CreateTaskCommentDto } from './dto/create-task-comment.dto.js';
+import { UpdateTaskCommentDto } from './dto/update-task-comment.dto.js';
 import type { TaskWithTeamAndMembers } from './policies/task-policy.service.js';
 import type { Task } from '@prisma/client';
 import { BulkUpdateTaskStatusDto } from './dto/bulk-update-task-status.dto.js';
@@ -41,6 +44,7 @@ export class TasksService {
     private readonly taskStatsService: TaskStatsService,
     private readonly taskCollaboratorService: TaskCollaboratorService,
     private readonly subtaskService: SubtaskService,
+    private readonly taskCommentService: TaskCommentService,
     private readonly realtimeService: RealtimeService,
   ) {}
 
@@ -268,5 +272,22 @@ export class TasksService {
 
   reorderSubtasks(taskId: number, dto: ReorderSubtasksDto, userId: number) {
     return this.subtaskService.reorder(taskId, dto, userId);
+  }
+
+  // Comments
+  getComments(taskId: number, userId: number) {
+    return this.taskCommentService.getComments(taskId, userId);
+  }
+
+  createComment(taskId: number, dto: CreateTaskCommentDto, userId: number) {
+    return this.taskCommentService.create(taskId, dto, userId);
+  }
+
+  updateComment(taskId: number, commentId: number, dto: UpdateTaskCommentDto, userId: number) {
+    return this.taskCommentService.update(taskId, commentId, dto, userId);
+  }
+
+  removeComment(taskId: number, commentId: number, userId: number) {
+    return this.taskCommentService.remove(taskId, commentId, userId);
   }
 }

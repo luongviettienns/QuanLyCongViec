@@ -5,13 +5,14 @@ import {
 } from '../../features/realtime';
 
 import type { AppNavKey } from '../layouts/AppLayout';
+import type { TaskModalTab } from '../../features/tasks/types/task.types';
 
 export interface UseAppRealtimeSyncOptions {
   token?: string | null;
   userId?: number;
   currentNav?: AppNavKey;
   activeModalTaskId?: number | null;
-  activeModalTab?: 'info' | 'collaborators' | 'subtasks';
+  activeModalTab?: TaskModalTab;
   onRefetchTasks: () => void | Promise<void>;
   onRefetchCategories: () => void | Promise<void>;
   onRefetchTeams: () => void | Promise<void>;
@@ -77,6 +78,7 @@ export function useAppRealtimeSync(options: UseAppRealtimeSyncOptions) {
   useRealtimeEvent('SUBTASK_DELETED', handleRealtimeTaskEvent);
   useRealtimeEvent('SUBTASK_REORDERED', handleRealtimeTaskEvent);
   useRealtimeEvent('TASK_COLLABORATORS_CHANGED', handleRealtimeTaskEvent);
+  useRealtimeEvent('TASK_COMMENT_CHANGED', handleRealtimeTaskEvent);
 
   const handleRealtimeNotification = useCallback(() => {
     const { onNotificationNew } = optionsRef.current;
@@ -153,6 +155,7 @@ export function useAppRealtimeSync(options: UseAppRealtimeSyncOptions) {
   useRealtimeEvent('SUBTASK_UPDATED', handleRealtimeModalEvent);
   useRealtimeEvent('SUBTASK_DELETED', handleRealtimeModalEvent);
   useRealtimeEvent('SUBTASK_REORDERED', handleRealtimeModalEvent);
+  useRealtimeEvent('TASK_COMMENT_CHANGED', handleRealtimeModalEvent);
 
   return {
     scheduleRefetch,

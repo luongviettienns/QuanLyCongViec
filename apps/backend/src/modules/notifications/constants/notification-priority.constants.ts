@@ -20,6 +20,8 @@ export const IMPORTANT_NOTIFICATION_TYPES: readonly NotificationType[] = [
   NotificationType.TEAM_MEMBER_REMOVED,
   NotificationType.TEAM_ROLE_CHANGED,
   NotificationType.TEAM_DELETED,
+  NotificationType.TASK_COMMENT_MENTIONED,
+  NotificationType.TASK_COMMENT_REPLIED,
 ] as const;
 
 const IMPORTANT_NOTIFICATION_TYPE_SET: ReadonlySet<NotificationType> = new Set(

@@ -24,7 +24,9 @@ export type NotificationType =
   | 'SUBTASK_UNASSIGNED'
   | 'SUBTASK_STATUS_CHANGED'
   | 'SUBTASK_COMPLETED'
-  | 'SUBTASK_REOPENED';
+  | 'SUBTASK_REOPENED'
+  | 'TASK_COMMENT_MENTIONED'
+  | 'TASK_COMMENT_REPLIED';
 
 export interface NotificationActor {
   id: number;
@@ -43,6 +45,7 @@ export interface Notification {
   readAt: string | null;
   taskId: number | null;
   subtaskId?: number | null;
+  commentId?: number | null;
   teamId: number | null;
   eventKey: string | null;
   createdAt: string;

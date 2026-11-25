@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { message } from 'antd';
-import type { Task } from '../../features/tasks/types/task.types';
+import type { Task, TaskModalTab } from '../../features/tasks/types/task.types';
 import type { NotificationDestination } from '../../features/notifications';
 import { getTaskById } from '../../features/tasks/api/tasks.api';
 import { resolveOpenedModalTask } from '../../features/tasks/utils/my-tasks.utils';
@@ -13,7 +13,7 @@ import {
   getFriendlyErrorMessage,
 } from '../../shared/api';
 
-export type TaskModalTab = 'info' | 'collaborators' | 'subtasks';
+export type { TaskModalTab };
 
 export interface TaskModalState {
   open: boolean;
@@ -23,6 +23,7 @@ export interface TaskModalState {
   defaultTeamId?: number | null;
   defaultDate?: string | null;
   highlightSubtaskId?: number | null;
+  highlightCommentId?: number | null;
 }
 
 export interface UseTaskModalControllerOptions {
@@ -42,6 +43,7 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
     defaultTeamId: null,
     defaultDate: null,
     highlightSubtaskId: null,
+    highlightCommentId: null,
   });
 
   const [modalTaskOverride, setModalTaskOverride] = useState<Task | null>(null);
@@ -68,6 +70,7 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
       defaultTeamId: null,
       defaultDate: null,
       highlightSubtaskId: null,
+      highlightCommentId: null,
     });
   }, []);
 
@@ -84,6 +87,7 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
         defaultTeamId: defaultTeamId ?? null,
         defaultDate: defaultDate ?? null,
         highlightSubtaskId: null,
+        highlightCommentId: null,
       });
     },
     [ensureMetadataLoaded],
@@ -102,6 +106,7 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
         defaultTeamId: task.teamId ?? null,
         defaultDate: null,
         highlightSubtaskId: null,
+        highlightCommentId: null,
       });
     },
     [ensureMetadataLoaded],
@@ -178,7 +183,9 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
         const targetTask = await getTaskById(dest.id);
         modalTaskIdRef.current = targetTask.id;
         setModalTaskOverride(targetTask);
-        const targetTab: TaskModalTab = dest.targetTab ?? (dest.subtaskId ? 'subtasks' : 'info');
+        const targetTab: TaskModalTab =
+          dest.targetTab ??
+          (dest.commentId ? 'comments' : dest.subtaskId ? 'subtasks' : 'info');
         setModalState({
           open: true,
           task: targetTask,
@@ -186,6 +193,7 @@ export function useTaskModalController(options: UseTaskModalControllerOptions) {
           initialTab: targetTab,
           defaultTeamId: targetTask.teamId ?? null,
           highlightSubtaskId: dest.subtaskId ?? null,
+          highlightCommentId: dest.commentId ?? null,
         });
       } catch (err: unknown) {
         if (isAbortError(err) || isUnauthorizedError(err)) {

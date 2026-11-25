@@ -13,10 +13,11 @@ import {
   InfoCircleOutlined,
   TeamOutlined,
   UnorderedListOutlined,
+  MessageOutlined,
   DeleteOutlined,
 } from '@ant-design/icons';
 import { useResponsive } from '../../../shared/hooks';
-import type { Subtask, Task, TaskFormValues } from '../types/task.types';
+import type { Subtask, Task, TaskFormValues, TaskModalTab } from '../types/task.types';
 import { TASK_STATUS_CONFIG } from '../types/task.types';
 import type { Category } from '../../categories/types/category.types';
 import type { Team } from '../../teams/types/team.types';
@@ -37,6 +38,7 @@ import {
 } from '../utils/checklist.utils';
 import { TaskCollaboratorsSection } from './TaskCollaboratorsSection';
 import { TaskSubtasksSection } from './TaskSubtasksSection';
+import { TaskCommentsSection } from './TaskCommentsSection';
 import { TaskInfoForm } from './TaskInfoForm';
 import { TaskReturnAction } from './TaskReturnAction';
 
@@ -45,8 +47,9 @@ export interface TaskFormModalProps {
   task: Task | null;
   defaultTeamId?: number | null;
   defaultDate?: string | null;
-  initialTab?: 'info' | 'collaborators' | 'subtasks';
+  initialTab?: TaskModalTab;
   highlightSubtaskId?: number | null;
+  highlightCommentId?: number | null;
   categories: Category[];
   teams?: Team[];
   onClose: () => void;
@@ -79,6 +82,7 @@ export default function TaskFormModal({
   defaultDate,
   initialTab = 'info',
   highlightSubtaskId = null,
+  highlightCommentId = null,
   categories,
   teams = [],
   onClose,
@@ -91,9 +95,10 @@ export default function TaskFormModal({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [liveSubtasks, setLiveSubtasks] = useState<LiveChecklistCache | null>(null);
-  const [activeTab, setActiveTab] = useState<'info' | 'collaborators' | 'subtasks'>(
-    () => initialTab,
+  const [liveCommentsCount, setLiveCommentsCount] = useState<{ taskId: number; count: number } | null>(
+    null,
   );
+  const [activeTab, setActiveTab] = useState<TaskModalTab>(() => initialTab);
   const [baseVersion, setBaseVersion] = useState<string>(() => getTaskVersion(task));
   const [isFormDirty, setIsFormDirty] = useState(false);
   const syncedVersionRef = useRef<string>('');
@@ -414,10 +419,12 @@ export default function TaskFormModal({
       afterOpenChange={(visible) => {
         if (!visible) {
           setLiveSubtasks(null);
+          setLiveCommentsCount(null);
           return;
         }
         if (visible) {
           setLiveSubtasks(null);
+          setLiveCommentsCount(null);
           setActiveTab(initialTab ?? 'info');
           if (!isFormDirty) {
             if (task) {
@@ -496,7 +503,12 @@ export default function TaskFormModal({
         <Tabs
           activeKey={activeTab}
           onChange={(key) => {
-            if (key === 'info' || key === 'collaborators' || key === 'subtasks') {
+            if (
+              key === 'info' ||
+              key === 'collaborators' ||
+              key === 'subtasks' ||
+              key === 'comments'
+            ) {
               setActiveTab(key);
             }
           }}
@@ -562,6 +574,33 @@ export default function TaskFormModal({
                     });
                     onSubtasksChange?.(targetTaskId, latestSubtasks);
                   }}
+                />
+              ),
+            },
+            {
+              key: 'comments',
+              label: (() => {
+                const count =
+                  liveCommentsCount?.taskId === task.id
+                    ? liveCommentsCount.count
+                    : (task._count?.comments ?? 0);
+                return (
+                  <span>
+                    <MessageOutlined /> Bình luận{count > 0 ? ` (${count})` : ''}
+                  </span>
+                );
+              })(),
+              children: (
+                <TaskCommentsSection
+                  key={task.id}
+                  task={task}
+                  team={taskTeam}
+                  currentUser={user}
+                  highlightCommentId={highlightCommentId}
+                  onCommentsCountChange={(targetTaskId, count) => {
+                    setLiveCommentsCount({ taskId: targetTaskId, count });
+                  }}
+                  onChanged={onSuccess}
                 />
               ),
             },

@@ -23,6 +23,7 @@ import type {
   TaskFilterState,
   TaskFilterPatch,
   TaskViewMode,
+  TaskModalTab,
   BulkTaskResult,
 } from '../types/task.types.ts';
 import type { MyTasksNavigationPreset } from '../utils/my-tasks.utils.ts';
@@ -53,7 +54,7 @@ export interface TasksPageProps {
   onReset: () => void;
   onRetry?: () => void;
   onCreate?: (defaultTeamId?: number | null, defaultDate?: string | null) => void;
-  onEdit: (task: Task) => void;
+  onEdit: (task: Task, defaultTab?: TaskModalTab) => void;
   onDelete: (id: number) => void;
   onRestore: (id: number) => Promise<void>;
   onPermanentDelete: (id: number) => Promise<void>;

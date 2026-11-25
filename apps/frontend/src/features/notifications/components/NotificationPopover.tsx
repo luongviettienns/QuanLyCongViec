@@ -75,7 +75,11 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
       if (dest.type === 'task') {
         onNavigate?.({
           ...dest,
-          targetTab: resolveNotificationModalTab(notification.type, notification.subtaskId),
+          targetTab: resolveNotificationModalTab(
+            notification.type,
+            notification.subtaskId,
+            notification.commentId,
+          ),
         });
       } else {
         onNavigate?.(dest);

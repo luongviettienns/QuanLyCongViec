@@ -313,6 +313,32 @@ export interface SubtaskReopenedEvent {
   timestamp?: number;
 }
 
+export interface TaskCommentMentionedEvent {
+  type: 'TASK_COMMENT_MENTIONED';
+  actorId: number;
+  taskId: number;
+  taskTitle: string;
+  commentId: number;
+  commentPreview: string;
+  mentionedUserIds: number[];
+  teamId?: number | null;
+  idempotencyKey?: string;
+  timestamp?: number;
+}
+
+export interface TaskCommentRepliedEvent {
+  type: 'TASK_COMMENT_REPLIED';
+  actorId: number;
+  taskId: number;
+  taskTitle: string;
+  commentId: number;
+  commentPreview: string;
+  parentAuthorId: number;
+  teamId?: number | null;
+  idempotencyKey?: string;
+  timestamp?: number;
+}
+
 export type DomainNotificationEvent =
   | TaskAssignedEvent
   | TaskUnassignedEvent
@@ -337,4 +363,6 @@ export type DomainNotificationEvent =
   | SubtaskUnassignedEvent
   | SubtaskStatusChangedEvent
   | SubtaskCompletedEvent
-  | SubtaskReopenedEvent;
+  | SubtaskReopenedEvent
+  | TaskCommentMentionedEvent
+  | TaskCommentRepliedEvent;

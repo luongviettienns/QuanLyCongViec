@@ -16,10 +16,11 @@ import {
 import {
   CloseOutlined,
   FullscreenOutlined,
+  MessageOutlined,
   RollbackOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import type { Subtask, Task, TaskPriority, TaskStatus } from '../../../tasks/types/task.types.ts';
+import type { Subtask, Task, TaskModalTab, TaskPriority, TaskStatus } from '../../../tasks/types/task.types.ts';
 import type { Team, TeamMember } from '../../types/team.types.ts';
 import type { User } from '../../../auth/types/auth.types.ts';
 import { getTaskPermissions } from '../../../tasks/utils/task-permission.utils.ts';
@@ -34,7 +35,7 @@ export interface TeamTaskQuickDetailProps {
   team: Team | null;
   currentUser: User | null;
   onClose: () => void;
-  onOpenFullModal: (task: Task) => void;
+  onOpenFullModal: (task: Task, tab?: TaskModalTab) => void;
   onUpdateStatus?: (taskId: number, status: TaskStatus) => Promise<boolean | void>;
   onUpdateAssignee?: (taskId: number, assigneeId: number | null) => Promise<boolean | void>;
   onUpdateDueDate?: (taskId: number, dueDate: string | null) => Promise<boolean | void>;
@@ -110,6 +111,15 @@ export function TeamTaskQuickDetail({
           </Text>
         </Space>
         <Space size={4}>
+          <Button
+            type="text"
+            size="small"
+            icon={<MessageOutlined />}
+            onClick={() => onOpenFullModal(task, 'comments')}
+            title="Thảo luận & @mention"
+          >
+            {(task._count?.comments ?? 0) > 0 ? task._count?.comments : ''}
+          </Button>
           <Button
             type="text"
             size="small"

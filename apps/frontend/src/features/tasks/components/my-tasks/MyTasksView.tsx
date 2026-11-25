@@ -5,7 +5,7 @@ import {
   ReloadOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
-import type { Task } from '../../types/task.types';
+import type { Task, TaskModalTab } from '../../types/task.types';
 import type { Team } from '../../../teams/types/team.types';
 import type { User } from '../../../auth/types/auth.types';
 import { ApiErrorFallback } from '../../../../app/pages/errors';
@@ -31,7 +31,7 @@ export interface MyTasksViewProps {
   presetKey?: number;
   refreshKey?: number;
   onPresetConsumed?: () => void;
-  onOpenFullModal: (task: Task) => void;
+  onOpenFullModal: (task: Task, tab?: TaskModalTab) => void;
   onCreateTask?: () => void;
   onExternalSync?: () => void;
 }

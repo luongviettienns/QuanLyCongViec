@@ -124,6 +124,11 @@ describe('Notification State & Deep-Link Utils', () => {
     const withSubtask = buildNotificationDestination(makeNotif({ taskId: 42, subtaskId: 9, teamId: 3 }));
     assert.deepEqual(withSubtask, { type: 'task', id: 42, subtaskId: 9 });
 
+    const withComment = buildNotificationDestination(
+      makeNotif({ taskId: 42, subtaskId: null, commentId: 77, teamId: 3 }),
+    );
+    assert.deepEqual(withComment, { type: 'task', id: 42, subtaskId: null, commentId: 77 });
+
     const teamOnly = buildNotificationDestination(
       makeNotif({ taskId: null, subtaskId: null, teamId: 7 }),
     );
@@ -135,7 +140,9 @@ describe('Notification State & Deep-Link Utils', () => {
     assert.equal(empty, null);
   });
 
-  it('resolves collaborator modal tab for collaborator events while prioritizing subtaskId', () => {
+  it('resolves comment, subtask, and collaborator modal tabs in priority order', () => {
+    assert.equal(resolveNotificationModalTab('TASK_COMMENT_MENTIONED', null, 55), 'comments');
+    assert.equal(resolveNotificationModalTab('TASK_COMMENT_REPLIED', null, null), 'comments');
     assert.equal(resolveNotificationModalTab('TASK_COLLABORATOR_INVITED', null), 'collaborators');
     assert.equal(resolveNotificationModalTab('TASK_COLLABORATOR_ACCEPTED', null), 'collaborators');
     assert.equal(resolveNotificationModalTab('TASK_COLLABORATOR_DECLINED', null), 'collaborators');
@@ -145,7 +152,7 @@ describe('Notification State & Deep-Link Utils', () => {
     assert.equal(resolveNotificationModalTab('TASK_ASSIGNED', null), 'info');
   });
 
-  it('classifies important notification types matching backend IMPORTANT_NOTIFICATION_TYPES (14 types)', () => {
+  it('classifies important notification types matching backend IMPORTANT_NOTIFICATION_TYPES (16 types)', () => {
     const expectedImportant: NotificationType[] = [
       'TASK_OVERDUE',
       'TASK_DEADLINE_SOON',
@@ -161,6 +168,8 @@ describe('Notification State & Deep-Link Utils', () => {
       'TEAM_MEMBER_REMOVED',
       'TEAM_ROLE_CHANGED',
       'TEAM_DELETED',
+      'TASK_COMMENT_MENTIONED',
+      'TASK_COMMENT_REPLIED',
     ];
     assert.equal(IMPORTANT_NOTIFICATION_TYPES.size, expectedImportant.length);
     for (const type of expectedImportant) {

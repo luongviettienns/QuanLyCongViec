@@ -60,7 +60,7 @@ import type {
   UpdateTeamPayload,
   AddMemberPayload,
 } from '../types/team.types';
-import type { Subtask, Task, TaskPriority, TaskStatus } from '../../tasks/types/task.types';
+import type { Subtask, Task, TaskModalTab, TaskPriority, TaskStatus } from '../../tasks/types/task.types';
 import type { Category } from '../../categories/types/category.types';
 import { TeamModals } from '../components/TeamModals';
 import { TeamCategorySection } from '../components/TeamCategorySection';
@@ -146,6 +146,7 @@ export default function TeamPage({ onTeamChanged, refreshTrigger }: TeamPageProp
   const [quickAssignOpen, setQuickAssignOpen] = useState(false);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [taskModalTask, setTaskModalTask] = useState<Task | null>(null);
+  const [taskModalTab, setTaskModalTab] = useState<TaskModalTab>('info');
 
   // Team Modals state
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -1274,8 +1275,9 @@ export default function TeamPage({ onTeamChanged, refreshTrigger }: TeamPageProp
                 activeAssigneeId={assigneeFilter}
                 team={selectedTeam}
                 currentUser={user}
-                onOpenFullModal={(task) => {
+                onOpenFullModal={(task, tab = 'info') => {
                   setTaskModalTask(task);
+                  setTaskModalTab(tab);
                   setTaskModalOpen(true);
                 }}
                 onUpdateStatus={handleUpdateStatus}
@@ -1348,18 +1350,21 @@ export default function TeamPage({ onTeamChanged, refreshTrigger }: TeamPageProp
       />
 
       <TaskFormModal
+        key={`${taskModalTask?.id ?? 'team-modal'}-${taskModalTab}`}
         open={taskModalOpen}
         task={
           taskModalTask
             ? (teamTasks.find((t) => t.id === taskModalTask.id) ?? taskModalTask)
             : null
         }
+        initialTab={taskModalTab}
         defaultTeamId={selectedTeamId}
         categories={teamCategories}
         teams={teams}
         onClose={() => {
           setTaskModalOpen(false);
           setTaskModalTask(null);
+          setTaskModalTab('info');
         }}
         onSuccess={async () => {
           if (selectedTeamId) {

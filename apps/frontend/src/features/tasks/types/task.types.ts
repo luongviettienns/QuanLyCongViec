@@ -6,6 +6,8 @@ export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE';
 
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH';
 
+export type TaskModalTab = 'info' | 'collaborators' | 'subtasks' | 'comments';
+
 export type CollaboratorStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'REVOKED';
 
 export interface TaskCollaborator {
@@ -95,7 +97,12 @@ export interface Task {
   categoryId?: number | null;
   category?: Category | null;
   teamId?: number | null;
-  team?: { id: number; name: string; ownerId?: number } | null;
+  team?: {
+    id: number;
+    name: string;
+    ownerId?: number;
+    owner?: TeamMemberUser | null;
+  } | null;
   assigneeId?: number | null;
   assignee?: TeamMemberUser | null;
   position?: number;
@@ -105,6 +112,43 @@ export interface Task {
   updatedAt?: string;
   collaborators?: TaskCollaborator[];
   subtasks?: Subtask[];
+  _count?: {
+    comments?: number;
+  };
+}
+
+export interface TaskCommentMention {
+  id: number;
+  name: string;
+}
+
+export interface TaskComment {
+  id: number;
+  taskId: number;
+  authorId: number;
+  parentId: number | null;
+  content: string;
+  mentionedUserIds: number[];
+  mentions: TaskCommentMention[];
+  author: {
+    id: number;
+    name: string;
+    email: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+  replies: TaskComment[];
+}
+
+export interface CreateTaskCommentPayload {
+  content: string;
+  parentId?: number;
+  mentionedUserIds?: number[];
+}
+
+export interface UpdateTaskCommentPayload {
+  content: string;
+  mentionedUserIds?: number[];
 }
 
 export interface TrashTask extends Task {

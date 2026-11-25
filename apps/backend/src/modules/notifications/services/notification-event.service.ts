@@ -82,6 +82,21 @@ export class NotificationEventService {
         }
       }
 
+      const rawCommentId =
+        'commentId' in event && typeof event.commentId === 'number' && event.commentId > 0
+          ? event.commentId
+          : null;
+      let validCommentId = rawCommentId;
+      if (validCommentId && tx.taskComment?.findUnique) {
+        const commentExists = await tx.taskComment.findUnique({
+          where: { id: validCommentId },
+          select: { id: true },
+        });
+        if (!commentExists) {
+          validCommentId = null;
+        }
+      }
+
       const teamId =
         'teamId' in event && typeof event.teamId === 'number' ? event.teamId : null;
 
@@ -92,6 +107,7 @@ export class NotificationEventService {
           recipientId,
           validTaskId,
           rawSubtaskId,
+          rawCommentId,
           teamId,
         );
 
@@ -103,6 +119,7 @@ export class NotificationEventService {
           content,
           taskId: validTaskId,
           subtaskId: validSubtaskId,
+          commentId: validCommentId,
           teamId,
           eventKey,
           isRead: false,
@@ -146,6 +163,7 @@ export class NotificationEventService {
         content: string;
         taskId: number | null;
         subtaskId: number | null;
+        commentId: number | null;
         teamId: number | null;
         isRead: boolean;
         createdAt?: Date;
@@ -165,6 +183,7 @@ export class NotificationEventService {
             content: true,
             taskId: true,
             subtaskId: true,
+            commentId: true,
             teamId: true,
             isRead: true,
             createdAt: true,
@@ -195,6 +214,7 @@ export class NotificationEventService {
               content: notif.content,
               taskId: notif.taskId,
               subtaskId: notif.subtaskId,
+              commentId: notif.commentId,
               teamId: notif.teamId,
               type: notif.type,
               isRead: notif.isRead,
@@ -281,6 +301,7 @@ export class NotificationEventService {
     recipientId: number,
     validTaskId: number | null,
     subtaskId: number | null,
+    commentId: number | null,
     teamId: number | null,
   ): string {
     // 1. Team activity events always preserve their domain attributes (newMemberId, newRole, etc.)
@@ -379,6 +400,10 @@ export class NotificationEventService {
 
       case 'TASK_RETURNED':
         return `${event.type}:${recipientId}:${validTaskId}:${event.reason}:${event.timestamp ?? event.actorId}`;
+
+      case 'TASK_COMMENT_MENTIONED':
+      case 'TASK_COMMENT_REPLIED':
+        return `${event.type}:${recipientId}:${validTaskId}:${commentId}`;
 
       default: {
         const deterministicTag = event.timestamp ?? event.actorId;

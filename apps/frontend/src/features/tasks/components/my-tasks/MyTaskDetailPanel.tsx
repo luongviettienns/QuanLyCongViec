@@ -16,6 +16,7 @@ import {
 import {
   CloseOutlined,
   FullscreenOutlined,
+  MessageOutlined,
   RollbackOutlined,
   TeamOutlined,
   UserOutlined,
@@ -25,6 +26,7 @@ import {
   TASK_STATUS_CONFIG,
   type Subtask,
   type Task,
+  type TaskModalTab,
   type TaskPriority,
   type TaskStatus,
 } from '../../types/task.types';
@@ -56,7 +58,7 @@ export interface MyTaskDetailPanelProps {
   focusSection: MyTaskDetailFocus;
   focusVersion: number;
   onClose: () => void;
-  onOpenFullModal: (task: Task) => void;
+  onOpenFullModal: (task: Task, tab?: TaskModalTab) => void;
   onUpdateStatus: (taskId: number, status: TaskStatus) => Promise<boolean>;
   onUpdateField: (
     taskId: number,
@@ -157,6 +159,16 @@ export const MyTaskDetailPanel: React.FC<MyTaskDetailPanelProps> = ({
           </Tag>
         </Space>
         <Space size={4}>
+          <Button
+            type="text"
+            size="small"
+            icon={<MessageOutlined />}
+            onClick={() => onOpenFullModal(task, 'comments')}
+            aria-label="Thảo luận và @mention"
+            title="Thảo luận & @mention"
+          >
+            {(task._count?.comments ?? 0) > 0 ? task._count?.comments : ''}
+          </Button>
           <Button
             type="text"
             size="small"

@@ -199,6 +199,18 @@ export function renderNotificationTemplate(
         content: `${actorName} đã mở lại việc con "${event.subtaskTitle}" (${statusToVi(event.newStatus)}) trong công việc "${event.taskTitle}".`,
       };
 
+    case 'TASK_COMMENT_MENTIONED':
+      return {
+        title: 'Bạn được nhắc đến trong bình luận',
+        content: `${actorName} đã nhắc đến bạn trong công việc "${event.taskTitle}": "${event.commentPreview}"`,
+      };
+
+    case 'TASK_COMMENT_REPLIED':
+      return {
+        title: 'Có phản hồi mới cho bình luận của bạn',
+        content: `${actorName} đã phản hồi bình luận của bạn trong công việc "${event.taskTitle}": "${event.commentPreview}"`,
+      };
+
     default:
       return {
         title: 'Thông báo hệ thống',

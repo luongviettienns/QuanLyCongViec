@@ -58,6 +58,8 @@ enum NotificationType {
   SUBTASK_STATUS_CHANGED
   SUBTASK_COMPLETED
   SUBTASK_REOPENED
+  TASK_COMMENT_MENTIONED
+  TASK_COMMENT_REPLIED
 }
 
 enum TeamActivityAction {
@@ -147,6 +149,7 @@ model User {
   personalAccessTokens   PersonalAccessToken[]
   aiConversations        AiConversation[]
   aiPendingActions       AiPendingAction[]
+  taskComments           TaskComment[]      @relation("TaskCommentAuthor")
 
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
@@ -237,6 +240,7 @@ model Task {
   notifications Notification[]
   collaborators TaskCollaborator[]
   subtasks      Subtask[]
+  comments      TaskComment[]
 
   deletedAt     DateTime?
   deletedById   Int?
@@ -274,6 +278,9 @@ model Notification {
   subtaskId     Int?
   subtask       Subtask?         @relation(fields: [subtaskId], references: [id], onDelete: SetNull)
 
+  commentId     Int?
+  comment       TaskComment?     @relation(fields: [commentId], references: [id], onDelete: SetNull)
+
   teamId        Int?
   team          Team?            @relation(fields: [teamId], references: [id], onDelete: SetNull)
 
@@ -284,7 +291,34 @@ model Notification {
   @@index([userId, isRead, createdAt])
   @@index([userId, createdAt])
   @@index([subtaskId])
+  @@index([commentId])
   @@map("Notification")
+}
+
+model TaskComment {
+  id               Int            @id @default(autoincrement())
+
+  taskId           Int
+  task             Task           @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  authorId         Int
+  author           User           @relation("TaskCommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  parentId         Int?
+  parent           TaskComment?   @relation("TaskCommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies          TaskComment[]  @relation("TaskCommentReplies")
+
+  content          String
+  mentionedUserIds Int[]          @default([])
+
+  notifications    Notification[]
+
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([taskId, createdAt])
+  @@index([parentId])
+  @@map("TaskComment")
 }
 
 model SystemSetting {

@@ -17,6 +17,7 @@ import {
   StopOutlined,
   BellOutlined,
   OrderedListOutlined,
+  MessageOutlined,
   CheckOutlined,
 } from '@ant-design/icons';
 import type { Notification, NotificationType } from '../types/notification.types';
@@ -75,6 +76,9 @@ function getNotificationIcon(type: NotificationType, color: string) {
       return <StopOutlined style={iconStyle} />;
     case 'SUBTASK_ASSIGNED':
       return <OrderedListOutlined style={iconStyle} />;
+    case 'TASK_COMMENT_MENTIONED':
+    case 'TASK_COMMENT_REPLIED':
+      return <MessageOutlined style={iconStyle} />;
     default:
       return <BellOutlined style={iconStyle} />;
   }

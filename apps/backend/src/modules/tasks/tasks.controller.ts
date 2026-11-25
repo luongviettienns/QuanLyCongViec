@@ -32,6 +32,8 @@ import { CreateSubtaskDto } from './dto/create-subtask.dto.js';
 import { UpdateSubtaskDto } from './dto/update-subtask.dto.js';
 import { UpdateSubtaskStatusDto } from './dto/update-subtask-status.dto.js';
 import { ReorderSubtasksDto } from './dto/reorder-subtasks.dto.js';
+import { CreateTaskCommentDto } from './dto/create-task-comment.dto.js';
+import { UpdateTaskCommentDto } from './dto/update-task-comment.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js';
 
@@ -343,5 +345,47 @@ export class TasksController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.tasksService.removeSubtask(id, subtaskId, user.id);
+  }
+
+  // ==================== COMMENTS & @MENTIONS ====================
+
+  @ApiOperation({ summary: 'Lấy danh sách bình luận và phản hồi của công việc' })
+  @Get(':id/comments')
+  getComments(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasksService.getComments(id, user.id);
+  }
+
+  @ApiOperation({ summary: 'Tạo bình luận mới hoặc phản hồi kèm @mention' })
+  @Post(':id/comments')
+  createComment(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: CreateTaskCommentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasksService.createComment(id, body, user.id);
+  }
+
+  @ApiOperation({ summary: 'Chỉnh sửa bình luận của bản thân' })
+  @Patch(':id/comments/:commentId')
+  updateComment(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('commentId', ParseIntPipe) commentId: number,
+    @Body() body: UpdateTaskCommentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasksService.updateComment(id, commentId, body, user.id);
+  }
+
+  @ApiOperation({ summary: 'Xoá bình luận (tác giả hoặc quản trị viên nhóm)' })
+  @Delete(':id/comments/:commentId')
+  removeComment(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('commentId', ParseIntPipe) commentId: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasksService.removeComment(id, commentId, user.id);
   }
 }

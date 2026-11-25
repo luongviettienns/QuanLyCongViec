@@ -240,6 +240,18 @@ export class NotificationRecipientService {
           candidateIds.push(event.subtaskAssigneeId);
         }
         break;
+
+      case 'TASK_COMMENT_MENTIONED':
+        if (Array.isArray(event.mentionedUserIds)) {
+          candidateIds.push(...event.mentionedUserIds);
+        }
+        break;
+
+      case 'TASK_COMMENT_REPLIED':
+        if (event.parentAuthorId) {
+          candidateIds.push(event.parentAuthorId);
+        }
+        break;
     }
 
     // Filter out actor and deduplicate

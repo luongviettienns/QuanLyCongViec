@@ -455,13 +455,14 @@ function TaskAppShell() {
 
       {modalState.open && (
         <TaskFormModal
-          key={`${modalState.task?.id ?? 'new'}-${modalState.defaultTab ?? 'info'}-${modalState.highlightSubtaskId ?? ''}-${modalState.defaultDate ?? ''}`}
+          key={`${modalState.task?.id ?? 'new'}-${modalState.defaultTab ?? 'info'}-${modalState.highlightSubtaskId ?? ''}-${modalState.highlightCommentId ?? ''}-${modalState.defaultDate ?? ''}`}
           open={modalState.open}
           task={activeModalTask}
           defaultTeamId={modalState.defaultTeamId}
           defaultDate={modalState.defaultDate}
           initialTab={modalState.defaultTab}
           highlightSubtaskId={modalState.highlightSubtaskId}
+          highlightCommentId={modalState.highlightCommentId}
           categories={categories}
           teams={teams}
           onClose={closeModal}
