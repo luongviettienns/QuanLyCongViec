@@ -34,6 +34,10 @@ export class DeadlineReminderConsumer implements OnModuleInit {
     );
     if (subscribed) {
       this.logger.log(`Subscribed to RabbitMQ queue "${TASKFLOW_JOBS_QUEUE}"`);
+    } else {
+      this.logger.warn(
+        `RabbitMQ unavailable at startup; auto-reconnect scheduled for "${TASKFLOW_JOBS_QUEUE}"`,
+      );
     }
   }
 

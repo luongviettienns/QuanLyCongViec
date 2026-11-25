@@ -13,6 +13,7 @@ export class RabbitMqService implements OnModuleDestroy {
     this.client = new RabbitMqClient({
       ...options,
       logger: options?.logger ?? {
+        log: (msg) => this.logger.log(msg),
         warn: (msg) => this.logger.warn(msg),
         error: (msg) => this.logger.error(msg),
       },
