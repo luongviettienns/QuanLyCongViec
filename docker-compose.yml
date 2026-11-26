@@ -97,7 +97,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    container_name: taskflow-backend
     restart: unless-stopped
     depends_on:
       postgres:
@@ -142,7 +141,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    container_name: taskflow-worker
     restart: unless-stopped
     depends_on:
       postgres:

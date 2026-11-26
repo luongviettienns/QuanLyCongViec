@@ -142,4 +142,62 @@ describe('WorkerJobsService', () => {
     await service.onModuleDestroy();
     expect(rabbitMock.close).toHaveBeenCalledTimes(1);
   });
+
+  it('skips triggerDeadlineReminders and cleanupOldActivityLogs when another worker instance holds the distributed lock', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const deleteManyMock = vi.fn();
+    const queryRawMock = vi.fn().mockResolvedValue([]);
+    const prismaMock = {
+      teamActivityLog: { deleteMany: deleteManyMock },
+      $disconnect: vi.fn(),
+      $queryRaw: queryRawMock,
+    };
+    const rabbitMock = {
+      isEnabled: vi.fn().mockReturnValue(true),
+      publish: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const service = new WorkerJobsService({
+      prisma: prismaMock as never,
+      fetchFn: fetchMock,
+      backendUrl: 'http://backend:3000',
+      internalApiKey: 'secret-key',
+      rabbitMq: rabbitMock,
+    });
+
+    await expect(service.triggerDeadlineReminders()).resolves.toEqual({
+      ok: true,
+      skipped: true,
+    });
+    expect(rabbitMock.publish).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await expect(service.cleanupOldActivityLogs(12)).resolves.toBe(0);
+    expect(deleteManyMock).not.toHaveBeenCalled();
+  });
+
+  it('fails closed without running jobs when distributed lock DB query throws', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const deleteManyMock = vi.fn();
+    const queryRawMock = vi.fn().mockRejectedValue(new Error('DB unreachable'));
+    const prismaMock = {
+      teamActivityLog: { deleteMany: deleteManyMock },
+      $disconnect: vi.fn(),
+      $queryRaw: queryRawMock,
+    };
+
+    const service = new WorkerJobsService({
+      prisma: prismaMock as never,
+      fetchFn: fetchMock,
+      backendUrl: 'http://backend:3000',
+      internalApiKey: 'secret-key',
+    });
+
+    await expect(service.triggerDeadlineReminders()).resolves.toEqual({ ok: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await expect(service.cleanupOldActivityLogs(12)).resolves.toBe(0);
+    expect(deleteManyMock).not.toHaveBeenCalled();
+  });
 });
